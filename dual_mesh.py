@@ -47,7 +47,7 @@ class dual_mesh(bpy.types.Operator):
                                         name="Polygon Method", description="Method for splitting the polygons into triangles", default="BEAUTY", options={'LIBRARY_EDITABLE'})
     
     preserve_borders = bpy.props.BoolProperty(name="Preserve Borders", default=True, description="Preserve original borders")
-    multiple_users = bpy.props.BoolProperty(name="Multiple Users Data", default=True, description="Affect linked objects")
+    #multiple_users = bpy.props.BoolProperty(name="Multiple Users Data", default=True, description="Affect linked objects")
 
     '''
     @classmethod
@@ -74,15 +74,15 @@ class dual_mesh(bpy.types.Operator):
 
             # store linked objects
             clones = []
-            if self.multiple_users:
-                n_users = ob0.data.users
-                count = 0
-                for o in bpy.data.objects:
-                    if o.data.name == mesh_name:
-                        count+=1
-                        clones.append(o)
-                    if count == n_users: break
-                ob.data = ob.data.copy()
+            n_users = ob0.data.users
+            count = 0
+            for o in bpy.data.objects:
+                if o.type != 'MESH': continue
+                if o.data.name == mesh_name:
+                    count+=1
+                    clones.append(o)
+                if count == n_users: break
+            ob.data = ob.data.copy()
 
             ##bpy.context.scene.objects.link(ob)
 
