@@ -453,6 +453,7 @@ class update_tessellate(bpy.types.Operator):
             self.generator = self.ob.tissue_tessellate.generator
             self.component = self.ob.tissue_tessellate.component
             self.zscale = self.ob.tissue_tessellate.zscale
+            self.scale_mode = self.ob.tissue_tessellate.scale_mode
             self.offset = self.ob.tissue_tessellate.offset
             self.merge = self.ob.tissue_tessellate.merge
             self.merge_thres = self.ob.tissue_tessellate.merge_thres
