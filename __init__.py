@@ -34,13 +34,13 @@ from mathutils import Vector
 bl_info = {
 	"name": "Tissue",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 1),
+	"version": (0, 2),
 	"blender": (2, 7, 4),
 	"location": "",
 	"description": "Tools for Computational Design",
 	"warning": "",
-	"wiki_url": "",
-	"tracker_url": "",
+	"wiki_url": "https://github.com/alessandro-zomparelli/tissue/wiki",
+	"tracker_url": "https://plus.google.com/u/0/+AlessandroZomparelli/",
 	"category": "Mesh"}
 
 def register():
