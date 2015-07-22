@@ -2,6 +2,7 @@
 Tissue - Blender's add-on for computational design
 
 Latest version (master): https://github.com/alessandro-zomparelli/tissue/archive/master.zip
+
 Releases: https://github.com/alessandro-zomparelli/tissue/releases
 
 Installation:
