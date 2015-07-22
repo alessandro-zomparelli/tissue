@@ -1,5 +1,5 @@
 # --------------------- ADAPTIVE DUPLIFACES --------------------#
-#-------------------------- version 0.4 ------------------------#
+#-------------------------- version 0.5 ------------------------#
 #                                                               #
 # Creates duplicates of selected mesh to active morphing the    #
 # shape according to target faces.                              #
