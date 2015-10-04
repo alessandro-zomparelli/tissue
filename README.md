@@ -1,5 +1,10 @@
-# tissue
-Tissue - Blender's add-on for computational design
+# Tissue
+Tissue - Blender's add-on for computational design by Co-de-iT
+http://www.co-de-it.com/wordpress/code/blender-tissue
+
+Latest version (master): https://github.com/alessandro-zomparelli/tissue/archive/master.zip
+
+Releases: https://github.com/alessandro-zomparelli/tissue/releases
 
 Installation:
 
