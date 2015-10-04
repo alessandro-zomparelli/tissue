@@ -93,7 +93,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
             vert[1] = vert[1] / bb[1]
             vert[2] = (vert[2] + (-0.5 + offset*0.5)*bb[2])*zscale
         else:
-            vert = v.co
+            vert = v.co.xyz
             vert[2] *= zscale
 
         verts1.append(vert)
@@ -122,8 +122,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
             fan_verts.append(fan_center.to_tuple())
             for i in range(len(p.vertices)):
                 fan_polygons.append((p.vertices[i], p.vertices[(i+1)%len(p.vertices)], last_vert, last_vert))
-        print(fan_verts)
-        print(fan_polygons)
+        #print(fan_verts)
+        #print(fan_polygons)
         fan_me = bpy.data.meshes.new('Fan.Mesh')
         fan_me.from_pydata(tuple(fan_verts), [], tuple(fan_polygons))
         me0 = fan_me
