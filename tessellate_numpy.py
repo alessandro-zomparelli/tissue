@@ -551,7 +551,7 @@ class tessellate_panel(bpy.types.Panel):
     bl_category = "Tissue"
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
-    bl_context = "objectmode"
+    #bl_context = "objectmode", "editmode"
 
     #vertexgroup = bpy.props.StringProperty(name="Vertex group")
     #vertexgroup = bpy.props.StringProperty()
@@ -566,6 +566,10 @@ class tessellate_panel(bpy.types.Panel):
         col.operator("object.update_tessellate")
         #col.operator("object.adaptive_duplifaces", icon="MESH_CUBE")
 
+        col.label(text="Edit:")
+        col = layout.column(align=True)
+        col.operator("mesh.rotate_face")
+
 
 
         act = context.active_object
@@ -577,11 +581,45 @@ class tessellate_panel(bpy.types.Panel):
  #     col.prop_search(act, "vertexgroup", act, "vertex_groups", text="Scale")
 
 
+class rotate_face(bpy.types.Operator):
+    bl_idname = "mesh.rotate_face"
+    bl_label = "Rotate Faces"
+    bl_description = "Rotate selected faces and update tessellated meshes."
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'EDIT_MESH'
+
+    def execute(self, context):
+        ob = bpy.context.active_object
+        me = ob.data
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        for p in [f for f in me.polygons if f.select]:
+            p.vertices = p.vertices[1:] + p.vertices[:1]
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        me.vertices[0].co[0] = 10
+        me.update(calc_edges=True)
+
+        #update tessellated meshes
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for o in [object for object in bpy.data.objects if object.tissue_tessellate.generator == ob.name]:
+            bpy.context.scene.objects.active = o
+            bpy.ops.object.update_tessellate()
+
+        bpy.context.scene.objects.active = ob
+        bpy.ops.object.mode_set(mode='EDIT')
+        return {'FINISHED'}
+
 def register():
     bpy.utils.register_class(tissue_tessellate_prop)
     bpy.utils.register_class(tessellate)
     bpy.utils.register_class(update_tessellate)
     bpy.utils.register_class(tessellate_panel)
+    bpy.utils.register_class(rotate_face)
 
 
 
@@ -591,6 +629,7 @@ def unregister():
     bpy.utils.unregister_class(tessellate)
     bpy.utils.unregister_class(update_tessellate)
     bpy.utils.unregister_class(tessellate_panel)
+    bpy.utils.unregister_class(rotate_face)
 
 
 
