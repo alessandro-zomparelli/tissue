@@ -34,12 +34,18 @@ def lerp3(v1, v2, v3, v4, v):
     nor.normalize()
     return loc + nor*v.z
 
+<<<<<<< HEAD
 def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, scale_mode, rotation_mode, rand_seed, fill_mode, bool_vertex_group, bool_selection):
     random.seed(rand_seed)
 
     print(ob0.tissue_tessellate.offset)
 
     old_me0 = ob0.data
+=======
+def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, scale_mode, randomize, rand_seed, fill_mode):
+    random.seed(rand_seed)
+
+>>>>>>> parent of 760464f... added UV rotation
     if gen_modifiers:
         me0 = ob0.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
     else: me0 = ob0.data
@@ -163,9 +169,12 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
             fan_me.polygons[i].select = selected_faces[i]
 
 
+<<<<<<< HEAD
     count = 0   # necessary for UV calculation
 
 
+=======
+>>>>>>> parent of 760464f... added UV rotation
     for p in me0.polygons:
         if bool_selection and not p.select: continue
 
@@ -184,7 +193,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
         #polygon vertices
 
-        if rotation_mode == 'RANDOM':
+        if randomize:
             shifted_vertices = []
             n_poly_verts = len(p.vertices)
             rand = random.randint(0,n_poly_verts)
@@ -192,6 +201,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
                 shifted_vertices.append(p.vertices[(i+rand)%n_poly_verts])
             vs0 = np.array([verts0[i].co for i in shifted_vertices])
             nvs0 = np.array([verts0[i].normal for i in shifted_vertices])
+<<<<<<< HEAD
 
             # vertex weight
             if bool_vertex_group:
@@ -238,10 +248,13 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
             count += len(p.vertices)
 
+=======
+>>>>>>> parent of 760464f... added UV rotation
         else:
             vs0 = np.array([verts0[i].co for i in p.vertices])
             nvs0 = np.array([verts0[i].normal for i in p.vertices])
 
+<<<<<<< HEAD
             # vertex weight
             if bool_vertex_group:
                 ws0 = []
@@ -251,6 +264,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
                 ws0 = np.array(ws0)
 
         # considering only 4 vertices
+=======
+>>>>>>> parent of 760464f... added UV rotation
         vs0 = np.array((vs0[0], vs0[1], vs0[2], vs0[-1]))
         nvs0 = np.array((nvs0[0], nvs0[1], nvs0[2], nvs0[-1]))
 
@@ -318,7 +333,6 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.gen_modifiers = operator.gen_modifiers
     ob.tissue_tessellate.com_modifiers = operator.com_modifiers
     ob.tissue_tessellate.mode = operator.mode
-    ob.tissue_tessellate.rotation_mode = operator.rotation_mode
     ob.tissue_tessellate.merge = operator.merge
     ob.tissue_tessellate.merge_thres = operator.merge_thres
     ob.tissue_tessellate.scale_mode = operator.scale_mode
@@ -340,7 +354,6 @@ class tissue_tessellate_prop(bpy.types.PropertyGroup):
     gen_modifiers = bpy.props.BoolProperty()
     com_modifiers = bpy.props.BoolProperty()
     mode = bpy.props.StringProperty()
-    rotation_mode = bpy.props.StringProperty()
     scale_mode = bpy.props.StringProperty()
     fill_mode = bpy.props.StringProperty()
     bool_random = bpy.props.BoolProperty()
@@ -365,7 +378,6 @@ class tessellate(bpy.types.Operator):
     scale_mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Proportional", "")), default='COSTANT', name="Z-Scale according to faces size")
     offset = bpy.props.FloatProperty(name="Surface Offset", default=0, min=-1, max=1,  soft_min=-1, soft_max=1, description="Surface offset")
     mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Adaptive", "")), default='ADAPTIVE', name="Component Mode")
-    rotation_mode = bpy.props.EnumProperty(items=(('RANDOM', "Random", ""), ('UV', "Active UV", ""), ('DEFAULT', "Default", "")), default='DEFAULT', name="Component Rotation")
     fill_mode = bpy.props.EnumProperty(items=(('QUAD', "Quad", ""), ('FAN', "Fan", "")), default='QUAD', name="Fill Mode")
     gen_modifiers = bpy.props.BoolProperty(name="Generator Modifiers", default=False, description="Apply modifiers to base object")
     com_modifiers = bpy.props.BoolProperty(name="Component Modifiers", default=False, description="Apply modifiers to component object")
@@ -473,6 +485,7 @@ class tessellate(bpy.types.Operator):
         row = col.row(align=True)
         row.prop(self, "fill_mode", text="", icon='NONE', expand=False, slider=True, toggle=False, icon_only=False, event=False, full_event=False, emboss=True, index=-1)
 
+<<<<<<< HEAD
         row = col.row(align=True)
         row.label(text="Component Rotation:")
         row = col.row(align=True)
@@ -494,6 +507,8 @@ class tessellate(bpy.types.Operator):
                 row = col.row(align=True)
                 row.label(text="Default rotation will be used instead", icon='INFO')
 
+=======
+>>>>>>> parent of 760464f... added UV rotation
         col = box.column(align=True)
         row = col.row(align=True)
         row.prop(self, "bool_vertex_group")
@@ -503,6 +518,12 @@ class tessellate(bpy.types.Operator):
         row.prop(self, "merge")
         if self.merge: row.prop(self, "merge_thres")
         row = col.row(align=True)
+<<<<<<< HEAD
+=======
+        row.prop(self, "bool_random")
+        if self.bool_random: row.prop(self, "random_seed")
+
+>>>>>>> parent of 760464f... added UV rotation
 
         # component
         layout.label(text="Component : " + self.component)
@@ -581,9 +602,13 @@ class tessellate(bpy.types.Operator):
 
             bpy.ops.object.select_all(action='TOGGLE')
 
+<<<<<<< HEAD
             new_ob = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection)
             new_ob.name = self.object_name
             #new_ob = bpy.data.objects.new(self.object_name, new_me)
+=======
+            new_me = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.bool_random, self.random_seed, self.fill_mode)
+>>>>>>> parent of 760464f... added UV rotation
 
             new_ob.location = ob0.location
             new_ob.matrix_world = ob0.matrix_world
@@ -623,7 +648,6 @@ class update_tessellate(bpy.types.Operator):
     scale_mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Proportional", "")), default='ADAPTIVE', name="Scale variation")
     offset = bpy.props.FloatProperty(name="Surface Offset", default=0, min=-1, max=1,  soft_min=-1, soft_max=1, description="Surface offset")
     mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Adaptive", "")), default='ADAPTIVE', name="Component Mode")
-    rotation_mode = bpy.props.EnumProperty(items=(('RANDOM', "Random", ""), ('UV', "Active UV", ""), ('DEFAULT', "Default", "")), default='DEFAULT', name="Component Rotation")
     fill_mode = bpy.props.EnumProperty(items=(('QUAD', "Quad", ""), ('FAN', "Fan", "")), default='QUAD', name="Fill Mode")
     gen_modifiers = bpy.props.BoolProperty(name="Generator Modifiers", default=False, description="Apply modifiers to base object")
     com_modifiers = bpy.props.BoolProperty(name="Component Modifiers", default=False, description="Apply modifiers to component object")
@@ -669,6 +693,7 @@ class update_tessellate(bpy.types.Operator):
         row = col.row(align=True)
         row.prop(self, "fill_mode", text="", icon='NONE', expand=False, slider=True, toggle=False, icon_only=False, event=False, full_event=False, emboss=True, index=-1)
 
+<<<<<<< HEAD
         row = col.row(align=True)
         row.label(text="Component Rotation:")
         row = col.row(align=True)
@@ -695,13 +720,15 @@ class update_tessellate(bpy.types.Operator):
         row.prop(self, "bool_vertex_group")
 
 
+=======
+>>>>>>> parent of 760464f... added UV rotation
         col = box.column(align=True)
         row = col.row(align=True)
         row.prop(self, "merge")
         if self.merge: row.prop(self, "merge_thres")
         row = col.row(align=True)
-        #row.prop(self, "bool_random")
-        #if self.bool_random: row.prop(self, "random_seed")
+        row.prop(self, "bool_random")
+        if self.bool_random: row.prop(self, "random_seed")
 
 
         layout.label(text="Component : " + self.component)
@@ -738,7 +765,6 @@ class update_tessellate(bpy.types.Operator):
             self.component = self.ob.tissue_tessellate.component
             self.zscale = self.ob.tissue_tessellate.zscale
             self.scale_mode = self.ob.tissue_tessellate.scale_mode
-            self.rotation_mode = self.ob.tissue_tessellate.rotation_mode
             self.offset = self.ob.tissue_tessellate.offset
             self.merge = self.ob.tissue_tessellate.merge
             self.merge_thres = self.ob.tissue_tessellate.merge_thres
@@ -760,9 +786,13 @@ class update_tessellate(bpy.types.Operator):
         me0 = ob0.data
         verts = me0.vertices
 
+<<<<<<< HEAD
 
         self.ob.data = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection).data
 
+=======
+        self.ob.data = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.bool_random, self.random_seed, self.fill_mode)
+>>>>>>> parent of 760464f... added UV rotation
         #tassellate(ob0, ob1, ob.tissue_tessellate.offset, ob.tissue_tessellate.zscale, ob.tissue_tessellate.gen_modifiers, ob.tissue_tessellate.com_modifiers, ob.tissue_tessellate.mode, ob.tissue_tessellate.scale_mode)
         #else: ob.data = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode)
 
