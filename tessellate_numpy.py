@@ -511,7 +511,7 @@ class tessellate(bpy.types.Operator):
 >>>>>>> parent of 760464f... added UV rotation
         col = box.column(align=True)
         row = col.row(align=True)
-        row.prop(self, "bool_vertex_group")
+        if len(bpy.data.objects[self.generator].vertex_groups) > 0: row.prop(self, "bool_vertex_group")
 
         col = box.column(align=True)
         row = col.row(align=True)
@@ -667,7 +667,7 @@ class update_tessellate(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         try:
-            return context.active_object.tissue_tessellate.generator != ""
+            return context.active_object.tissue_tessellate.generator != "" and context.active_object.tissue_tessellate.component != ""
         except: return False
 
 
@@ -675,6 +675,22 @@ class update_tessellate(bpy.types.Operator):
         layout = self.layout
         ob0 = bpy.context.active_object
 
+        if not self.go:
+            self.generator = ob0.tissue_tessellate.generator
+            self.component = ob0.tissue_tessellate.component
+            self.zscale = ob0.tissue_tessellate.zscale
+            self.scale_mode = ob0.tissue_tessellate.scale_mode
+            self.rotation_mode = ob0.tissue_tessellate.rotation_mode
+            self.offset = ob0.tissue_tessellate.offset
+            self.merge = ob0.tissue_tessellate.merge
+            self.merge_thres = ob0.tissue_tessellate.merge_thres
+            self.gen_modifiers = ob0.tissue_tessellate.gen_modifiers
+            self.com_modifiers = ob0.tissue_tessellate.com_modifiers
+            self.bool_random = ob0.tissue_tessellate.bool_random
+            self.random_seed = ob0.tissue_tessellate.random_seed
+            self.fill_mode = ob0.tissue_tessellate.fill_mode
+            self.bool_vertex_group = ob0.tissue_tessellate.bool_vertex_group
+            self.bool_selection = ob0.tissue_tessellate.bool_selection
 
         layout.label(text="Generator : " + self.generator)
         box = layout.box()
@@ -804,6 +820,12 @@ class update_tessellate(bpy.types.Operator):
         self.ob = store_parameters(self, self.ob)
 
         return {'FINISHED'}
+
+    def check(self, context):
+        return True
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
 
 
 
