@@ -22,8 +22,8 @@ import bmesh
 bl_info = {
 	"name": "Dual Mesh",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 1),
-	"blender": (2, 7, 4),
+	"version": (0, 2),
+	"blender": (2, 7, 7),
 	"location": "",
 	"description": "Convert a generic mesh to its dual",
 	"warning": "",
