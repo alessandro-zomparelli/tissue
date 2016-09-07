@@ -12,27 +12,27 @@
 # Creative Commons                                              #
 # CC BY-SA 3.0                                                  #
 # http://creativecommons.org/licenses/by-sa/3.0/                #
-     
-# TO DO: 
+
+# TO DO:
 #     - work in local mode
 
 import bpy
 import bmesh
 
-bl_info = { 
-	"name": "Dual Mesh",  
-	"author": "Alessandro Zomparelli (Co-de-iT)",  
-	"version": (0, 1),  
-	"blender": (2, 7, 4),  
-	"location": "",  
-	"description": "Convert a generic mesh to its dual",  
-	"warning": "",  
-	"wiki_url": "",  
-	"tracker_url": "",  
-	"category": "Mesh"}  
-      
-class dual_mesh(bpy.types.Operator):  
-    bl_idname = "object.dual_mesh"  
+bl_info = {
+	"name": "Dual Mesh",
+	"author": "Alessandro Zomparelli (Co-de-iT)",
+	"version": (0, 1),
+	"blender": (2, 7, 4),
+	"location": "",
+	"description": "Convert a generic mesh to its dual",
+	"warning": "",
+	"wiki_url": "",
+	"tracker_url": "",
+	"category": "Mesh"}
+
+class dual_mesh(bpy.types.Operator):
+    bl_idname = "object.dual_mesh"
     bl_label = "Dual Mesh"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -45,7 +45,7 @@ class dual_mesh(bpy.types.Operator):
     polygon_method = bpy.props.EnumProperty(items=[('BEAUTY', 'Beauty', 'Arrange the new triangles evenly, slower method'),
                                         ('CLIP', 'Clip', 'Split the polygons with an ear clipping algorithm')],
                                         name="Polygon Method", description="Method for splitting the polygons into triangles", default="BEAUTY", options={'LIBRARY_EDITABLE'})
-    
+
     preserve_borders = bpy.props.BoolProperty(name="Preserve Borders", default=True, description="Preserve original borders")
     #multiple_users = bpy.props.BoolProperty(name="Multiple Users Data", default=True, description="Affect linked objects")
 
@@ -57,7 +57,7 @@ class dual_mesh(bpy.types.Operator):
             for ob0 in sel:
                 if ob0.type == 'MESH': return True
             return False
-        except: 
+        except:
             return False
     '''
 
@@ -95,14 +95,14 @@ class dual_mesh(bpy.types.Operator):
             #for m in ob.modifiers:
             #    boolModifiers.append(m.show_viewport)
             #    m.show_viewport = False
-        
+
             bpy.ops.object.mode_set(mode = 'EDIT')
 
             if self.preserve_borders:
                 bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='EDGE')
                 bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
                 bpy.ops.mesh.extrude_region_move(MESH_OT_extrude_region={"mirror":False}, TRANSFORM_OT_translate={"value":(0, 0, 0), "constraint_axis":(False, False, False), "constraint_orientation":'GLOBAL', "mirror":False, "proportional":'DISABLED', "proportional_edit_falloff":'SMOOTH', "proportional_size":1, "snap":False, "snap_target":'CLOSEST', "snap_point":(0, 0, 0), "snap_align":False, "snap_normal":(0, 0, 0), "gpencil_strokes":False, "texture_space":False, "remove_on_cancel":False, "release_confirm":False})
-        
+
             bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT', action='TOGGLE')
             bpy.ops.mesh.select_all(action = 'SELECT')
             bpy.ops.mesh.quads_convert_to_tris(quad_method=self.quad_method, ngon_method=self.polygon_method)
@@ -111,12 +111,12 @@ class dual_mesh(bpy.types.Operator):
             bpy.ops.object.modifier_add(type='SUBSURF')
             ob.modifiers[-1].name = "dual_mesh_subsurf"
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier='dual_mesh_subsurf')
-             
+
             bpy.ops.object.mode_set(mode = 'EDIT')
             bpy.ops.mesh.select_all(action = 'DESELECT')
-             
+
             verts = ob.data.vertices
-             
+
             bpy.ops.object.mode_set(mode = 'OBJECT')
             verts[0].select = True
             bpy.ops.object.mode_set(mode = 'EDIT')
@@ -130,7 +130,7 @@ class dual_mesh(bpy.types.Operator):
 
             bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
             bpy.ops.mesh.select_more()
-        
+
             # find boundaries
             bpy.ops.object.mode_set(mode = 'OBJECT')
             bound_v = [v.index for v in ob.data.vertices if v.select]
@@ -140,8 +140,8 @@ class dual_mesh(bpy.types.Operator):
 
             # select quad faces
             bpy.context.tool_settings.mesh_select_mode = (False, False, True) # face mode
-            bpy.ops.mesh.select_face_by_sides(number=4, extend=False)  
-   
+            bpy.ops.mesh.select_face_by_sides(number=4, extend=False)
+
             # deselect boundaries
             bpy.ops.object.mode_set(mode = 'OBJECT')
             for i in bound_v:
@@ -150,7 +150,7 @@ class dual_mesh(bpy.types.Operator):
                 bpy.context.active_object.data.edges[i].select = False
             for i in bound_p:
                 bpy.context.active_object.data.polygons[i].select = False
-        
+
             bpy.ops.object.mode_set(mode = 'EDIT')
 
             bpy.context.tool_settings.mesh_select_mode = (False, False, True) # face mode
@@ -184,16 +184,16 @@ class dual_mesh(bpy.types.Operator):
             ob0.data.name = mesh_name
 
             doneMeshes.append(mesh_name)
-            for o in clones: o.data = ob.data        
+            for o in clones: o.data = ob.data
 
             #for i in range(len(ob.modifiers)): ob.modifiers[i].show_viewport = boolModifiers[i]
             ##bpy.ops.object.delete(use_global=False)
 
         for o in sel: o.select = True
-        bpy.context.scene.objects.active = act    
-        
-        return {'FINISHED'} 
-      
+        bpy.context.scene.objects.active = act
+
+        return {'FINISHED'}
+
 
 class dual_mesh_panel(bpy.types.Panel):
     bl_label = "Dual Mesh"
@@ -201,23 +201,25 @@ class dual_mesh_panel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     bl_context = (("objectmode"))
-         
+
     def draw(self, context):
         layout = self.layout
         col = layout.column(align=True)
 
         #col.label(text="Add:")
-        if bpy.context.active_object.type == 'MESH': col.operator("object.dual_mesh")
+        try:
+            if bpy.context.active_object.type == 'MESH': col.operator("object.dual_mesh")
+        except:
+            pass
         #col.operator("object.adaptive_duplifaces", icon="MESH_CUBE")
 
 def register():
     bpy.utils.register_class(dual_mesh)
     bpy.utils.register_class(dual_mesh_panel)
-    
+
 def unregister():
-    bpy.utils.unregister_class(dual_mesh)  
+    bpy.utils.unregister_class(dual_mesh)
     bpy.utils.unregister_class(dual_mesh_panel)
-      
-if __name__ == "__main__":  
-    register()  
-     
+
+if __name__ == "__main__":
+    register()
