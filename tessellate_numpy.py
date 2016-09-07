@@ -448,7 +448,9 @@ class tessellate(bpy.types.Operator):
             else: me_temp = bpy.data.objects[self.component].data
             polygons *= len(me_temp.polygons)
 
-            layout.label(text=str(polygons) + " polygons will be created!", icon='ERROR')
+            str_polygons = '{:0,.0f}'.format(polygons)
+            if polygons > 200000: layout.label(text=str_polygons + " polygons will be created!", icon='ERROR')
+            else: layout.label(text=str_polygons + " faces will be created!", icon='INFO')
         except:
             pass
 
@@ -497,6 +499,7 @@ class tessellate(bpy.types.Operator):
         col = box.column(align=True)
         row = col.row(align=True)
         if len(bpy.data.objects[self.generator].vertex_groups) > 0: row.prop(self, "bool_vertex_group")
+        else: self.bool_vertex_group = False
 
         col = box.column(align=True)
         row = col.row(align=True)
@@ -668,6 +671,32 @@ class update_tessellate(bpy.types.Operator):
             self.bool_vertex_group = ob0.tissue_tessellate.bool_vertex_group
             self.bool_selection = ob0.tissue_tessellate.bool_selection
 
+
+
+
+        # count number of faces
+        try:
+            polygons = 0
+            if self.gen_modifiers: me_temp = bpy.data.objects[self.generator].to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
+            else: me_temp = bpy.data.objects[self.generator].data
+            for p in me_temp.polygons:
+                if not self.bool_selection or p.select:
+                    if self.fill_mode == "FAN": polygons += len(p.vertices)
+                    else: polygons += 1
+
+            if self.com_modifiers: me_temp = bpy.data.objects[self.component].to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
+            else: me_temp = bpy.data.objects[self.component].data
+            polygons *= len(me_temp.polygons)
+
+            str_polygons = '{:0,.0f}'.format(polygons)
+            if polygons > 200000: layout.label(text=str_polygons + " polygons will be created!", icon='ERROR')
+            else: layout.label(text=str_polygons + " faces will be created!", icon='INFO')
+        except:
+            pass
+
+
+
+
         layout.label(text="Generator : " + self.generator)
         box = layout.box()
 
@@ -723,12 +752,15 @@ class update_tessellate(bpy.types.Operator):
         layout.label(text="Component : " + self.component)
         box = layout.box()
 
-        col = box.column(align=True)
+        #col = box.column(align=True)
         #col.label(text="Component:")
-        row = col.row(align=True)
-        row.prop_search(self, "component", bpy.data, "objects")
-        if len(bpy.data.objects[self.component].modifiers) > 0: row.prop(self, "com_modifiers", text="Modifiers")
+        #row = col.row(align=True)
+        box.prop_search(self, "component", bpy.data, "objects")
+        if len(bpy.data.objects[self.component].modifiers) > 0:
+            #row = col.row(align=True)
+            box.prop(self, "com_modifiers", text="Modifiers")
 
+        col = box.column(align=True)
         row = col.row(align=True)
         row.label(text="Component XY:")
         row = col.row(align=True)
