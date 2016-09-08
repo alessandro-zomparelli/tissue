@@ -481,7 +481,7 @@ class tessellate(bpy.types.Operator):
         row.prop(self, "rotation_mode", text="", icon='NONE', expand=False, slider=True, toggle=False, icon_only=False, event=False, full_event=False, emboss=True, index=-1)
         if self.rotation_mode == 'RANDOM':
             row = col.row(align=True)
-            row.prop(WM, "random_seed")
+            row.prop(self, "random_seed")
         if self.rotation_mode == 'UV':
             uv_error = False
             if self.fill_mode == 'FAN':
