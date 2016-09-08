@@ -376,7 +376,7 @@ class tessellate(bpy.types.Operator):
     bool_random = bpy.props.BoolProperty(name="Randomize", default=False, description="Randomize component rotation")
     random_seed = bpy.props.IntProperty(name="Seed", default=0, soft_min=0, soft_max=10, description="Random seed")
     bool_vertex_group = bpy.props.BoolProperty(name="Map Vertex Group", default=False, description="Map on generated geometry the active Vertex Group from the base object")
-    bool_selection = bpy.props.BoolProperty(name="Selection Only", default=False, description="Create Tessellation only on select faces")
+    bool_selection = bpy.props.BoolProperty(name="On selected Faces", default=False, description="Create Tessellation only on selected faces")
     #vertex_group = layout.prop_search(act, "vertexgroup", act, "vertex_groups", text="Scale")
 
     working_on = ""
@@ -467,7 +467,7 @@ class tessellate(bpy.types.Operator):
 
 
         if len(bpy.data.objects[self.generator].modifiers) > 0: box.prop(self, "gen_modifiers", text="Modifiers")
-        box.prop(self, "bool_selection", text="Selection Only")
+        box.prop(self, "bool_selection", text="On selected Faces")
 
         col = box.column(align=True)
         row = col.row(align=True)
@@ -638,7 +638,7 @@ class update_tessellate(bpy.types.Operator):
     bool_random = bpy.props.BoolProperty(name="Randomize", default=False, description="Randomize component rotation")
     random_seed = bpy.props.IntProperty(name="Seed", default=0, soft_min=0, soft_max=10, description="Random seed")
     bool_vertex_group = bpy.props.BoolProperty(name="Map Vertex Group", default=False, description="Map on generated geometry the active Vertex Group from the base object")
-    bool_selection = bpy.props.BoolProperty(name="Selection Only", default=False, description="Create Tessellation only on select faces")
+    bool_selection = bpy.props.BoolProperty(name="On selected Faces", default=False, description="Create Tessellation only on select faces")
     go = False
 
     ob = bpy.types.Object
@@ -705,7 +705,7 @@ class update_tessellate(bpy.types.Operator):
         #row = box.row(align=True)
         box.prop_search(self, "generator", bpy.data, "objects")
         if len(bpy.data.objects[self.generator].modifiers) > 0: box.prop(self, "gen_modifiers", text="Modifiers")
-        box.prop(self, "bool_selection", text="Selection Only")
+        box.prop(self, "bool_selection", text="On selected Faces")
 
         col = box.column(align=True)
         #col.label(text="Tessellation")
