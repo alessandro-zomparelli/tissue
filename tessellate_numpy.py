@@ -34,35 +34,38 @@ def lerp3(v1, v2, v3, v4, v):
     nor.normalize()
     return loc + nor*v.z
 
-def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, scale_mode, rotation_mode, rand_seed, fill_mode, bool_vertex_group, bool_selection):
+def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, scale_mode, rotation_mode, rand_seed, fill_mode, bool_vertex_group, bool_selection, bool_shapekeys):
     random.seed(rand_seed)
 
-    print(ob0.tissue_tessellate.offset)
-
-    old_me0 = ob0.data
-    if gen_modifiers:
+    old_me0 = ob0.data      # store generator mesh
+    if gen_modifiers:       # apply generator modifiers
         me0 = ob0.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
     else: me0 = ob0.data
     ob0.data = me0
 
-    if com_modifiers:
+    if com_modifiers:       # apply component modifiers
         me1 = ob1.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
     else: me1 = ob1.data
 
-    verts0 = me0.vertices
+    verts0 = me0.vertices   # collect generator vertices
 
+    # component statistics
     n_verts = len(me1.vertices)
     n_edges = len(me1.edges)
     n_faces = len(me1.polygons)
 
+    # component transformations
     loc = ob1.location
     dim = ob1.dimensions
     scale = ob1.scale
 
+    # create empty lists
     new_verts = []
     new_edges = []
     new_faces = []
     new_verts_np = np.array(())
+
+    ### Component Bounding Box ###
 
     min = Vector((0,0,0))
     max = Vector((0,0,0))
@@ -88,6 +91,11 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
     bb = max-min
 
+    ### Component Bounding Box - END ###
+
+
+    # adaptive XY
+
     verts1 = []
 
     for v in me1.vertices:
@@ -98,7 +106,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
             vert[2] = (vert[2] + (-0.5 + offset*0.5)*bb[2])*zscale
         else:
             vert = v.co.xyz
-            vert[2] *= zscale
+            vert[2] = (vert[2] - min[2] + (-0.5 + offset*0.5)*bb[2])*zscale
 
         verts1.append(vert)
 
@@ -112,7 +120,48 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     fs1 = [[i for i in p.vertices] for p in me1.polygons]
     new_faces = fs1[:]
 
+    # component edges
+    es1 = [[i for i in e.vertices] for e in me1.edges]
+    new_edges = es1[:]
+
     j = 0
+
+
+
+
+    ### SHAPE KEYS ###
+
+    shapekeys = []
+
+    if me1.shape_keys is not None and bool_shapekeys:
+        if len(me1.shape_keys.key_blocks) > 1:
+
+            # read active key
+            active_key = ob1.active_shape_key_index
+            if active_key == 0: active_key = 1
+
+            for v in me1.shape_keys.key_blocks[active_key].data:
+                if mode=="ADAPTIVE":
+                    vert = ( ob1.matrix_world * v.co ) - min
+                    vert[0] = vert[0] / bb[0]
+                    vert[1] = vert[1] / bb[1]
+                    vert[2] = (vert[2] + (-0.5 + offset*0.5)*bb[2])*zscale
+                else:
+                    vert = v.co.xyz
+                    vert[2] = (vert[2] - min[2] + (-0.5 + offset*0.5)*bb[2])*zscale
+
+                shapekeys.append(vert)
+
+            # component vertices
+            key1 = np.array([v for v in shapekeys]).reshape(len(shapekeys),3,1)
+            vx_key = key1[:,0]
+            vy_key = key1[:,1]
+            vz_key = key1[:,2]
+
+    ### SHAPE KEYS - END ###
+
+
+
 
 
     # active vertex group
@@ -165,6 +214,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
     count = 0   # necessary for UV calculation
 
+    ### TESSELLATION ###
 
     for p in me0.polygons:
         if bool_selection and not p.select: continue
@@ -184,6 +234,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
         #polygon vertices
 
+        ### RANDOM ROTATION ###
+
         if rotation_mode == 'RANDOM':
             shifted_vertices = []
             n_poly_verts = len(p.vertices)
@@ -200,6 +252,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
                     try: ws0.append(weight[i])
                     except: ws0.append(0)
                 ws0 = np.array(ws0)
+
+        ### UV ROTATION ###
 
         elif rotation_mode == 'UV' and len(ob0.data.uv_layers) > 0 and fill_mode != 'FAN':
             i = p.index
@@ -238,6 +292,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
             count += len(p.vertices)
 
+        ### DEFAULT ROTATION ###
+
         else:
             vs0 = np.array([verts0[i].co for i in p.vertices])
             nvs0 = np.array([verts0[i].normal for i in p.vertices])
@@ -249,6 +305,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
                     try: ws0.append(weight[i])
                     except: ws0.append(0)
                 ws0 = np.array(ws0)
+
+        ### INTERPOLATING ###
 
         # considering only 4 vertices
         vs0 = np.array((vs0[0], vs0[1], vs0[2], vs0[-1]))
@@ -275,6 +333,24 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
             w1 = ws0[3] + (ws0[2] -ws0[3])*vx
             w2 = w0 + (w1 - w0)*vy
 
+            ### SHAPE KEYS ###
+
+            if me1.shape_keys is not None and bool_shapekeys:
+
+                # remapped vertex coordinates
+                v0 = vs0[0] + (vs0[1] -vs0[0])*vx_key
+                v1 = vs0[3] + (vs0[2] -vs0[3])*vx_key
+                v2 = v0 + (v1 - v0)*vy_key
+
+                # remapped vertex normal
+                nv0 = nvs0[0] + (nvs0[1] -nvs0[0])*vx_key
+                nv1 = nvs0[3] + (nvs0[2] -nvs0[3])*vx_key
+                nv2 = nv0 + (nv1 - nv0)*vy_key
+
+                # vertex z to normal
+                v3_key = v2 + nv2*vz_key*(sqrt(p.area) if scale_mode == "ADAPTIVE" else 1)
+                v3 = v3 + (v3_key - v3) * w2
+
 
 
 
@@ -282,9 +358,10 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
             new_verts_np = v3
             if bool_vertex_group: new_vertex_group_np = w2
         else:
-            new_verts_np = np.concatenate((new_verts_np, v3), axis=0)
-            if bool_vertex_group: new_vertex_group_np = np.concatenate((new_vertex_group_np, w2), axis=0)
-            for p in fs1: new_faces.append([i+n_verts*j for i in p])
+            new_verts_np = np.concatenate((new_verts_np, v3), axis=0)   # appending vertices
+            if bool_vertex_group: new_vertex_group_np = np.concatenate((new_vertex_group_np, w2), axis=0)   # appending vertex group
+            for p in fs1: new_faces.append([i+n_verts*j for i in p])    # appending faces
+            for e in es1: new_edges.append([i+n_verts*j for i in e])    # appending edges
 
         j+=1
 
@@ -292,10 +369,10 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
     new_name = ob0.name + "_" + ob1.name
     new_me = bpy.data.meshes.new(new_name)
-    new_me.from_pydata(new_verts, [], new_faces)
+    new_me.from_pydata(new_verts, new_edges, new_faces)
     #new_me.from_pydata(new_verts, new_edges, [])
-    new_me.update()
-    new_ob = bpy.data.objects.new("generated", new_me)
+    new_me.update(calc_edges=True)
+    new_ob = bpy.data.objects.new("tessellate_temp", new_me)
 
     # vertex group
     if bool_vertex_group:
@@ -327,6 +404,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.fill_mode = operator.fill_mode
     ob.tissue_tessellate.bool_vertex_group = operator.bool_vertex_group
     ob.tissue_tessellate.bool_selection = operator.bool_selection
+    ob.tissue_tessellate.bool_shapekeys = operator.bool_shapekeys
     return ob
 
 
@@ -348,6 +426,7 @@ class tissue_tessellate_prop(bpy.types.PropertyGroup):
     vertexgroup = bpy.props.StringProperty()
     bool_vertex_group = bpy.props.BoolProperty()
     bool_selection = bpy.props.BoolProperty()
+    bool_shapekeys = bpy.props.BoolProperty()
 
 
 
@@ -377,6 +456,7 @@ class tessellate(bpy.types.Operator):
     random_seed = bpy.props.IntProperty(name="Seed", default=0, soft_min=0, soft_max=10, description="Random seed")
     bool_vertex_group = bpy.props.BoolProperty(name="Map Vertex Group", default=False, description="Map on generated geometry the active Vertex Group from the base object")
     bool_selection = bpy.props.BoolProperty(name="On selected Faces", default=False, description="Create Tessellation only on selected faces")
+    bool_shapekeys = bpy.props.BoolProperty(name="Use Shape Keys", default=False, description="Use component's active Shape Key according to active Vertex Group of the base object")
     #vertex_group = layout.prop_search(act, "vertexgroup", act, "vertex_groups", text="Scale")
 
     working_on = ""
@@ -500,6 +580,7 @@ class tessellate(bpy.types.Operator):
         row = col.row(align=True)
         if len(bpy.data.objects[self.generator].vertex_groups) > 0: row.prop(self, "bool_vertex_group")
         else: self.bool_vertex_group = False
+        if self.bool_vertex_group: row.prop(self, "bool_shapekeys", text="Use Shape Keys")
 
         col = box.column(align=True)
         row = col.row(align=True)
@@ -514,6 +595,7 @@ class tessellate(bpy.types.Operator):
         col = box.column(align=True)
         row = col.row(align=True)
         if len(bpy.data.objects[self.component].modifiers) > 0: row.prop(self, "com_modifiers", text="Modifiers")
+
 
         row = col.row(align=True)
         row.label(text="Component XY:")
@@ -584,7 +666,7 @@ class tessellate(bpy.types.Operator):
 
             bpy.ops.object.select_all(action='TOGGLE')
 
-            new_ob = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection)
+            new_ob = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection, self.bool_shapekeys)
             new_ob.name = self.object_name
             #new_ob = bpy.data.objects.new(self.object_name, new_me)
 
@@ -597,7 +679,8 @@ class tessellate(bpy.types.Operator):
             bpy.context.scene.objects.active = new_ob
             if self.merge:
                 bpy.ops.object.mode_set(mode = 'EDIT')
-                bpy.ops.mesh.remove_doubles(threshold=self.merge_thres, use_unselected=True)
+                bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
+                bpy.ops.mesh.remove_doubles(threshold=self.merge_thres, use_unselected=False)
                 bpy.ops.object.mode_set(mode = 'OBJECT')
 
             # storing parameters as object's properties
@@ -617,7 +700,76 @@ class tessellate(bpy.types.Operator):
 class update_tessellate(bpy.types.Operator):
 #class adaptive_duplifaces(bpy.types.Panel):
     bl_idname = "object.update_tessellate"
-    bl_label = "Update"
+    bl_label = "Refresh"
+    bl_description = "Update the tessellated mesh according to base and component changes. Allow also to change tessellation's parameters"
+    bl_options = {'REGISTER', 'UNDO'}
+    go = False
+
+
+    ob = bpy.types.Object
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            return context.active_object.tissue_tessellate.generator != "" and context.active_object.tissue_tessellate.component != ""
+        except: return False
+
+
+    def execute(self, context):
+
+        ob = bpy.context.active_object
+
+        if not self.go:
+            generator = ob.tissue_tessellate.generator
+            component = ob.tissue_tessellate.component
+            zscale = ob.tissue_tessellate.zscale
+            scale_mode = ob.tissue_tessellate.scale_mode
+            rotation_mode = ob.tissue_tessellate.rotation_mode
+            offset = ob.tissue_tessellate.offset
+            merge = ob.tissue_tessellate.merge
+            merge_thres = ob.tissue_tessellate.merge_thres
+            gen_modifiers = ob.tissue_tessellate.gen_modifiers
+            com_modifiers = ob.tissue_tessellate.com_modifiers
+            bool_random = ob.tissue_tessellate.bool_random
+            random_seed = ob.tissue_tessellate.random_seed
+            fill_mode = ob.tissue_tessellate.fill_mode
+            bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
+            bool_selection = ob.tissue_tessellate.bool_selection
+            bool_shapekeys = ob.tissue_tessellate.bool_shapekeys
+            mode = ob.tissue_tessellate.mode
+
+        if(generator == "" or component == ""):
+            self.report({'ERROR'}, "Active object must be Tessellate before Update")
+            return {'CANCELLED'}
+
+        ob0 = bpy.data.objects[generator]
+        ob1 = bpy.data.objects[component]
+
+        me0 = ob0.data
+        verts = me0.vertices
+
+        temp_ob = tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, scale_mode, rotation_mode, random_seed, fill_mode, bool_vertex_group, bool_selection, bool_shapekeys)
+        ob.data = temp_ob.data
+        bpy.data.objects.remove(temp_ob)
+
+
+        if merge:
+            bpy.ops.object.mode_set(mode = 'EDIT')
+            bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
+            bpy.ops.mesh.remove_doubles(threshold=merge_thres, use_unselected=False)
+            bpy.ops.object.mode_set(mode = 'OBJECT')
+
+
+        return {'FINISHED'}
+
+    def check(self, context):
+        return True
+
+
+class settings_tessellate(bpy.types.Operator):
+#class adaptive_duplifaces(bpy.types.Panel):
+    bl_idname = "object.settings_tessellate"
+    bl_label = "Settings"
     bl_description = "Update the tessellated mesh according to base and component changes. Allow also to change tessellation's parameters"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -639,6 +791,7 @@ class update_tessellate(bpy.types.Operator):
     random_seed = bpy.props.IntProperty(name="Seed", default=0, soft_min=0, soft_max=10, description="Random seed")
     bool_vertex_group = bpy.props.BoolProperty(name="Map Vertex Group", default=False, description="Map on generated geometry the active Vertex Group from the base object")
     bool_selection = bpy.props.BoolProperty(name="On selected Faces", default=False, description="Create Tessellation only on select faces")
+    bool_shapekeys = bpy.props.BoolProperty(name="Use Shape Keys", default=False, description="Use component's active Shape Key according to active Vertex Group of the base object")
     go = False
 
     ob = bpy.types.Object
@@ -738,6 +891,7 @@ class update_tessellate(bpy.types.Operator):
         col = box.column(align=True)
         row = col.row(align=True)
         row.prop(self, "bool_vertex_group")
+        if self.bool_vertex_group: row.prop(self, "bool_shapekeys", text="Use Shape Keys")
 
 
         col = box.column(align=True)
@@ -797,6 +951,7 @@ class update_tessellate(bpy.types.Operator):
             self.fill_mode = self.ob.tissue_tessellate.fill_mode
             self.bool_vertex_group = self.ob.tissue_tessellate.bool_vertex_group
             self.bool_selection = self.ob.tissue_tessellate.bool_selection
+            self.bool_shapekeys = self.ob.tissue_tessellate.bool_shapekeys
 
         if(self.generator == "" or self.component == ""):
             self.report({'ERROR'}, "Active object must be Tessellate before Update")
@@ -808,15 +963,14 @@ class update_tessellate(bpy.types.Operator):
         me0 = ob0.data
         verts = me0.vertices
 
-
-        self.ob.data = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection).data
-
-        #tassellate(ob0, ob1, ob.tissue_tessellate.offset, ob.tissue_tessellate.zscale, ob.tissue_tessellate.gen_modifiers, ob.tissue_tessellate.com_modifiers, ob.tissue_tessellate.mode, ob.tissue_tessellate.scale_mode)
-        #else: ob.data = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode)
+        temp_ob = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection, self.bool_shapekeys)
+        self.ob.data = temp_ob.data
+        bpy.data.objects.remove(temp_ob)
 
         if self.merge:
             bpy.ops.object.mode_set(mode = 'EDIT')
-            bpy.ops.mesh.remove_doubles(threshold=self.merge_thres, use_unselected=True)
+            bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
+            bpy.ops.mesh.remove_doubles(threshold=self.merge_thres, use_unselected=False)
             bpy.ops.object.mode_set(mode = 'OBJECT')
 
         self.ob = store_parameters(self, self.ob)
@@ -848,6 +1002,7 @@ class tessellate_panel(bpy.types.Panel):
         col.label(text="Add:")
         col.operator("object.tessellate")#, icon="STRANDS")
         #col.enable = False
+        col.operator("object.settings_tessellate")
         col.operator("object.update_tessellate")
         #col.operator("object.adaptive_duplifaces", icon="MESH_CUBE")
 
@@ -886,7 +1041,9 @@ class rotate_face(bpy.types.Operator):
             p.vertices = p.vertices[1:] + p.vertices[:1]
 
         bpy.ops.object.mode_set(mode='EDIT')
-        me.vertices[0].co[0] = 10
+        bpy.ops.mesh.flip_normals()
+        bpy.ops.mesh.flip_normals()
+        #me.vertices[0].co[0] = 10
         me.update(calc_edges=True)
 
         #update tessellated meshes
@@ -903,6 +1060,7 @@ def register():
     bpy.utils.register_class(tissue_tessellate_prop)
     bpy.utils.register_class(tessellate)
     bpy.utils.register_class(update_tessellate)
+    bpy.utils.register_class(settings_tessellate)
     bpy.utils.register_class(tessellate_panel)
     bpy.utils.register_class(rotate_face)
 
@@ -913,6 +1071,7 @@ def unregister():
     bpy.utils.unregister_class(tissue_tessellate_prop)
     bpy.utils.unregister_class(tessellate)
     bpy.utils.unregister_class(update_tessellate)
+    bpy.utils.unregister_class(settings_tessellate)
     bpy.utils.unregister_class(tessellate_panel)
     bpy.utils.unregister_class(rotate_face)
 
