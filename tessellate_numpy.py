@@ -965,8 +965,19 @@ class settings_tessellate(bpy.types.Operator):
         verts = me0.vertices
 
         temp_ob = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection, self.bool_shapekeys)
+
+        # transfer mesh data
         self.ob.data = temp_ob.data
+
+        # create object in order to transfer vertex group
+        scene = bpy.context.scene
+        scene.objects.link(temp_ob)
+        temp_ob.select = True
+        bpy.context.scene.objects.active = temp_ob
+        bpy.ops.object.vertex_group_copy_to_linked()
+        scene.objects.unlink(temp_ob)
         bpy.data.objects.remove(temp_ob)
+        bpy.context.scene.objects.active = self.ob
 
         if self.merge:
             bpy.ops.object.mode_set(mode = 'EDIT')
