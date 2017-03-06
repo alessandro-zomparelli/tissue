@@ -111,7 +111,7 @@ def register():
     bpy.utils.register_module(__name__)
     #tessellate.register()
     #bpy.types.Object.tissue_tessellate = bpy.props.PointerProperty(tessellate_numpy.tissue_tessellate_props)
-    #bpy.types.Panel.vertexgroup = bpy.props.StringProperty()
+    #bpy.types.Scene.tessellate_working_on = bpy.props.StringProperty(name="Working On")
     bpy.types.Object.tissue_tessellate = bpy.props.PointerProperty(type=tessellate_numpy.tissue_tessellate_prop)
 
 
