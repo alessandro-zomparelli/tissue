@@ -43,6 +43,18 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     else: me0 = ob0.data
     ob0.data = me0
 
+    base_polygons = []
+
+    # check if zero selected faces
+    if bool_selection:
+        for p in ob0.data.polygons:
+            if p.select: base_polygons.append(p)
+    else:
+        base_polygons = ob0.data.polygons
+
+    if len(base_polygons) == 0: return 0
+
+
     if com_modifiers:       # apply component modifiers
         me1 = ob1.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
     else: me1 = ob1.data
@@ -121,8 +133,9 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     new_faces = fs1[:]
 
     # component edges
-    es1 = [[i for i in e.vertices] for e in me1.edges]
+    es1 = [[i for i in e.vertices] for e in me1.edges if e.is_loose]
     new_edges = es1[:]
+    print(new_edges)
 
     j = 0
 
@@ -185,7 +198,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
         fan_polygons = []
         selected_faces = []
 
-        for p in me0.polygons:
+        #for p in me0.polygons:
+        for p in base_polygons:
 
             #if bool_selection and not p.select: continue
 
@@ -203,22 +217,24 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
             for i in range(len(p.vertices)):
                 fan_polygons.append((p.vertices[i], p.vertices[(i+1)%len(p.vertices)], last_vert, last_vert))
-                if bool_selection: selected_faces.append(p.select)
+                ###if bool_selection: selected_faces.append(p.select)
 
         fan_me = bpy.data.meshes.new('Fan.Mesh')
         fan_me.from_pydata(tuple(fan_verts), [], tuple(fan_polygons))
         me0 = fan_me
         verts0 = me0.vertices
-        for i in range(len(selected_faces)):
-            fan_me.polygons[i].select = selected_faces[i]
+        base_polygons = me0.polygons
+        #for i in range(len(selected_faces)):
+        #    fan_me.polygons[i].select = selected_faces[i]
 
 
     count = 0   # necessary for UV calculation
 
     ### TESSELLATION ###
 
-    for p in me0.polygons:
-        if bool_selection and not p.select: continue
+    #for p in me0.polygons:
+    for p in base_polygons:
+        #if bool_selection and not p.select: continue
 
 
         # active vertex group
@@ -714,6 +730,11 @@ class tessellate(bpy.types.Operator):
             bpy.ops.object.select_all(action='TOGGLE')
 
             new_ob = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection, self.bool_shapekeys)
+            if new_ob == 0:
+                message = "Zero faces selected in the Base mesh!"
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
+
             new_ob.name = self.object_name
             #new_ob = bpy.data.objects.new(self.object_name, new_me)
 
@@ -798,6 +819,12 @@ class update_tessellate(bpy.types.Operator):
         verts = me0.vertices
 
         temp_ob = tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, scale_mode, rotation_mode, random_seed, fill_mode, bool_vertex_group, bool_selection, bool_shapekeys)
+
+        if temp_ob == 0:
+            message = "Zero faces selected in the Base mesh!"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+
         ob.data = temp_ob.data
         bpy.data.objects.remove(temp_ob)
 
@@ -1042,6 +1069,11 @@ class settings_tessellate(bpy.types.Operator):
 
         temp_ob = tassellate(ob0, ob1, self.offset, self.zscale, self.gen_modifiers, self.com_modifiers, self.mode, self.scale_mode, self.rotation_mode, self.random_seed, self.fill_mode, self.bool_vertex_group, self.bool_selection, self.bool_shapekeys)
 
+        if temp_ob == 0:
+            message = "Zero faces selected in the Base mesh!"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+
         # transfer mesh data
         self.ob.data = temp_ob.data
 
@@ -1093,13 +1125,13 @@ class tessellate_panel(bpy.types.Panel):
         col.label(text="Add:")
         col.operator("object.tessellate")#, icon="STRANDS")
         #col.enable = False
-
-        col = layout.column(align=True)
-        col.operator("object.settings_tessellate")
-        col.operator("object.update_tessellate")
         #col.operator("object.adaptive_duplifaces", icon="MESH_CUBE")
 
+        col = layout.column(align=True)
         col.label(text="Edit:")
+        col.operator("object.settings_tessellate")
+        col.operator("object.update_tessellate")
+
         col = layout.column(align=True)
         col.operator("mesh.rotate_face")
 
