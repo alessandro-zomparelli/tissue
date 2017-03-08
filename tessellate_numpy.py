@@ -85,7 +85,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     first = True
 
     for v in me1.vertices:
-        vert = ( ob1.matrix_world * v.co )
+        vert = v.co#( ob1.matrix_world * v.co )
 
         if vert[0] < min[0] or first:
             min[0] = vert[0]
@@ -112,7 +112,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
     for v in me1.vertices:
         if mode=="ADAPTIVE":
-            vert = ( ob1.matrix_world * v.co ) - min
+            vert = v.co - min#( ob1.matrix_world * v.co ) - min
             vert[0] = vert[0] / bb[0]
             vert[1] = vert[1] / bb[1]
             vert[2] = (vert[2] + (-0.5 + offset*0.5)*bb[2])*zscale
