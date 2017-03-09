@@ -1,5 +1,6 @@
+import random
 # --------------------- ADAPTIVE DUPLIFACES --------------------#
-#-------------------------- version 0.6 ------------------------#
+#-------------------------- version 0.7 ------------------------#
 #                                                               #
 # Creates duplicates of selected mesh to active morphing the    #
 # shape according to target faces.                              #
@@ -17,7 +18,6 @@ import bpy
 from mathutils import Vector
 import numpy as np
 from math import sqrt
-import random
 
 
 def lerp(a,b,t):
@@ -113,8 +113,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     for v in me1.vertices:
         if mode=="ADAPTIVE":
             vert = v.co - min#( ob1.matrix_world * v.co ) - min
-            vert[0] = vert[0] / bb[0]
-            vert[1] = vert[1] / bb[1]
+            vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
+            vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
             vert[2] = (vert[2] + (-0.5 + offset*0.5)*bb[2])*zscale
         else:
             vert = v.co.xyz
@@ -747,6 +747,7 @@ class tessellate(bpy.types.Operator):
             bpy.context.scene.objects.active = new_ob
             if self.merge:
                 bpy.ops.object.mode_set(mode = 'EDIT')
+                bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
                 bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
                 bpy.ops.mesh.remove_doubles(threshold=self.merge_thres, use_unselected=False)
                 bpy.ops.object.mode_set(mode = 'OBJECT')
@@ -757,6 +758,9 @@ class tessellate(bpy.types.Operator):
             self.object_name = new_ob.name
 
             self.working_on = self.object_name
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='OBJECT')
 
         return {'FINISHED'}
 
@@ -836,6 +840,9 @@ class update_tessellate(bpy.types.Operator):
             bpy.ops.object.mode_set(mode = 'OBJECT')
 
 
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+
         return {'FINISHED'}
 
     def check(self, context):
@@ -899,6 +906,7 @@ class settings_tessellate(bpy.types.Operator):
             self.fill_mode = ob0.tissue_tessellate.fill_mode
             self.bool_vertex_group = ob0.tissue_tessellate.bool_vertex_group
             self.bool_selection = ob0.tissue_tessellate.bool_selection
+            self.bool_shapekeys = ob0.tissue_tessellate.bool_shapekeys
 
 
         # start drawing
@@ -1092,11 +1100,17 @@ class settings_tessellate(bpy.types.Operator):
 
         if self.merge:
             bpy.ops.object.mode_set(mode = 'EDIT')
+            bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
             bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
             bpy.ops.mesh.remove_doubles(threshold=self.merge_thres, use_unselected=False)
             bpy.ops.object.mode_set(mode = 'OBJECT')
 
         self.ob = store_parameters(self, self.ob)
+
+
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='OBJECT')
 
         return {'FINISHED'}
 
