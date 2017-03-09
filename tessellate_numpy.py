@@ -135,8 +135,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     # component edges
     es1 = [[i for i in e.vertices] for e in me1.edges if e.is_loose]
     new_edges = es1[:]
-    print(new_edges)
-
+    
     j = 0
 
 
