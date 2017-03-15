@@ -1,5 +1,5 @@
 # --------------------- ADAPTIVE DUPLIFACES --------------------#
-#-------------------------- version 0.7 ------------------------#
+#-------------------------- version 0.8 ------------------------#
 #                                                               #
 # Creates duplicates of selected mesh to active morphing the    #
 # shape according to target faces.                              #
@@ -135,7 +135,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     # component edges
     es1 = [[i for i in e.vertices] for e in me1.edges if e.is_loose]
     new_edges = es1[:]
-    
+
     j = 0
 
 
@@ -154,7 +154,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
             for v in me1.shape_keys.key_blocks[active_key].data:
                 if mode=="ADAPTIVE":
-                    vert = ( ob1.matrix_world * v.co ) - min
+                    vert = v.co - min
+                    #vert = ( ob1.matrix_world * v.co ) - min
                     vert[0] = vert[0] / bb[0]
                     vert[1] = vert[1] / bb[1]
                     vert[2] = (vert[2] + (-0.5 + offset*0.5)*bb[2])*zscale
@@ -457,9 +458,9 @@ class tessellate(bpy.types.Operator):
 
     object_name = bpy.props.StringProperty(name="", description="Name of the generated object")
     zscale = bpy.props.FloatProperty(name="Scale", default=1, soft_min=0, soft_max=10, description="Scale factor for the component thickness")
-    scale_mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Proportional", "")), default='COSTANT', name="Z-Scale according to faces size")
+    scale_mode = bpy.props.EnumProperty(items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Proportional", "")), default='CONSTANT', name="Z-Scale according to faces size")
     offset = bpy.props.FloatProperty(name="Surface Offset", default=0, min=-1, max=1,  soft_min=-1, soft_max=1, description="Surface offset")
-    mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Adaptive", "")), default='ADAPTIVE', name="Component Mode")
+    mode = bpy.props.EnumProperty(items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Adaptive", "")), default='ADAPTIVE', name="Component Mode")
     rotation_mode = bpy.props.EnumProperty(items=(('RANDOM', "Random", ""), ('UV', "Active UV", ""), ('DEFAULT', "Default", "")), default='DEFAULT', name="Component Rotation")
     fill_mode = bpy.props.EnumProperty(items=(('QUAD', "Quad", ""), ('FAN', "Fan", "")), default='QUAD', name="Fill Mode")
     gen_modifiers = bpy.props.BoolProperty(name="Generator Modifiers", default=False, description="Apply modifiers to base object")
@@ -564,10 +565,14 @@ class tessellate(bpy.types.Operator):
             row = col.row(align=True)
             col2 = row.column(align=True)
             col2.prop(self, "gen_modifiers", text="Use Modifiers")
-            if len(bpy.data.objects[self.generator].modifiers) == 0: col2.enabled = False
+            if len(bpy.data.objects[self.generator].modifiers) == 0:
+                col2.enabled = False
+                self.gen_modifiers = False
             col2 = row.column(align=True)
             col2.prop(self, "com_modifiers", text="Use Modifiers")
-            if len(bpy.data.objects[self.component].modifiers) == 0: col2.enabled = False
+            if len(bpy.data.objects[self.component].modifiers) == 0:
+                col2.enabled = False
+                self.com_modifiers = False
 
             # On selected faces
             row = col.row(align=True)
@@ -662,13 +667,18 @@ class tessellate(bpy.types.Operator):
             row = col.row(align=True)
             col2 = row.column(align=True)
             col2.prop(self, "bool_vertex_group")
-            if len(bpy.data.objects[self.generator].vertex_groups) == 0: col2.enabled = False
+            if len(bpy.data.objects[self.generator].vertex_groups) == 0:
+                col2.enabled = False
+                bool_vertex_group = False
             col2 = row.column(align=True)
             col2.prop(self, "bool_shapekeys", text="Use Shape Keys")
             if len(bpy.data.objects[self.generator].vertex_groups) == 0 or bpy.data.objects[self.component].data.shape_keys == None:
                 col2.enabled = False
+                bool_shapekeys = False
             elif len(bpy.data.objects[self.generator].vertex_groups) == 0 or bpy.data.objects[self.component].data.shape_keys != None:
-                if len(bpy.data.objects[self.component].data.shape_keys.key_blocks) < 2: col2.enabled = False
+                if len(bpy.data.objects[self.component].data.shape_keys.key_blocks) < 2:
+                    col2.enabled = False
+                    bool_shapekeys = False
 
 
 
@@ -834,6 +844,7 @@ class update_tessellate(bpy.types.Operator):
 
         if merge:
             bpy.ops.object.mode_set(mode = 'EDIT')
+            bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
             bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
             bpy.ops.mesh.remove_doubles(threshold=merge_thres, use_unselected=False)
             bpy.ops.object.mode_set(mode = 'OBJECT')
@@ -857,9 +868,9 @@ class settings_tessellate(bpy.types.Operator):
 
     object_name = bpy.props.StringProperty(name="", description="Name of the generated object")
     zscale = bpy.props.FloatProperty(name="Scale", default=1, soft_min=0, soft_max=10, description="Scale factor for the component thickness")
-    scale_mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Proportional", "")), default='ADAPTIVE', name="Scale variation")
+    scale_mode = bpy.props.EnumProperty(items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Proportional", "")), default='ADAPTIVE', name="Scale variation")
     offset = bpy.props.FloatProperty(name="Surface Offset", default=0, min=-1, max=1,  soft_min=-1, soft_max=1, description="Surface offset")
-    mode = bpy.props.EnumProperty(items=(('COSTANT', "Costant", ""), ('ADAPTIVE', "Adaptive", "")), default='ADAPTIVE', name="Component Mode")
+    mode = bpy.props.EnumProperty(items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Adaptive", "")), default='ADAPTIVE', name="Component Mode")
     rotation_mode = bpy.props.EnumProperty(items=(('RANDOM', "Random", ""), ('UV', "Active UV", ""), ('DEFAULT', "Default", "")), default='DEFAULT', name="Component Rotation")
     fill_mode = bpy.props.EnumProperty(items=(('QUAD', "Quad", ""), ('FAN', "Fan", "")), default='QUAD', name="Fill Mode")
     gen_modifiers = bpy.props.BoolProperty(name="Generator Modifiers", default=False, description="Apply modifiers to base object")
@@ -928,10 +939,14 @@ class settings_tessellate(bpy.types.Operator):
         row = col.row(align=True)
         col2 = row.column(align=True)
         col2.prop(self, "gen_modifiers", text="Use Modifiers")
-        if len(bpy.data.objects[self.generator].modifiers) == 0: col2.enabled = False
+        if len(bpy.data.objects[self.generator].modifiers) == 0:
+            col2.enabled = False
+            self.gen_modifiers = False
         col2 = row.column(align=True)
         col2.prop(self, "com_modifiers", text="Use Modifiers")
-        if len(bpy.data.objects[self.component].modifiers) == 0: col2.enabled = False
+        if len(bpy.data.objects[self.component].modifiers) == 0:
+            col2.enabled = False
+            self.com_modifiers = False
 
         # On selected faces
         row = col.row(align=True)
@@ -998,7 +1013,7 @@ class settings_tessellate(bpy.types.Operator):
         row = col.row(align=True)
         row.label(text="Component XY:")
         row = col.row(align=True)
-        row.prop(self, "mode", text="Component XY", icon='NONE', expand=True, slider=False, toggle=False, icon_only=False, event=False, full_event=False, emboss=True, index=-1)
+        row.prop(self, "scale_mode", text="Component XY", icon='NONE', expand=True, slider=False, toggle=False, icon_only=False, event=False, full_event=False, emboss=True, index=-1)
 
         # component Z
         col.label(text="Component Z:")
@@ -1021,13 +1036,18 @@ class settings_tessellate(bpy.types.Operator):
         row = col.row(align=True)
         col2 = row.column(align=True)
         col2.prop(self, "bool_vertex_group")
-        if len(bpy.data.objects[self.generator].vertex_groups) == 0: col2.enabled = False
+        if len(bpy.data.objects[self.generator].vertex_groups) == 0:
+            col2.enabled = False
+            bool_vertex_group = False
         col2 = row.column(align=True)
         col2.prop(self, "bool_shapekeys", text="Use Shape Keys")
         if len(bpy.data.objects[self.generator].vertex_groups) == 0 or bpy.data.objects[self.component].data.shape_keys == None:
             col2.enabled = False
+            bool_shapekeys = False
         elif len(bpy.data.objects[self.generator].vertex_groups) == 0 or bpy.data.objects[self.component].data.shape_keys != None:
-            if len(bpy.data.objects[self.component].data.shape_keys.key_blocks) < 2: col2.enabled = False
+            if len(bpy.data.objects[self.component].data.shape_keys.key_blocks) < 2:
+                col2.enabled = False
+                bool_shapekeys = False
 
 
 

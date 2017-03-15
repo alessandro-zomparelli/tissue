@@ -21,29 +21,29 @@
 import bpy
 import math
 
-bl_info = { 
-	"name": "Colors/Groups Exchanger",  
-	"author": "Alessandro Zomparelli (Co-de-iT)",  
-	"version": (0, 1),  
-	"blender": (2, 7, 4),  
-	"location": "",  
-	"description": "Convert vertex colors channels to vertex groups and vertex groups to colors",  
-	"warning": "",  
-	"wiki_url": "",  
-	"tracker_url": "",  
-	"category": "Mesh"}  
-      
-class vertex_colors_to_vertex_groups(bpy.types.Operator):  
-    bl_idname = "object.vertex_colors_to_vertex_groups"  
+bl_info = {
+	"name": "Colors/Groups Exchanger",
+	"author": "Alessandro Zomparelli (Co-de-iT)",
+	"version": (0, 1),
+	"blender": (2, 7, 8),
+	"location": "",
+	"description": "Convert vertex colors channels to vertex groups and vertex groups to colors",
+	"warning": "",
+	"wiki_url": "",
+	"tracker_url": "",
+	"category": "Mesh"}
+
+class vertex_colors_to_vertex_groups(bpy.types.Operator):
+    bl_idname = "object.vertex_colors_to_vertex_groups"
     bl_label = "Weight from Colors"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
     red = bpy.props.BoolProperty(name="red channel", default=False, description="convert red channel")
     green = bpy.props.BoolProperty(name="green channel", default=False, description="convert green channel")
     blue = bpy.props.BoolProperty(name="blue channel", default=False, description="convert blue channel")
     value = bpy.props.BoolProperty(name="value channel", default=True, description="convert value channel")
     invert = bpy.props.BoolProperty(name="invert", default=False, description="invert all color channels")
-      
+
     def execute(self, context):
         obj = bpy.context.active_object
         id = len(obj.vertex_groups)
@@ -51,14 +51,14 @@ class vertex_colors_to_vertex_groups(bpy.types.Operator):
         id_green = id
         id_blue = id
         id_value = id
-        
+
         boolCol = len(obj.data.vertex_colors)
         if(boolCol): col_name = obj.data.vertex_colors.active.name
-        
+
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
 
-        
+
         if(self.red and boolCol):
             bpy.ops.object.vertex_group_add()
             bpy.ops.object.vertex_group_assign()
@@ -83,17 +83,17 @@ class vertex_colors_to_vertex_groups(bpy.types.Operator):
             id_value = id
             obj.vertex_groups[id_value].name = col_name + '_value'
             id+=1
-        
+
         mult = 1
         if(self.invert): mult = -1
-        
+
         bpy.ops.object.mode_set(mode='OBJECT')
-        
+
         sub_red = 1 + self.value + self.blue + self.green
         sub_green = 1 + self.value + self.blue
         sub_blue = 1 + self.value
         sub_value = 1
-        
+
         id = len(obj.vertex_groups)
         if(id_red <= id and id_green <= id and id_blue <= id and id_value <= id and boolCol):
             v_colors = obj.data.vertex_colors.active.data
@@ -107,40 +107,40 @@ class vertex_colors_to_vertex_groups(bpy.types.Operator):
                     if(self.value): gr[min(len(gr)-sub_value, id_value)].weight = self.invert + mult * v_colors[i].color.v
                     #if(self.value and len(obj.data.vertices[v].groups)>id_value): obj.data.vertices[v].groups[id_value].weight = self.invert + mult * v_colors[i].color.v
                     i+=1
-                    
+
             bpy.ops.paint.weight_paint_toggle()
-        
-        return {'FINISHED'}  
-      
-      
-class vertex_group_to_vertex_colors(bpy.types.Operator):  
-    bl_idname = "object.vertex_group_to_vertex_colors"  
+
+        return {'FINISHED'}
+
+
+class vertex_group_to_vertex_colors(bpy.types.Operator):
+    bl_idname = "object.vertex_group_to_vertex_colors"
     bl_label = "Colors from Weight"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
     channel = bpy.props.EnumProperty(items=[('Blue', 'Blue Channel', 'Convert to Blue Channel'),
                                         ('Green', 'Green Channel', 'Convert to Green Channel'),
                                         ('Red', 'Red Channel', 'Convert to Red Channel'),
                                         ('Value', 'Value Channel', 'Convert to Grayscale'),
                                         ('False Colors', 'False Colors', 'Convert to False Colors')],
                                         name="Convert to", description="Choose how to convert vertex group", default="Value", options={'LIBRARY_EDITABLE'})
-    
+
     invert = bpy.props.BoolProperty(name="invert", default=False, description="invert color channel")
-      
+
     def execute(self, context):
         obj = bpy.context.active_object
-        
+
         group_id = obj.vertex_groups.active_index
-        
+
         if (group_id == -1):
             return {'FINISHED'}
-                
+
         bpy.ops.object.mode_set(mode='OBJECT')
-        
+
         group_name = obj.vertex_groups[group_id].name
         bpy.ops.mesh.vertex_color_add()
         colors_id = obj.data.vertex_colors.active_index
-        
+
         colors_name = group_name
         if(self.channel == 'False Colors'): colors_name += "_false_colors"
         elif(self.channel == 'Value'):  colors_name += "_value"
@@ -148,20 +148,20 @@ class vertex_group_to_vertex_colors(bpy.types.Operator):
         elif(self.channel == 'Green'):  colors_name += "_green"
         elif(self.channel == 'Blue'):  colors_name += "_blue"
         bpy.context.object.data.vertex_colors[colors_id].name = colors_name
-        
+
         v_colors = obj.data.vertex_colors.active.data
-        
+
         mult = 1
         if(self.invert): mult = -1
-        
+
         i = 0
         for f in obj.data.polygons:
             for v in f.vertices:
                 gr = obj.data.vertices[v].groups
-                
+
                 if(self.channel == 'False Colors'): v_colors[i].color = (0,0,1)
                 else: v_colors[i].color = (0,0,0)
-                
+
                 for g in gr:
                     if g.group == group_id:
                         if(self.channel == 'False Colors'):
@@ -178,12 +178,66 @@ class vertex_group_to_vertex_colors(bpy.types.Operator):
                         elif(self.channel == 'Blue'):
                             v_colors[i].color = (0,0, self.invert + mult * g.weight)
                 i+=1
-            
+
         bpy.ops.paint.vertex_paint_toggle()
         bpy.context.object.data.vertex_colors[colors_id].active_render = True
 
-        return {'FINISHED'}  
-      
+        return {'FINISHED'}
+
+class face_area_to_vertex_groups(bpy.types.Operator):
+    bl_idname = "object.face_area_to_vertex_groups"
+    bl_label = "Weight from Faces Area"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    invert = bpy.props.BoolProperty(name="invert", default=False, description="invert values")
+
+    def execute(self, context):
+        obj = bpy.context.active_object
+        id_value = len(obj.vertex_groups)
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+
+        bpy.ops.object.vertex_group_add()
+        bpy.ops.object.vertex_group_assign()
+        obj.vertex_groups[id_value].name = 'faces_area'
+
+        mult = 1
+
+        if self.invert: mult = -1
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+        min_area = False
+        max_area = False
+        n_values = [0]*len(obj.data.vertices)
+        values = [0]*len(obj.data.vertices)
+        print(len(values))
+        for p in obj.data.polygons:
+            for v in p.vertices:
+                n_values[v] += 1
+                values[v] += p.area
+
+                if min_area:
+                    if min_area > p.area: min_area = p.area
+                else: min_area = p.area
+
+                if max_area:
+                    if max_area < p.area: max_area = p.area
+                else: max_area = p.area
+
+        id = len(obj.vertex_groups)
+        for v in obj.data.vertices:
+            gr = v.groups
+            index = v.index
+            try:
+                gr[min(len(gr)-1, id_value)].weight = self.invert + mult * ((values[index] / n_values[index] - min_area)/(max_area - min_area))
+            except:
+                gr[min(len(gr)-1, id_value)].weight = 0.5
+
+        bpy.ops.paint.weight_paint_toggle()
+
+        return {'FINISHED'}
+
 
 class colors_groups_exchanger_panel(bpy.types.Panel):
     bl_label = "Colors-Weight Exchanger"
@@ -191,7 +245,7 @@ class colors_groups_exchanger_panel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     #bl_context = "objectmode"
-         
+
     def draw(self, context):
         layout = self.layout
         col = layout.column(align=True)
@@ -199,17 +253,21 @@ class colors_groups_exchanger_panel(bpy.types.Panel):
         #col.label(text="Add:")
         col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL")
         col.operator("object.vertex_colors_to_vertex_groups", icon="GROUP_VERTEX")
+        col.separator()
+        col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
         #col.operator("object.adaptive_duplifaces", icon="MESH_CUBE")
-      
+
 def register():
     bpy.utils.register_class(vertex_colors_to_vertex_groups)
-    bpy.utils.register_class(vertex_group_to_vertex_colors) 
-    bpy.utils.register_class(colors_groups_exchanger_panel)  
-      
+    bpy.utils.register_class(vertex_group_to_vertex_colors)
+    bpy.utils.register_class(face_area_to_vertex_groups)
+    bpy.utils.register_class(colors_groups_exchanger_panel)
+
 def unregister():
-    bpy.utils.unregister_class(vertex_colors_to_vertex_groups)  
-    bpy.utils.unregister_class(vertex_group_to_vertex_colors)  
-    bpy.utils.unregister_class(colors_groups_exchanger_panel)  
-      
-if __name__ == "__main__":  
-    register()  
+    bpy.utils.unregister_class(vertex_colors_to_vertex_groups)
+    bpy.utils.unregister_class(vertex_group_to_vertex_colors)
+    bpy.utils.unregister_class(face_area_to_vertex_groups)
+    bpy.utils.unregister_class(colors_groups_exchanger_panel)
+
+if __name__ == "__main__":
+    register()
