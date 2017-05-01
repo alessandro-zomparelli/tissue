@@ -1,6 +1,6 @@
 import random
 # --------------------- ADAPTIVE DUPLIFACES --------------------#
-#-------------------------- version 0.8 ------------------------#
+#------------------------- version 0.81 ------------------------#
 #                                                               #
 # Creates duplicates of selected mesh to active morphing the    #
 # shape according to target faces.                              #
@@ -144,9 +144,12 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
     ### SHAPE KEYS ###
 
     shapekeys = []
+    do_shapekeys = False
 
     if me1.shape_keys is not None and bool_shapekeys:
         if len(me1.shape_keys.key_blocks) > 1:
+
+            do_shapekeys = True
 
             # read active key
             active_key = ob1.active_shape_key_index
@@ -352,7 +355,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
             ### SHAPE KEYS ###
 
-            if me1.shape_keys is not None and bool_shapekeys:
+            #if me1.shape_keys is not None and bool_shapekeys:
+            if do_shapekeys:
 
                 # remapped vertex coordinates
                 v0 = vs0[0] + (vs0[1] -vs0[0])*vx_key
@@ -917,6 +921,7 @@ class settings_tessellate(bpy.types.Operator):
             self.bool_vertex_group = ob0.tissue_tessellate.bool_vertex_group
             self.bool_selection = ob0.tissue_tessellate.bool_selection
             self.bool_shapekeys = ob0.tissue_tessellate.bool_shapekeys
+            self.mode = ob0.tissue_tessellate.mode
 
 
         # start drawing

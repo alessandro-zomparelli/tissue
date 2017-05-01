@@ -1,5 +1,5 @@
 # --------------------------------- TISSUE ----------------------------------#
-#-------------------------------- version 0.2b ------------------------------#
+#-------------------------------- version 0.27 ------------------------------#
 #                                                                            #
 # Creates duplicates of selected mesh to active morphing the shape according #
 # to target faces.                                                           #
@@ -35,7 +35,7 @@ from mathutils import Vector
 bl_info = {
 	"name": "Tissue",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 2, 6),
+	"version": (0, 2, 7),
 	"blender": (2, 7, 8),
 	"location": "",
 	"description": "Tools for Computational Design",
