@@ -1,12 +1,12 @@
 import random
 # --------------------- ADAPTIVE DUPLIFACES --------------------#
-#------------------------- version 0.81 ------------------------#
+#------------------------- version 0.82 ------------------------#
 #                                                               #
 # Creates duplicates of selected mesh to active morphing the    #
 # shape according to target faces.                              #
 #                                                               #
 #                      Alessandro Zomparelli                    #
-#                             (2015)                            #
+#                             (2017)                            #
 #                                                               #
 # http://www.co-de-it.com/                                      #
 #                                                               #
@@ -204,6 +204,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
         #for p in me0.polygons:
         for p in base_polygons:
 
+
             #if bool_selection and not p.select: continue
 
             fan_center = Vector((0,0,0))
@@ -232,6 +233,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
 
 
     count = 0   # necessary for UV calculation
+
 
     ### TESSELLATION ###
 
@@ -402,6 +404,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode, sca
             new_ob.vertex_groups["generator_group"].add([i], new_vertex_group_np[i], "ADD")
 
     ob0.data = old_me0
+
     return new_ob
 
 
@@ -775,6 +778,18 @@ class tessellate(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.mode_set(mode='OBJECT')
 
+
+        ### MATERIALS ###
+        # create materials list
+        polygon_materials = [p.material_index for p in ob1.data.polygons]*int(len(new_ob.data.polygons) / len(ob1.data.polygons))
+        # assign old material
+        component_materials = [slot.material for slot in ob1.material_slots]
+        for i in range(len(component_materials)):
+            bpy.ops.object.material_slot_add()
+            bpy.context.object.material_slots[i].material = component_materials[i]
+        for i in range(len(new_ob.data.polygons)): new_ob.data.polygons[i].material_index = polygon_materials[i]
+
+
         return {'FINISHED'}
 
     def check(self, context):
@@ -856,6 +871,17 @@ class update_tessellate(bpy.types.Operator):
 
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.mode_set(mode='OBJECT')
+
+
+        ### MATERIALS ###
+        # create materials list
+        polygon_materials = [p.material_index for p in ob1.data.polygons]*int(len(ob.data.polygons) / len(ob1.data.polygons))
+        # assign old material
+        component_materials = [slot.material for slot in ob1.material_slots]
+        for i in range(len(component_materials)):
+            bpy.ops.object.material_slot_add()
+            bpy.context.object.material_slots[i].material = component_materials[i]
+        for i in range(len(ob.data.polygons)): ob.data.polygons[i].material_index = polygon_materials[i]
 
         return {'FINISHED'}
 
@@ -1018,7 +1044,7 @@ class settings_tessellate(bpy.types.Operator):
         row = col.row(align=True)
         row.label(text="Component XY:")
         row = col.row(align=True)
-        row.prop(self, "scale_mode", text="Component XY", icon='NONE', expand=True, slider=False, toggle=False, icon_only=False, event=False, full_event=False, emboss=True, index=-1)
+        row.prop(self, "mode", text="Component XY", icon='NONE', expand=True, slider=False, toggle=False, icon_only=False, event=False, full_event=False, emboss=True, index=-1)
 
         # component Z
         col.label(text="Component Z:")
@@ -1036,6 +1062,8 @@ class settings_tessellate(bpy.types.Operator):
 
         ### ADVANCED ###
         col = layout.column(align=True)
+        tessellate.rotation_mode
+
         col.label(text="Advanced Settings:")
         # vertex group + shape keys
         row = col.row(align=True)
@@ -1062,6 +1090,10 @@ class settings_tessellate(bpy.types.Operator):
     def execute(self, context):
 
         self.ob = bpy.context.active_object
+
+        old_material = None
+        if(len(self.ob.material_slots) > 0): old_material = self.ob.material_slots[0].material
+
 
         if not self.go:
             self.generator = self.ob.tissue_tessellate.generator
@@ -1135,6 +1167,18 @@ class settings_tessellate(bpy.types.Operator):
 
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.mode_set(mode='OBJECT')
+
+
+        ### MATERIALS ###
+        # create materials list
+        polygon_materials = [p.material_index for p in ob1.data.polygons]*int(len(self.ob.data.polygons) / len(ob1.data.polygons))
+        # assign old material
+        component_materials = [slot.material for slot in ob1.material_slots]
+        for i in range(len(component_materials)):
+            bpy.ops.object.material_slot_add()
+            bpy.context.object.material_slots[i].material = component_materials[i]
+        for i in range(len(self.ob.data.polygons)): self.ob.data.polygons[i].material_index = polygon_materials[i]
+
 
         return {'FINISHED'}
 
