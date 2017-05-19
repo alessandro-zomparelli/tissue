@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 # --------------------------------- TISSUE ----------------------------------#
 #-------------------------------- version 0.27 ------------------------------#
@@ -14,7 +15,24 @@
 # Creative Commons                                                           #
 # CC BY-SA 3.0                                                               #
 # http://creativecommons.org/licenses/by-sa/3.0/                             #
+=======
+>>>>>>> dev1
 
+# --------------------------------- TISSUE ------------------------------------#
+#-------------------------------- version 0.29 --------------------------------#
+#                                                                              #
+# Creates duplicates of selected mesh to active morphing the shape according   #
+# to target faces.                                                             #
+#                                                                              #
+#                            Alessandro Zomparelli                             #
+#                                   (2017)                                     #
+#                                                                              #
+# http://www.co-de-it.com/                                                     #
+# http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Mesh/Tissue      #
+#                                                                              #
+# Creative Commons                                                             #
+# CC BY-SA 3.0                                                                 #
+# http://creativecommons.org/licenses/by-sa/3.0/                               #
 
 
 if "bpy" in locals():
@@ -36,27 +54,27 @@ from mathutils import Vector
 bl_info = {
 	"name": "Tissue",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 2, 8),
+	"version": (0, 2, 9),
 	"blender": (2, 7, 8),
 	"location": "",
 	"description": "Tools for Computational Design",
 	"warning": "",
-	"wiki_url": "http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Mesh/Tissue",
+	"wiki_url": ("http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/M"
+        "esh/Tissue"),
 	"tracker_url": "https://plus.google.com/u/0/+AlessandroZomparelli/",
 	"category": "Mesh"}
 
+
 def register():
     bpy.utils.register_module(__name__)
-    #tessellate.register()
-    #bpy.types.Object.tissue_tessellate = bpy.props.PointerProperty(tessellate_numpy.tissue_tessellate_props)
-    #bpy.types.Scene.tessellate_working_on = bpy.props.StringProperty(name="Working On")
-    bpy.types.Object.tissue_tessellate = bpy.props.PointerProperty(type=tessellate_numpy.tissue_tessellate_prop)
+    bpy.types.Object.tissue_tessellate = bpy.props.PointerProperty(
+        type=tessellate_numpy.tissue_tessellate_prop)
 
 
 def unregister():
-    #bpy.utils.register_module(__name__)
     tessellate_numpy.unregister()
     colors_groups_exchanger.unregister()
+
 
 if __name__ == "__main__":
     register()
