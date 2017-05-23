@@ -1,19 +1,3 @@
-<<<<<<< HEAD
-# --------------------- ADAPTIVE DUPLIFACES --------------------#
-#------------------------- version 0.82 ------------------------#
-#                                                               #
-# Creates duplicates of selected mesh to active morphing the    #
-# shape according to target faces.                              #
-#                                                               #
-#                      Alessandro Zomparelli                    #
-#                             (2017)                            #
-#                                                               #
-# http://www.co-de-it.com/                                      #
-#                                                               #
-# Creative Commons                                              #
-# CC BY-SA 3.0                                                  #
-# http://creativecommons.org/licenses/by-sa/3.0/                #
-=======
 # ---------------------------- ADAPTIVE DUPLIFACES ----------------------------#
 #-------------------------------- version 0.83 --------------------------------#
 #                                                                              #
@@ -28,7 +12,6 @@
 # Creative Commons                                                             #
 # CC BY-SA 3.0                                                                 #
 # http://creativecommons.org/licenses/by-sa/3.0/                               #
->>>>>>> dev1
 
 import bpy
 from mathutils import Vector
