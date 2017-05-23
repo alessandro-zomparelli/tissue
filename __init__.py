@@ -1,23 +1,3 @@
-<<<<<<< HEAD
-
-# --------------------------------- TISSUE ----------------------------------#
-#-------------------------------- version 0.27 ------------------------------#
-#                                                                            #
-# Creates duplicates of selected mesh to active morphing the shape according #
-# to target faces.                                                           #
-#                                                                            #
-#                            Alessandro Zomparelli                           #
-#                                   (2015)                                   #
-#                                                                            #
-# http://www.co-de-it.com/                                                   #
-# http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Mesh/Tissue    #
-#                                                                            #
-# Creative Commons                                                           #
-# CC BY-SA 3.0                                                               #
-# http://creativecommons.org/licenses/by-sa/3.0/                             #
-=======
->>>>>>> dev1
-
 # --------------------------------- TISSUE ------------------------------------#
 #-------------------------------- version 0.29 --------------------------------#
 #                                                                              #
