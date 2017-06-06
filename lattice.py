@@ -35,6 +35,58 @@ class auto_lattice(bpy.types.Operator):
         name="Vertex-group", default=False,
         description="Use active vertex-group for lattice's thickness")
 
+    offset_x = bpy.props.FloatProperty(
+        name="Offset X", default=0.1, min=0, max=2, soft_min=0,
+        soft_max=2, description="Lattice offset")
+
+    offset_y = bpy.props.FloatProperty(
+        name="Offset Y", default=0.1, soft_min=0,
+        soft_max=2, description="Lattice offset")
+
+    offset_z = bpy.props.FloatProperty(
+        name="Offset Z", default=0.1, soft_min=0,
+        soft_max=2, description="Lattice offset")
+
+    thickness = bpy.props.FloatProperty(
+        name="Thickness", default=1, soft_min=0,
+        soft_max=5, description="Lattice thickness")
+
+    displace = bpy.props.FloatProperty(
+        name="Displace", default=0, soft_min=-1,
+        soft_max=1, description="Lattice displace")
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        row.prop(
+            self, "offset_x", text="Offset X", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        row = layout.row()
+        row.prop(
+            self, "offset_y", text="Offset Y", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        row = layout.row()
+        row.prop(
+            self, "offset_z", text="Offset Z", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        layout.separator()
+        row = layout.row()
+        row.prop(
+            self, "thickness", text="Thickness", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        row = layout.row()
+        row.prop(
+            self, "displace", text="Displace", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+
+        row = layout.row()
+        row.prop(self, "use_groups")
+
     def execute(self, context):
         grid_obj = bpy.context.active_object
         #old_grid_data = grid_obj.data
@@ -87,7 +139,7 @@ class auto_lattice(bpy.types.Operator):
 
         # adding offset
         bb = max-min
-        offset = bb*0.2
+        offset = Vector((bb[0]*self.offset_x, bb[1]*self.offset_y, bb[2]*self.offset_z))
 
         lattice_loc = (max+min)/2
 
@@ -126,32 +178,41 @@ class auto_lattice(bpy.types.Operator):
 
         running_grid = True
         while running_grid:
-            print("while_grid")
+            #print("while_grid")
             verts_loop = []
             edges_loop = []
             faces_loop = []
 
-            print(verts_grid)
-            print(edges_grid)
-            print(faces_grid)
+            #print(verts_grid)
+            #print(edges_grid)
+            #print(faces_grid)
 
             # storing first point
             verts_candidates = []
             if len(faces_grid) == 0: verts_candidates = bm.verts                                                        # for first loop check all vertices
-            else: verts_candidates = [v for v in bm.faces[faces_grid[-1][0]].verts if not_in(v.index, verts_grid)]      # for other loops start form the vertices of the first face fo the last loop, skipping already used vertices
+            else: verts_candidates = [v for v in bm.faces[faces_grid[-1][0]].verts if not_in(v.index, verts_grid)]      # for other loops start form the vertices of the first face  the last loop, skipping already used vertices
 
+            # check for last loop
+            is_last = False
             for vert in verts_candidates:
-                new_link_faces = [f for f in vert.link_faces if not_in(f.index, faces_grid)]
-                if len(new_link_faces) < 2:            # check if corner vertex
+                if len(vert.link_faces) == 1:            # check if corner vertex
                     vert.select = True
                     verts_loop.append(vert.index)
+                    is_last = True
                     break
+            if not is_last:
+                for vert in verts_candidates:
+                    new_link_faces = [f for f in vert.link_faces if not_in(f.index, faces_grid)]
+                    if len(new_link_faces) < 2:            # check if corner vertex
+                        vert.select = True
+                        verts_loop.append(vert.index)
+                        break
 
             running_loop = len(verts_loop) > 0
 
             while running_loop:
                 bm.verts.ensure_lookup_table()
-                print("while_loop")
+                #print("while_loop")
 
                 id = verts_loop[-1]
                 link_edges = bm.verts[id].link_edges
@@ -207,7 +268,11 @@ class auto_lattice(bpy.types.Operator):
             edges_grid.append(edges_loop)
             faces_grid.append(faces_loop)
 
+            #n_verts = 0
+            #for l in verts_grid:
+            #    n_verts += len(l)
             if len(faces_loop) == 0: running_grid = False
+
 
 
         #bmesh.update_edit_mesh(grid_mesh.data, True)
@@ -223,10 +288,10 @@ class auto_lattice(bpy.types.Operator):
         nw = 2
 
 
-        scale_normal = 1
+        scale_normal = self.thickness
 
-        print(nu)
-        print(nv)
+        #print(nu)
+        #print(nv)
 
         for loop in verts_grid: print(len(loop))
 
@@ -244,7 +309,7 @@ class auto_lattice(bpy.types.Operator):
                             displace = scale_normal*bb.z
                     else: displace = scale_normal*bb.z
                     #target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*w*displace)#*grid_obj.matrix_local - lattice.location + grid_obj.location
-                    target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*w*displace) - lattice.location
+                    target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*(w + self.displace/2 - 0.5)*displace) - lattice.location
                     lattice.data.points[i + j*nu + w*nu*nv].co_deform.x = target_point.x / bpy.data.objects['Lattice'].scale.x
                     lattice.data.points[i + j*nu + w*nu*nv].co_deform.y = target_point.y / bpy.data.objects['Lattice'].scale.y
                     lattice.data.points[i + j*nu + w*nu*nv].co_deform.z = target_point.z / bpy.data.objects['Lattice'].scale.z
