@@ -26,6 +26,7 @@ else:
     from . import tessellate_numpy
     from . import colors_groups_exchanger
     from . import dual_mesh
+    from . import lattice
 
 import bpy
 from mathutils import Vector
