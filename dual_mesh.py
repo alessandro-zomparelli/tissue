@@ -1,19 +1,32 @@
-
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
 #---------------------------------- DUAL MESH ---------------------------------#
 #--------------------------------- version 0.3 --------------------------------#
 #                                                                              #
 # Convert a generic mesh to its dual. With open meshes it can get some wired   #
 # effect on the borders.                                                       #
 #                                                                              #
-#                             Alessandro Zomparelli                            #
+#                        (c)   Alessandro Zomparelli                           #
 #                                    (2017)                                    #
 #                                                                              #
 # http://www.co-de-it.com/                                                     #
 #                                                                              #
-# Creative Commons                                                             #
-# CC BY-SA 3.0                                                                 #
-# http://creativecommons.org/licenses/by-sa/3.0/                               #
-
+################################################################################
 
 import bpy
 import bmesh
@@ -34,6 +47,7 @@ class dual_mesh(bpy.types.Operator):
     bl_idname = "object.dual_mesh"
     bl_label = "Dual Mesh"
     bl_options = {'REGISTER', 'UNDO'}
+    bl_description = ("Convert a generic mesh to its dual.")
 
     quad_method = bpy.props.EnumProperty(
         items=[('BEAUTY', 'Beauty',
@@ -201,7 +215,7 @@ class dual_mesh(bpy.types.Operator):
 
 class dual_mesh_panel(bpy.types.Panel):
     bl_label = "Dual Mesh"
-    bl_category = "Tissue"
+    bl_category = "Tools"
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     bl_context = (("objectmode"))

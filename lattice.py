@@ -1,10 +1,39 @@
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
+#---------------------------- LATTICE ALONG SURFACE ---------------------------#
+#--------------------------------- version 0.3 --------------------------------#
+#                                                                              #
+# Automatically generate and assign a lattice that follows the active surface. #
+#                                                                              #
+#                        (c)   Alessandro Zomparelli                           #
+#                                    (2017)                                    #
+#                                                                              #
+# http://www.co-de-it.com/                                                     #
+#                                                                              #
+################################################################################
+
 import bpy, bmesh
 from mathutils import Vector, Matrix
 
 bl_info = {
     "name": "Lattice",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 2),
+    "version": (0, 3),
     "blender": (2, 7, 8),
     "location": "",
     "description": "Generate a Lattice based on a grid mesh",
@@ -22,10 +51,108 @@ def not_in(element, grid):
             break
     return output
 
-class auto_lattice(bpy.types.Operator):
-    bl_idname = "object.auto_lattice"
-    bl_label = "Auto-Lattice"
+def grid_from_mesh(mesh, swap_uv):
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    verts_grid = []
+    edges_grid = []
+    faces_grid = []
+
+    running_grid = True
+    while running_grid:
+        verts_loop = []
+        edges_loop = []
+        faces_loop = []
+
+        # storing first point
+        verts_candidates = []
+        if len(faces_grid) == 0: verts_candidates = bm.verts                                                        # for first loop check all vertices
+        else: verts_candidates = [v for v in bm.faces[faces_grid[-1][0]].verts if not_in(v.index, verts_grid)]      # for other loops start form the vertices of the first face  the last loop, skipping already used vertices
+
+        # check for last loop
+        is_last = False
+        for vert in verts_candidates:
+            if len(vert.link_faces) == 1:            # check if corner vertex
+                vert.select = True
+                verts_loop.append(vert.index)
+                is_last = True
+                break
+        if not is_last:
+            for vert in verts_candidates:
+                new_link_faces = [f for f in vert.link_faces if not_in(f.index, faces_grid)]
+                if len(new_link_faces) < 2:            # check if corner vertex
+                    vert.select = True
+                    verts_loop.append(vert.index)
+                    break
+
+        running_loop = len(verts_loop) > 0
+
+        while running_loop:
+            bm.verts.ensure_lookup_table()
+            id = verts_loop[-1]
+            link_edges = bm.verts[id].link_edges
+            # storing second point
+            if len(verts_loop) == 1:                    # only one vertex stored in the loop
+                if len(faces_grid) == 0:                ### first loop ###
+                    edge = link_edges[swap_uv]      # chose direction
+                    for vert in edge.verts:
+                        if vert.index != id:
+                            vert.select = True
+                            verts_loop.append(vert.index)                   # new vertex
+                            edges_loop.append(edge.index)                   # chosen edge
+                            faces_loop.append(edge.link_faces[0].index)     # only one face
+                            #edge.link_faces[0].select = True
+                else:                                   ### other loops ###
+                    for edge in bm.faces[faces_grid[-1][0]].edges:          # start from the edges of the first face of the last loop
+                        if bm.verts[verts_loop[0]] in edge.verts and bm.verts[verts_grid[-1][0]] not in edge.verts:       # chose an edge starting from the first vertex that is not returning back
+                            for vert in edge.verts:
+                                if vert.index != id:
+                                    vert.select = True
+                                    verts_loop.append(vert.index)
+                            edges_loop.append(edge.index)
+                            for face in edge.link_faces:
+                                if not_in(face.index,faces_grid):
+                                    faces_loop.append(face.index)
+            # continuing the loop
+            else:
+                for edge in link_edges:
+                    for vert in edge.verts:
+                        store_data = False
+                        if not_in(vert.index, verts_grid) and vert.index not in verts_loop:
+                            if len(faces_loop) > 0:
+                                bm.faces.ensure_lookup_table()
+                                if vert not in bm.faces[faces_loop[-1]].verts: store_data = True
+                            else:
+                                store_data = True
+                            if store_data:
+                                vert.select = True
+                                verts_loop.append(vert.index)
+                                edges_loop.append(edge.index)
+                                for face in edge.link_faces:
+                                    if not_in(face.index, faces_grid):
+                                        faces_loop.append(face.index)
+                                break
+            # ending condition
+            if verts_loop[-1] == id or verts_loop[-1] == verts_loop[0]: running_loop = False
+
+        verts_grid.append(verts_loop)
+        edges_grid.append(edges_loop)
+        faces_grid.append(faces_loop)
+        if len(faces_loop) == 0: running_grid = False
+    return verts_grid, edges_grid, faces_grid
+
+class lattice_along_surface(bpy.types.Operator):
+    bl_idname = "object.lattice_along_surface"
+    bl_label = "Lattice along Surface"
+    bl_description = ("Automatically add a Lattice modifier to the selected "
+                      "object, adapting it to the active one.\nThe active "
+                      "object must be a rectangular grid compatible with the "
+                      "Lattice's topology.")
     bl_options = {'REGISTER', 'UNDO'}
+
+    set_parent = bpy.props.BoolProperty(
+        name="Set Parent", default=True,
+        description="Automatically set the Lattice as parent")
 
     flipNormals = bpy.props.BoolProperty(
         name="Flip Normals", default=False,
@@ -48,12 +175,13 @@ class auto_lattice(bpy.types.Operator):
         description="Flip grid's W")
 
     use_groups = bpy.props.BoolProperty(
-        name="Vertex-group", default=False,
-        description="Use active vertex-group for lattice's thickness")
+        name="Vertex Group", default=False,
+        description="Use active Vertex Group for lattice's thickness")
 
     high_quality_lattice = bpy.props.BoolProperty(
         name="High quality", default=True,
-        description="Increase the the subdivisions in normal direction for a more correct result")
+        description="Increase the the subdivisions in normal direction for a "
+        "more correct result")
 
     hide_lattice = bpy.props.BoolProperty(
         name="Hide Lattice", default=True,
@@ -81,78 +209,81 @@ class auto_lattice(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
-        col = layout.column()
-        col.prop(self, "swapUV")
-        col.prop(self, "flipU")
-        col.prop(self, "flipV")
-        col.prop(self, "flipW")
-        col.prop(self, "flipNormals")
+        col = layout.column(align=True)
+        col.label(text="Thickness:")
         col.prop(
-            self, "scale_x", text="Scale X", icon='NONE', expand=False,
-            slider=True, toggle=False, icon_only=False, event=False,
-            full_event=False, emboss=True, index=-1)
-        col.prop(
-            self, "scale_y", text="Scale Y", icon='NONE', expand=False,
-            slider=True, toggle=False, icon_only=False, event=False,
-            full_event=False, emboss=True, index=-1)
-        col.prop(
-            self, "scale_z", text="Scale Z", icon='NONE', expand=False,
-            slider=True, toggle=False, icon_only=False, event=False,
-            full_event=False, emboss=True, index=-1)
-        col.separator()
-        row = col.row()
-        row.prop(
             self, "thickness", text="Thickness", icon='NONE', expand=False,
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
-        row = col.row()
-        row.prop(
-            self, "displace", text="Displace", icon='NONE', expand=False,
+        col.prop(
+            self, "displace", text="Offset", icon='NONE', expand=False,
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
         row = col.row()
         row.prop(self, "use_groups")
         col.separator()
+        col.label(text="Scale:")
+        col.prop(
+            self, "scale_x", text="U", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        col.prop(
+            self, "scale_y", text="V", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        '''
+        col.prop(
+            self, "scale_z", text="W", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        '''
+        col.separator()
+        col.label(text="Flip:")
         row = col.row()
-        row.prop(self, "high_quality_lattice")
-        row = col.row()
-        row.prop(self, "hide_lattice")
+        row.prop(self, "flipU", text="U")
+        row.prop(self, "flipV", text="V")
+        row.prop(self, "flipW", text="W")
+        col.prop(self, "swapUV")
+        col.prop(self, "flipNormals")
+        col.separator()
+        col.label(text="Lattice Options:")
+        col.prop(self, "high_quality_lattice")
+        col.prop(self, "hide_lattice")
+        col.prop(self, "set_parent")
 
     def execute(self, context):
         grid_obj = bpy.context.active_object
-        #old_grid_data = grid_obj.data
-        #grid_matrix = Matrix(grid_obj.matrix_world)
-        #bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        #grid_mesh = grid_obj.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
-        #grid_obj.data = grid_mesh.transform(grid_matrix)
-        #grid_obj.data.update()
-
+        if grid_obj.type not in ('MESH', 'CURVE', 'SURFACE'):
+            self.report({'ERROR'}, "The surface object is not valid. Only Mesh,"
+                        "Curve and Surface objects are allowed.")
+            return {'CANCELLED'}
         obj = None
         for o in bpy.context.selected_objects:
-            if o.name != grid_obj.name:
+            if o.name != grid_obj.name and o.type in ('MESH', 'CURVE', \
+                    'SURFACE', 'FONT'):
                 obj = o
                 o.select = False
                 break
-        obj_dim = obj.dimensions
-        obj_me = obj.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
+        try:
+            obj_dim = obj.dimensions
+            obj_me = obj.to_mesh(bpy.context.scene, apply_modifiers=True,
+                                 settings = 'PREVIEW')
+        except:
+            self.report({'ERROR'}, "The object to deform is not valid. Only "
+                        "Mesh, Curve, Surface and Font objects are allowed.")
+            return {'CANCELLED'}
 
-        bpy.ops.object.duplicate_move(OBJECT_OT_duplicate={"linked":False, "mode":'TRANSLATION'}, TRANSFORM_OT_translate={"value":(0, 0, 0), "constraint_axis":(False, False, False), "constraint_orientation":'GLOBAL', "mirror":False, "proportional":'DISABLED', "proportional_edit_falloff":'SMOOTH', "proportional_size":1, "snap":False, "snap_target":'CLOSEST', "snap_point":(0, 0, 0), "snap_align":False, "snap_normal":(0, 0, 0), "gpencil_strokes":False, "texture_space":False, "remove_on_cancel":False, "release_confirm":False})
+        bpy.ops.object.duplicate_move()
         grid_obj = bpy.context.active_object
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        grid_mesh = grid_obj.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
-
-
-
-        ### CREATING LATTICE ###
-
+        grid_mesh = grid_obj.to_mesh(bpy.context.scene, apply_modifiers=True,
+                                     settings = 'PREVIEW')
+        # CREATING LATTICE
         min = Vector((0,0,0))
         max = Vector((0,0,0))
-
         first = True
-
         for v in obj_me.vertices:
             vert = obj.matrix_world * v.co
-
             if vert[0] < min[0] or first:
                 min[0] = vert[0]
             if vert[1] < min[1] or first:
@@ -166,171 +297,40 @@ class auto_lattice(bpy.types.Operator):
             if vert[2] > max[2] or first:
                 max[2] = vert[2]
             first = False
-
-        # adding offset
         bb = max-min
-        #scale = Vector((bb[0]/self.scale_x, bb[1]/self.scale_y, bb[2]/self.scale_z))
-        #if bb.z == 0: offset.z = 1
-
         lattice_loc = (max+min)/2
-
-        bpy.ops.object.add(type='LATTICE', view_align=False, enter_editmode=False)
+        bpy.ops.object.add(type='LATTICE', view_align=False,
+                           enter_editmode=False)
         lattice = bpy.context.active_object
         lattice.location = lattice_loc
-        lattice.scale = Vector((bb.x/self.scale_x, bb.y/self.scale_y, bb.z/self.scale_z))
+        lattice.scale = Vector((bb.x/self.scale_x, bb.y/self.scale_y,
+                                bb.z/self.scale_z))
+        if bb.x == 0: lattice.scale.x = 1
+        if bb.y == 0: lattice.scale.y = 1
         if bb.z == 0: lattice.scale.z = 1
-
         bpy.context.scene.objects.active = obj
         bpy.ops.object.modifier_add(type='LATTICE')
         obj.modifiers[-1].object = lattice
 
         # set as parent
-        obj.select = True
-        lattice.select = True
-        #grid_mesh.select = False
-        bpy.context.scene.objects.active = lattice
-        #bpy.ops.object.parent_set(type='LATTICE')
+        if self.set_parent:
+            obj.select = True
+            lattice.select = True
+            bpy.context.scene.objects.active = lattice
+            bpy.ops.object.parent_set(type='LATTICE')
 
-
-        #bpy.context.scene.objects.active = grid_mesh
-        #grid_mesh.select = True
-        #bpy.ops.object.mode_set(mode='EDIT')
-        #grid_mesh = bpy.context.edit_object
-        #bm = bmesh.from_edit_mesh(grid_mesh.data)
-        bm = bmesh.new()
-        bm.from_mesh(grid_mesh)
-
-
-
-        verts_grid = []
-        edges_grid = []
-        faces_grid = []
-
-        flip_matrix = True
-
-        running_grid = True
-        while running_grid:
-            #print("while_grid")
-            verts_loop = []
-            edges_loop = []
-            faces_loop = []
-
-            #print(verts_grid)
-            #print(edges_grid)
-            #print(faces_grid)
-
-            # storing first point
-            verts_candidates = []
-            if len(faces_grid) == 0: verts_candidates = bm.verts                                                        # for first loop check all vertices
-            else: verts_candidates = [v for v in bm.faces[faces_grid[-1][0]].verts if not_in(v.index, verts_grid)]      # for other loops start form the vertices of the first face  the last loop, skipping already used vertices
-
-            # check for last loop
-            is_last = False
-            for vert in verts_candidates:
-                if len(vert.link_faces) == 1:            # check if corner vertex
-                    vert.select = True
-                    verts_loop.append(vert.index)
-                    is_last = True
-                    break
-            if not is_last:
-                for vert in verts_candidates:
-                    new_link_faces = [f for f in vert.link_faces if not_in(f.index, faces_grid)]
-                    if len(new_link_faces) < 2:            # check if corner vertex
-                        vert.select = True
-                        verts_loop.append(vert.index)
-                        break
-
-            running_loop = len(verts_loop) > 0
-
-            while running_loop:
-                bm.verts.ensure_lookup_table()
-                #print("while_loop")
-
-                id = verts_loop[-1]
-                link_edges = bm.verts[id].link_edges
-
-                # storing second point
-                if len(verts_loop) == 1:                    # only one vertex stored in the loop
-                    if len(faces_grid) == 0:                ### first loop ###
-                        edge = link_edges[flip_matrix]      # chose direction
-                        for vert in edge.verts:
-                            if vert.index != id:
-                                vert.select = True
-                                verts_loop.append(vert.index)                   # new vertex
-                                edges_loop.append(edge.index)                   # chosen edge
-                                faces_loop.append(edge.link_faces[0].index)     # only one face
-                                #edge.link_faces[0].select = True
-                    else:                                   ### other loops ###
-                        for edge in bm.faces[faces_grid[-1][0]].edges:          # start from the edges of the first face of the last loop
-                            if bm.verts[verts_loop[0]] in edge.verts and bm.verts[verts_grid[-1][0]] not in edge.verts:       # chose an edge starting from the first vertex that is not returning back
-                                for vert in edge.verts:
-                                    if vert.index != id:
-                                        vert.select = True
-                                        verts_loop.append(vert.index)
-                                edges_loop.append(edge.index)
-                                for face in edge.link_faces:
-                                    if not_in(face.index,faces_grid):
-                                        #face.select = True
-                                        faces_loop.append(face.index)
-
-                # continuing the loop
-                else:
-                    for edge in link_edges:#(e for e in link_edges if not_in(e.index,edges_grid)):         # is a new edge. Three possible edges
-                        for vert in edge.verts:
-                            store_data = False
-                            if not_in(vert.index, verts_grid) and vert.index not in verts_loop:
-                                if len(faces_loop) > 0:
-                                    bm.faces.ensure_lookup_table()
-                                    if vert not in bm.faces[faces_loop[-1]].verts: store_data = True
-                                else:
-                                    store_data = True
-                                if store_data:
-                                    vert.select = True
-                                    verts_loop.append(vert.index)
-                                    edges_loop.append(edge.index)
-                                    for face in edge.link_faces:
-                                        if not_in(face.index, faces_grid):
-                                            faces_loop.append(face.index)
-                                    break
-
-                # ending condition
-                if verts_loop[-1] == id or verts_loop[-1] == verts_loop[0]: running_loop = False
-
-            verts_grid.append(verts_loop)
-            edges_grid.append(edges_loop)
-            faces_grid.append(faces_loop)
-
-            #n_verts = 0
-            #for l in verts_grid:
-            #    n_verts += len(l)
-            if len(faces_loop) == 0: running_grid = False
-
-
-
-        #bmesh.update_edit_mesh(grid_mesh.data, True)
-
-
-        # setting lattice
-
-        if self.swapUV: verts_grid = list(zip(*verts_grid))
-
-
+        # reading grid structure
+        verts_grid, edges_grid, faces_grid = grid_from_mesh(grid_mesh,
+                       swap_uv=self.swapUV)
         nu = len(verts_grid)
         nv = len(verts_grid[0])
         nw = 2
-
         scale_normal = self.thickness
-
-        #print(nu)
-        #print(nv)
-
-        #for loop in verts_grid: print(len(loop))
 
         try:
             lattice.data.points_u = nu
             lattice.data.points_v = nv
             lattice.data.points_w = nw
-
             for i in range(nu):
                 for j in range(nv):
                     for w in range(nw):
@@ -340,15 +340,13 @@ class auto_lattice(bpy.types.Operator):
                             except:
                                 displace = scale_normal*bb.z
                         else: displace = scale_normal*bb.z
-                        #target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*w*displace)#*grid_obj.matrix_local - lattice.location + grid_obj.location
-                        target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*(w + self.displace/2 - 0.5)*displace) - lattice.location
+                        target_point = (grid_mesh.vertices[verts_grid[i][j]].co + grid_mesh.vertices[verts_grid[i][j]].normal*(w + self.displace/2 - 0.5)*displace) - lattice.location
                         if self.flipW: w = 1-w
                         if self.flipU: i = nu-i-1
                         if self.flipV: j = nv-j-1
                         lattice.data.points[i + j*nu + w*nu*nv].co_deform.x = target_point.x / bpy.data.objects[lattice.name].scale.x
                         lattice.data.points[i + j*nu + w*nu*nv].co_deform.y = target_point.y / bpy.data.objects[lattice.name].scale.y
                         lattice.data.points[i + j*nu + w*nu*nv].co_deform.z = target_point.z / bpy.data.objects[lattice.name].scale.z
-
         except:
             bpy.ops.object.mode_set(mode='OBJECT')
             grid_obj.select = True
@@ -358,9 +356,12 @@ class auto_lattice(bpy.types.Operator):
             bpy.context.scene.objects.active = obj
             obj.select = True
             bpy.ops.object.modifier_remove(modifier=obj.modifiers[-1].name)
-            if nu > 64 or nv > 64: self.report({'ERROR'}, "Maximum resolution allowed for Lattice is 64")
-        else: self.report({'ERROR'}, "The grid mesh is not correct")
-            return {'CANCELLED'}
+            if nu > 64 or nv > 64:
+                self.report({'ERROR'}, "Maximum resolution allowed for Lattice is 64")
+            else:
+                self.report({'ERROR'}, "The grid mesh is not correct")
+                return {'CANCELLED'}
+
         #grid_obj.data = old_grid_data
         #print(old_grid_matrix)
         #grid_obj.matrix_world = old_grid_matrix
@@ -380,16 +381,19 @@ class auto_lattice(bpy.types.Operator):
         obj.select = True
         lattice.select = False
         if self.flipNormals:
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.mesh.flip_normals()
-            bpy.ops.object.mode_set(mode='OBJECT')
+            try:
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.flip_normals()
+                bpy.ops.object.mode_set(mode='OBJECT')
+            except:
+                pass
         return {'FINISHED'}
 
 
-class auto_lattice_panel(bpy.types.Panel):
-    bl_label = "Auto-Lattice"
-    bl_category = "Tissue"
+class lattice_along_surface_panel(bpy.types.Panel):
+    bl_label = "Modifiers Tools"
+    bl_category = "Tools"
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     bl_context = (("objectmode"))
@@ -398,20 +402,19 @@ class auto_lattice_panel(bpy.types.Panel):
         layout = self.layout
         col = layout.column(align=True)
         try:
-            if bpy.context.active_object.type == 'MESH':
-                col.operator("object.auto_lattice", icon="MOD_LATTICE")
+            col.operator("object.lattice_along_surface", icon="MOD_LATTICE")
         except:
             pass
 
 
 def register():
-    bpy.utils.register_class(auto_lattice)
-    bpy.utils.register_class(auto_lattice_panel)
+    bpy.utils.register_class(lattice_along_surface)
+    bpy.utils.register_class(lattice_along_surface_panel)
 
 
 def unregister():
-    bpy.utils.unregister_class(auto_lattice)
-    bpy.utils.unregister_class(auto_lattice_panel)
+    bpy.utils.unregister_class(lattice_along_surface)
+    bpy.utils.unregister_class(lattice_along_surface_panel)
 
 
 if __name__ == "__main__":
