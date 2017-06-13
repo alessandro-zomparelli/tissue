@@ -4,7 +4,7 @@ from mathutils import Vector, Matrix
 bl_info = {
     "name": "Lattice",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 1),
+    "version": (0, 2),
     "blender": (2, 7, 8),
     "location": "",
     "description": "Generate a Lattice based on a grid mesh",
@@ -27,25 +27,49 @@ class auto_lattice(bpy.types.Operator):
     bl_label = "Auto-Lattice"
     bl_options = {'REGISTER', 'UNDO'}
 
-    flipUV = bpy.props.BoolProperty(
-        name="Flip UV", default=False,
+    flipNormals = bpy.props.BoolProperty(
+        name="Flip Normals", default=False,
+        description="Flip normals direction")
+
+    swapUV = bpy.props.BoolProperty(
+        name="Swap UV", default=False,
         description="Flip grid's U and V")
+
+    flipU = bpy.props.BoolProperty(
+        name="Flip U", default=False,
+        description="Flip grid's U")
+
+    flipV = bpy.props.BoolProperty(
+        name="Flip V", default=False,
+        description="Flip grid's V")
+
+    flipW = bpy.props.BoolProperty(
+        name="Flip W", default=False,
+        description="Flip grid's W")
 
     use_groups = bpy.props.BoolProperty(
         name="Vertex-group", default=False,
         description="Use active vertex-group for lattice's thickness")
 
-    offset_x = bpy.props.FloatProperty(
-        name="Offset X", default=0.1, min=0, max=2, soft_min=0,
-        soft_max=2, description="Lattice offset")
+    high_quality_lattice = bpy.props.BoolProperty(
+        name="High quality", default=True,
+        description="Increase the the subdivisions in normal direction for a more correct result")
 
-    offset_y = bpy.props.FloatProperty(
-        name="Offset Y", default=0.1, soft_min=0,
-        soft_max=2, description="Lattice offset")
+    hide_lattice = bpy.props.BoolProperty(
+        name="Hide Lattice", default=True,
+        description="Automatically hide the Lattice object")
 
-    offset_z = bpy.props.FloatProperty(
-        name="Offset Z", default=0.1, soft_min=0,
-        soft_max=2, description="Lattice offset")
+    scale_x = bpy.props.FloatProperty(
+        name="Scale X", default=1, min=0.001,
+        max=1, description="Object scale")
+
+    scale_y = bpy.props.FloatProperty(
+        name="Scale Y", default=1, min=0.001,
+        max=1, description="Object scale")
+
+    scale_z = bpy.props.FloatProperty(
+        name="Scale Z", default=1, min=0.001,
+        max=1, description="Object scale")
 
     thickness = bpy.props.FloatProperty(
         name="Thickness", default=1, soft_min=0,
@@ -57,35 +81,42 @@ class auto_lattice(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
-        row = layout.row()
-        row.prop(
-            self, "offset_x", text="Offset X", icon='NONE', expand=False,
+        col = layout.column()
+        col.prop(self, "swapUV")
+        col.prop(self, "flipU")
+        col.prop(self, "flipV")
+        col.prop(self, "flipW")
+        col.prop(self, "flipNormals")
+        col.prop(
+            self, "scale_x", text="Scale X", icon='NONE', expand=False,
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
-        row = layout.row()
-        row.prop(
-            self, "offset_y", text="Offset Y", icon='NONE', expand=False,
+        col.prop(
+            self, "scale_y", text="Scale Y", icon='NONE', expand=False,
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
-        row = layout.row()
-        row.prop(
-            self, "offset_z", text="Offset Z", icon='NONE', expand=False,
+        col.prop(
+            self, "scale_z", text="Scale Z", icon='NONE', expand=False,
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
-        layout.separator()
-        row = layout.row()
+        col.separator()
+        row = col.row()
         row.prop(
             self, "thickness", text="Thickness", icon='NONE', expand=False,
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
-        row = layout.row()
+        row = col.row()
         row.prop(
             self, "displace", text="Displace", icon='NONE', expand=False,
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
-
-        row = layout.row()
+        row = col.row()
         row.prop(self, "use_groups")
+        col.separator()
+        row = col.row()
+        row.prop(self, "high_quality_lattice")
+        row = col.row()
+        row.prop(self, "hide_lattice")
 
     def execute(self, context):
         grid_obj = bpy.context.active_object
@@ -95,7 +126,6 @@ class auto_lattice(bpy.types.Operator):
         #grid_mesh = grid_obj.to_mesh(bpy.context.scene, apply_modifiers=True, settings = 'PREVIEW')
         #grid_obj.data = grid_mesh.transform(grid_matrix)
         #grid_obj.data.update()
-
 
         obj = None
         for o in bpy.context.selected_objects:
@@ -139,14 +169,16 @@ class auto_lattice(bpy.types.Operator):
 
         # adding offset
         bb = max-min
-        offset = Vector((bb[0]*self.offset_x, bb[1]*self.offset_y, bb[2]*self.offset_z))
+        #scale = Vector((bb[0]/self.scale_x, bb[1]/self.scale_y, bb[2]/self.scale_z))
+        #if bb.z == 0: offset.z = 1
 
         lattice_loc = (max+min)/2
 
         bpy.ops.object.add(type='LATTICE', view_align=False, enter_editmode=False)
         lattice = bpy.context.active_object
         lattice.location = lattice_loc
-        lattice.scale = bb + offset
+        lattice.scale = Vector((bb.x/self.scale_x, bb.y/self.scale_y, bb.z/self.scale_z))
+        if bb.z == 0: lattice.scale.z = 1
 
         bpy.context.scene.objects.active = obj
         bpy.ops.object.modifier_add(type='LATTICE')
@@ -174,7 +206,7 @@ class auto_lattice(bpy.types.Operator):
         edges_grid = []
         faces_grid = []
 
-        flip_matrix = False
+        flip_matrix = True
 
         running_grid = True
         while running_grid:
@@ -280,41 +312,55 @@ class auto_lattice(bpy.types.Operator):
 
         # setting lattice
 
-        if self.flipUV: verts_grid = list(zip(*verts_grid))
+        if self.swapUV: verts_grid = list(zip(*verts_grid))
 
 
         nu = len(verts_grid)
         nv = len(verts_grid[0])
         nw = 2
 
-
         scale_normal = self.thickness
 
         #print(nu)
         #print(nv)
 
-        for loop in verts_grid: print(len(loop))
+        #for loop in verts_grid: print(len(loop))
 
-        lattice.data.points_u = nu
-        lattice.data.points_v = nv
-        lattice.data.points_w = nw
+        try:
+            lattice.data.points_u = nu
+            lattice.data.points_v = nv
+            lattice.data.points_w = nw
 
-        for i in range(nu):
-            for j in range(nv):
-                for w in range(nw):
-                    if self.use_groups:
-                        try:
-                            displace = grid_obj.vertex_groups.active.weight(verts_grid[i][j])*scale_normal*bb.z
-                        except:
-                            displace = scale_normal*bb.z
-                    else: displace = scale_normal*bb.z
-                    #target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*w*displace)#*grid_obj.matrix_local - lattice.location + grid_obj.location
-                    target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*(w + self.displace/2 - 0.5)*displace) - lattice.location
-                    lattice.data.points[i + j*nu + w*nu*nv].co_deform.x = target_point.x / bpy.data.objects['Lattice'].scale.x
-                    lattice.data.points[i + j*nu + w*nu*nv].co_deform.y = target_point.y / bpy.data.objects['Lattice'].scale.y
-                    lattice.data.points[i + j*nu + w*nu*nv].co_deform.z = target_point.z / bpy.data.objects['Lattice'].scale.z
+            for i in range(nu):
+                for j in range(nv):
+                    for w in range(nw):
+                        if self.use_groups:
+                            try:
+                                displace = grid_obj.vertex_groups.active.weight(verts_grid[i][j])*scale_normal*bb.z
+                            except:
+                                displace = scale_normal*bb.z
+                        else: displace = scale_normal*bb.z
+                        #target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*w*displace)#*grid_obj.matrix_local - lattice.location + grid_obj.location
+                        target_point = (bm.verts[verts_grid[i][j]].co + bm.verts[verts_grid[i][j]].normal*(w + self.displace/2 - 0.5)*displace) - lattice.location
+                        if self.flipW: w = 1-w
+                        if self.flipU: i = nu-i-1
+                        if self.flipV: j = nv-j-1
+                        lattice.data.points[i + j*nu + w*nu*nv].co_deform.x = target_point.x / bpy.data.objects[lattice.name].scale.x
+                        lattice.data.points[i + j*nu + w*nu*nv].co_deform.y = target_point.y / bpy.data.objects[lattice.name].scale.y
+                        lattice.data.points[i + j*nu + w*nu*nv].co_deform.z = target_point.z / bpy.data.objects[lattice.name].scale.z
 
-
+        except:
+            bpy.ops.object.mode_set(mode='OBJECT')
+            grid_obj.select = True
+            lattice.select = True
+            obj.select = False
+            bpy.ops.object.delete(use_global=False)
+            bpy.context.scene.objects.active = obj
+            obj.select = True
+            bpy.ops.object.modifier_remove(modifier=obj.modifiers[-1].name)
+            if nu > 64 or nv > 64: self.report({'ERROR'}, "Maximum resolution allowed for Lattice is 64")
+        else: self.report({'ERROR'}, "The grid mesh is not correct")
+            return {'CANCELLED'}
         #grid_obj.data = old_grid_data
         #print(old_grid_matrix)
         #grid_obj.matrix_world = old_grid_matrix
@@ -325,9 +371,19 @@ class auto_lattice(bpy.types.Operator):
         obj.select = False
         bpy.ops.object.delete(use_global=False)
         bpy.context.scene.objects.active = lattice
-        #grid_mesh.select = False
-        #obj.select = False
-        bpy.context.object.data.use_outside = True
+        lattice.select = True
+        if self.high_quality_lattice: bpy.context.object.data.points_w = 8
+        else: bpy.context.object.data.use_outside = True
+        if self.hide_lattice:
+            bpy.ops.object.hide_view_set(unselected=False)
+        bpy.context.scene.objects.active = obj
+        obj.select = True
+        lattice.select = False
+        if self.flipNormals:
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.flip_normals()
+            bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
 
 
