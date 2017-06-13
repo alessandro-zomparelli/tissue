@@ -229,7 +229,7 @@ class curvature_to_vertex_groups(bpy.types.Operator):
       max=1, description="Blur strength per iteration")
 
     blur_iterations = bpy.props.IntProperty(
-      name="Blur Strength", default=1, min=0,
+      name="Blur Iterations", default=1, min=0,
       max=40, description="Number of times to blur the values")
 
     min_angle = bpy.props.FloatProperty(
