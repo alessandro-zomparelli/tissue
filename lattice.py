@@ -278,6 +278,12 @@ class lattice_along_surface(bpy.types.Operator):
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         grid_mesh = grid_obj.to_mesh(bpy.context.scene, apply_modifiers=True,
                                      settings = 'PREVIEW')
+        if len(grid_mesh.polygons) > 64*64:
+            bpy.ops.object.delete(use_global=False)
+            bpy.context.scene.objects.active = obj
+            obj.select = True
+            self.report({'ERROR'}, "Maximum resolution allowed for Lattice is 64")
+            return {'CANCELLED'}
         # CREATING LATTICE
         min = Vector((0,0,0))
         max = Vector((0,0,0))
@@ -358,6 +364,7 @@ class lattice_along_surface(bpy.types.Operator):
             bpy.ops.object.modifier_remove(modifier=obj.modifiers[-1].name)
             if nu > 64 or nv > 64:
                 self.report({'ERROR'}, "Maximum resolution allowed for Lattice is 64")
+                return {'CANCELLED'}
             else:
                 self.report({'ERROR'}, "The grid mesh is not correct")
                 return {'CANCELLED'}
