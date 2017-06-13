@@ -251,6 +251,7 @@ class curvature_to_vertex_groups(bpy.types.Operator):
         vertex_colors[-1].active = True
         vertex_colors[-1].active_render = True
         vertex_colors[-1].name = "Curvature"
+        for c in vertex_colors[-1].data: c.color.r, c.color.g, c.color.b = 1,1,1
         bpy.ops.object.mode_set(mode='VERTEX_PAINT')
         bpy.ops.paint.vertex_color_dirt(blur_strength=self.blur_strength, blur_iterations=self.blur_iterations, clean_angle=self.max_angle, dirt_angle=self.min_angle)
         bpy.ops.object.vertex_colors_to_vertex_groups(invert=self.invert)
@@ -320,18 +321,21 @@ class colors_groups_exchanger_panel(bpy.types.Panel):
     #bl_context = "objectmode"
 
     def draw(self, context):
-        layout = self.layout
-        col = layout.column(align=True)
-        col.label(text="Create Vertex Groups:")
-        col.operator(
-            "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
-        col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
-        col.operator("object.curvature_to_vertex_groups", icon="SURFACE_DATA")
+        try:
+            if bpy.context.active_object.type == 'MESH':
+                layout = self.layout
+                col = layout.column(align=True)
+                col.label(text="Create Vertex Groups:")
+                col.operator(
+                    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
+                col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
+                col.operator("object.curvature_to_vertex_groups", icon="SURFACE_DATA")
 
-        col.separator()
-        col.label(text="Create Vertex Colors:")
-        col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VERTEX")
-
+                col.separator()
+                col.label(text="Create Vertex Colors:")
+                col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VERTEX")
+        except:
+            pass
 
 
 def register():
