@@ -51,7 +51,7 @@ from mathutils import Vector
 bl_info = {
 	"name": "Tissue",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 2, 9),
+	"version": (0, 3, 0),
 	"blender": (2, 7, 8),
 	"location": "",
 	"description": "Tools for Computational Design",
