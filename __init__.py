@@ -1,25 +1,23 @@
-<<<<<<< HEAD
-
-# --------------------------------- TISSUE ----------------------------------#
-#-------------------------------- version 0.27 ------------------------------#
-#                                                                            #
-# Creates duplicates of selected mesh to active morphing the shape according #
-# to target faces.                                                           #
-#                                                                            #
-#                            Alessandro Zomparelli                           #
-#                                   (2015)                                   #
-#                                                                            #
-# http://www.co-de-it.com/                                                   #
-# http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Mesh/Tissue    #
-#                                                                            #
-# Creative Commons                                                           #
-# CC BY-SA 3.0                                                               #
-# http://creativecommons.org/licenses/by-sa/3.0/                             #
-=======
->>>>>>> dev1
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
 
 # --------------------------------- TISSUE ------------------------------------#
-#-------------------------------- version 0.29 --------------------------------#
+#-------------------------------- version 0.3 ---------------------------------#
 #                                                                              #
 # Creates duplicates of selected mesh to active morphing the shape according   #
 # to target faces.                                                             #
@@ -30,9 +28,7 @@
 # http://www.co-de-it.com/                                                     #
 # http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Mesh/Tissue      #
 #                                                                              #
-# Creative Commons                                                             #
-# CC BY-SA 3.0                                                                 #
-# http://creativecommons.org/licenses/by-sa/3.0/                               #
+################################################################################
 
 
 if "bpy" in locals():
@@ -45,6 +41,7 @@ else:
     from . import tessellate_numpy
     from . import colors_groups_exchanger
     from . import dual_mesh
+    from . import lattice
 
 import bpy
 from mathutils import Vector
@@ -54,7 +51,7 @@ from mathutils import Vector
 bl_info = {
 	"name": "Tissue",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 2, 9),
+	"version": (0, 3, 0),
 	"blender": (2, 7, 8),
 	"location": "",
 	"description": "Tools for Computational Design",
@@ -74,6 +71,7 @@ def register():
 def unregister():
     tessellate_numpy.unregister()
     colors_groups_exchanger.unregister()
+    dual_mesh.unregister()
 
 
 if __name__ == "__main__":

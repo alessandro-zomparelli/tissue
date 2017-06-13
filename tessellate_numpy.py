@@ -1,17 +1,34 @@
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
+
 # ---------------------------- ADAPTIVE DUPLIFACES ----------------------------#
 #-------------------------------- version 0.83 --------------------------------#
 #                                                                              #
 # Creates duplicates of selected mesh to active morphing the shape according   #
 # to target faces.                                                             #
 #                                                                              #
-#                      Alessandro Zomparelli                                   #
+#                    (c)  Alessandro Zomparelli                                #
 #                             (2017)                                           #
 #                                                                              #
 # http://www.co-de-it.com/                                                     #
 #                                                                              #
-# Creative Commons                                                             #
-# CC BY-SA 3.0                                                                 #
-# http://creativecommons.org/licenses/by-sa/3.0/                               #
+################################################################################
+
 
 import bpy
 from mathutils import Vector
@@ -759,17 +776,20 @@ class tessellate(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # MATERIALS
-        # create materials list
-        polygon_materials = [p.material_index for p in ob1.data.polygons]*int(
-            len(new_ob.data.polygons) / len(ob1.data.polygons))
-        # assign old material
-        component_materials = [slot.material for slot in ob1.material_slots]
-        for i in range(len(component_materials)):
-            bpy.ops.object.material_slot_add()
-            bpy.context.object.material_slots[i].material = \
-                component_materials[i]
-        for i in range(len(new_ob.data.polygons)):
-            new_ob.data.polygons[i].material_index = polygon_materials[i]
+        try:
+            # create materials list
+            polygon_materials = [p.material_index for p in ob1.data.polygons]*int(
+                len(new_ob.data.polygons) / len(ob1.data.polygons))
+            # assign old material
+            component_materials = [slot.material for slot in ob1.material_slots]
+            for i in range(len(component_materials)):
+                bpy.ops.object.material_slot_add()
+                bpy.context.object.material_slots[i].material = \
+                    component_materials[i]
+            for i in range(len(new_ob.data.polygons)):
+                new_ob.data.polygons[i].material_index = polygon_materials[i]
+        except:
+            pass
 
         return {'FINISHED'}
 
@@ -854,17 +874,20 @@ class update_tessellate(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # MATERIALS
-        # create materials list
-        polygon_materials = [p.material_index for p in ob1.data.polygons]*int(
-            len(ob.data.polygons) / len(ob1.data.polygons))
-        # assign old material
-        component_materials = [slot.material for slot in ob1.material_slots]
-        for i in range(len(component_materials)):
-            bpy.ops.object.material_slot_add()
-            bpy.context.object.material_slots[i].material = \
-                component_materials[i]
-        for i in range(len(ob.data.polygons)):
-            ob.data.polygons[i].material_index = polygon_materials[i]
+        try:
+            # create materials list
+            polygon_materials = [p.material_index for p in ob1.data.polygons]*int(
+                len(ob.data.polygons) / len(ob1.data.polygons))
+            # assign old material
+            component_materials = [slot.material for slot in ob1.material_slots]
+            for i in range(len(component_materials)):
+                bpy.ops.object.material_slot_add()
+                bpy.context.object.material_slots[i].material = \
+                    component_materials[i]
+            for i in range(len(ob.data.polygons)):
+                ob.data.polygons[i].material_index = polygon_materials[i]
+        except:
+            pass
 
         return {'FINISHED'}
 
@@ -1200,17 +1223,21 @@ class settings_tessellate(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # MATERIALS
-        # create materials list
-        polygon_materials = [p.material_index for p in ob1.data.polygons] * \
-            int(len(self.ob.data.polygons) / len(ob1.data.polygons))
-        # assign old material
-        component_materials = [slot.material for slot in ob1.material_slots]
-        for i in range(len(component_materials)):
-            bpy.ops.object.material_slot_add()
-            bpy.context.object.material_slots[i].material = \
-                component_materials[i]
-        for i in range(len(self.ob.data.polygons)):
-            self.ob.data.polygons[i].material_index = polygon_materials[i]
+        try:
+            # create materials list
+            polygon_materials = [p.material_index for p in ob1.data.polygons] * \
+                int(len(self.ob.data.polygons) / len(ob1.data.polygons))
+            # assign old material
+            component_materials = [slot.material for slot in ob1.material_slots]
+            for i in range(len(component_materials)):
+                bpy.ops.object.material_slot_add()
+                bpy.context.object.material_slots[i].material = \
+                    component_materials[i]
+            for i in range(len(self.ob.data.polygons)):
+                self.ob.data.polygons[i].material_index = polygon_materials[i]
+        except:
+            pass
+
         return {'FINISHED'}
 
     def check(self, context):
@@ -1222,7 +1249,7 @@ class settings_tessellate(bpy.types.Operator):
 
 class tessellate_panel(bpy.types.Panel):
     bl_label = "Tessellate"
-    bl_category = "Tissue"
+    bl_category = "Create"
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     #bl_context = "objectmode", "editmode"
