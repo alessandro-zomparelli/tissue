@@ -48,7 +48,7 @@ class dual_mesh(bpy.types.Operator):
     bl_idname = "object.dual_mesh"
     bl_label = "Dual Mesh"
     bl_options = {'REGISTER', 'UNDO'}
-    bl_description = ("Convert a generic mesh to its dual.")
+    bl_description = ("Convert a generic mesh into a polygonal mesh.")
 
     quad_method = bpy.props.EnumProperty(
         items=[('BEAUTY', 'Beauty',
@@ -75,14 +75,31 @@ class dual_mesh(bpy.types.Operator):
         name="Preserve Borders", default=True,
         description="Preserve original borders")
 
+    apply_modifiers = bpy.props.BoolProperty(
+        name="Apply Modifiers", default=True,
+        description="Apply object's modifiers")
+
     def execute(self, context):
+        mode = context.mode
+        if mode == 'EDIT_MESH': mode = 'EDIT'
         act = bpy.context.active_object
-        sel = bpy.context.selected_objects
+        if mode != 'OBJECT':
+            sel = [act]
+            bpy.ops.object.mode_set(mode='OBJECT')
+        else: sel = bpy.context.selected_objects
         doneMeshes = []
+        '''
+        if self.new_object:
+            bpy.ops.object.duplicate_move()
+            for i in range(len(sel)):
+                bpy.context.selected_objects[i].name = sel[i].name + "_dual"
+                if sel[i] == act:
+                    bpy.context.scene.objects.active = bpy.context.selected_objects[i]
+            sel = bpy.context.selected_objects
+        '''
         for ob0 in sel:
             if ob0.type != 'MESH': continue
             if ob0.data.name in doneMeshes: continue
-            ##ob = bpy.data.objects.new("dual_mesh_wip", ob0.data.copy())
             ob = ob0
             mesh_name = ob0.data.name
 
@@ -96,31 +113,33 @@ class dual_mesh(bpy.types.Operator):
                     count+=1
                     clones.append(o)
                 if count == n_users: break
+            if self.apply_modifiers: bpy.ops.object.convert(target='MESH')
             ob.data = ob.data.copy()
             bpy.ops.object.select_all(action='DESELECT')
             ob.select = True
             bpy.context.scene.objects.active = ob0
             bpy.ops.object.mode_set(mode = 'EDIT')
 
-            if self.preserve_borders:
-                bpy.ops.mesh.select_mode(
-                    use_extend=False, use_expand=False, type='EDGE')
-                bpy.ops.mesh.select_non_manifold(
-                    extend=False, use_wire=False, use_boundary=True,
-                    use_multi_face=False, use_non_contiguous=False,
-                    use_verts=False)
-                bpy.ops.mesh.extrude_region_move(
-                    MESH_OT_extrude_region={"mirror":False},
-                    TRANSFORM_OT_translate={"value":(0, 0, 0),
-                    "constraint_axis":(False, False, False),
-                    "constraint_orientation":'GLOBAL', "mirror":False,
-                    "proportional":'DISABLED',
-                    "proportional_edit_falloff":'SMOOTH', "proportional_size":1,
-                    "snap":False, "snap_target":'CLOSEST',
-                    "snap_point":(0, 0, 0), "snap_align":False,
-                    "snap_normal":(0, 0, 0), "gpencil_strokes":False,
-                    "texture_space":False, "remove_on_cancel":False,
-                    "release_confirm":False})
+            # prevent borders erosion
+            bpy.ops.mesh.select_mode(
+                use_extend=False, use_expand=False, type='EDGE')
+            bpy.ops.mesh.select_non_manifold(
+                extend=False, use_wire=False, use_boundary=True,
+                use_multi_face=False, use_non_contiguous=False,
+                use_verts=False)
+            bpy.ops.mesh.extrude_region_move(
+                MESH_OT_extrude_region={"mirror":False},
+                TRANSFORM_OT_translate={"value":(0, 0, 0),
+                "constraint_axis":(False, False, False),
+                "constraint_orientation":'GLOBAL', "mirror":False,
+                "proportional":'DISABLED',
+                "proportional_edit_falloff":'SMOOTH', "proportional_size":1,
+                "snap":False, "snap_target":'CLOSEST',
+                "snap_point":(0, 0, 0), "snap_align":False,
+                "snap_normal":(0, 0, 0), "gpencil_strokes":False,
+                "texture_space":False, "remove_on_cancel":False,
+                "release_confirm":False})
+
 
             bpy.ops.mesh.select_mode(
                 use_extend=False, use_expand=False, type='VERT',
@@ -132,6 +151,9 @@ class dual_mesh(bpy.types.Operator):
             bpy.ops.object.mode_set(mode = 'OBJECT')
             bpy.ops.object.modifier_add(type='SUBSURF')
             ob.modifiers[-1].name = "dual_mesh_subsurf"
+            while True:
+                bpy.ops.object.modifier_move_up(modifier="dual_mesh_subsurf")
+                if ob.modifiers[0].name == "dual_mesh_subsurf": break
             bpy.ops.object.modifier_apply(
                 apply_as='DATA', modifier='dual_mesh_subsurf')
 
@@ -199,6 +221,14 @@ class dual_mesh(bpy.types.Operator):
             bpy.ops.mesh.dissolve_verts()
             bpy.ops.mesh.select_all(action = 'DESELECT')
 
+            # remove border faces
+            if not self.preserve_borders:
+                bpy.ops.mesh.select_non_manifold(
+                    extend=False, use_wire=False, use_boundary=True,
+                    use_multi_face=False, use_non_contiguous=False, use_verts=False)
+                bpy.ops.mesh.select_more()
+                bpy.ops.mesh.delete(type='FACE')
+
             # clean wires
             bpy.ops.mesh.select_non_manifold(
                 extend=False, use_wire=True, use_boundary=False,
@@ -211,9 +241,10 @@ class dual_mesh(bpy.types.Operator):
             for o in clones: o.data = ob.data
         for o in sel: o.select = True
         bpy.context.scene.objects.active = act
+        bpy.ops.object.mode_set(mode=mode)
         return {'FINISHED'}
 
-
+'''
 class dual_mesh_panel(bpy.types.Panel):
     bl_label = "Dual Mesh"
     bl_category = "Tools"
@@ -229,16 +260,17 @@ class dual_mesh_panel(bpy.types.Panel):
                 col.operator("object.dual_mesh")
         except:
             pass
+'''
 
 
 def register():
     bpy.utils.register_class(dual_mesh)
-    bpy.utils.register_class(dual_mesh_panel)
+    #bpy.utils.register_class(dual_mesh_panel)
 
 
 def unregister():
     bpy.utils.unregister_class(dual_mesh)
-    bpy.utils.unregister_class(dual_mesh_panel)
+    #bpy.utils.unregister_class(dual_mesh_panel)
 
 
 if __name__ == "__main__":
