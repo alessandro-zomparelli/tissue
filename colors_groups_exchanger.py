@@ -348,6 +348,7 @@ class harmonic_weight(bpy.types.Operator):
         except:
             self.report({'ERROR'}, "Active object doesn't have vertex groups")
             return {'CANCELLED'}
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         return {'FINISHED'}
 
 

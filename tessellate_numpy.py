@@ -1280,8 +1280,16 @@ class tessellate_panel(bpy.types.Panel):
             sel = ob1
 
         col.separator()
-        col.label(text="Add Modifier:")
+        col.label(text="Other:")
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
+
+        #col.separator()
+        #col.label(text="Add Modifier:")
+        try:
+            if bpy.context.object.type == 'MESH':
+                col.operator("object.uv_to_mesh", icon="GROUP_UVS")
+        except:
+            pass
 
 
 

@@ -36,12 +36,15 @@ if "bpy" in locals():
     importlib.reload(tessellate_numpy)
     importlib.reload(colors_groups_exchanger)
     importlib.reload(dual_mesh)
+    importlib.reload(lattice)
+    importlib.reload(uv_to_mesh)
 
 else:
     from . import tessellate_numpy
     from . import colors_groups_exchanger
     from . import dual_mesh
     from . import lattice
+    from . import uv_to_mesh
 
 import bpy
 from mathutils import Vector
@@ -51,7 +54,7 @@ from mathutils import Vector
 bl_info = {
 	"name": "Tissue",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 3, 1),
+	"version": (0, 3, 2),
 	"blender": (2, 7, 9),
 	"location": "",
 	"description": "Tools for Computational Design",
@@ -73,6 +76,7 @@ def unregister():
     colors_groups_exchanger.unregister()
     dual_mesh.unregister()
     lattice.unregister()
+    uv_to_mesh.unregister()
 
 
 if __name__ == "__main__":
