@@ -278,6 +278,7 @@ class lattice_along_surface(bpy.types.Operator):
 
         bpy.ops.object.duplicate_move()
         grid_obj = bpy.context.active_object
+        bpy.ops.object.convert(target='MESH')
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         grid_mesh = grid_obj.to_mesh(bpy.context.scene, apply_modifiers=True,
                                      settings = 'PREVIEW')
