@@ -35,13 +35,13 @@
 
 import bpy
 import math
-from math import pi
+from math import pi, sin
 
 bl_info = {
     "name": "Colors/Groups Exchanger",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 2),
-    "blender": (2, 7, 8),
+    "version": (0, 3),
+    "blender": (2, 7, 9),
     "location": "",
     "description": ("Convert vertex colors channels to vertex groups and vertex"
                     " groups to colors"),
@@ -259,7 +259,6 @@ class curvature_to_vertex_groups(bpy.types.Operator):
         return {'FINISHED'}
 
 
-
 class face_area_to_vertex_groups(bpy.types.Operator):
     bl_idname = "object.face_area_to_vertex_groups"
     bl_label = "Area"
@@ -313,6 +312,46 @@ class face_area_to_vertex_groups(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class harmonic_weight(bpy.types.Operator):
+    bl_idname = "object.harmonic_weight"
+    bl_label = "Harmonic"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = ("Create an harmonic variation of the active Vertex Group")
+
+    freq = bpy.props.FloatProperty(
+        name="Frequency", default=20, soft_min=0,
+        soft_max=100, description="Wave frequency")
+
+    amp = bpy.props.FloatProperty(
+        name="Amplitude", default=1, soft_min=0,
+        soft_max=10, description="Wave amplitude")
+
+    midlevel = bpy.props.FloatProperty(
+        name="Midlevel", default=0, min=-1,
+        max=1, description="Midlevel")
+
+    add = bpy.props.FloatProperty(
+        name="Add", default=0, min=-1,
+        max=1, description="Add to the Weight")
+
+    mult = bpy.props.FloatProperty(
+        name="Multiply", default=0, min=0,
+        max=1, description="Multiply for he Weight")
+
+    def execute(self, context):
+        obj = bpy.context.active_object
+        try:
+            group_id = obj.vertex_groups.active_index
+            for v in obj.data.vertices:
+                val = v.groups[group_id].weight
+                v.groups[group_id].weight = (self.amp*(sin(val*self.freq) - self.midlevel)/2 + 0.5 + self.add*val)*(1-(1-val)*self.mult)
+        except:
+            self.report({'ERROR'}, "Active object doesn't have vertex groups")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+
 class colors_groups_exchanger_panel(bpy.types.Panel):
     bl_label = "Tissue Tools"
     bl_category = "Tools"
@@ -334,6 +373,7 @@ class colors_groups_exchanger_panel(bpy.types.Panel):
                     "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
                 col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
                 col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
+                col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
                 col.separator()
                 col.label(text="Vertex Color from:")
                 col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VERTEX")
@@ -346,6 +386,7 @@ def register():
     bpy.utils.register_class(vertex_group_to_vertex_colors)
     bpy.utils.register_class(face_area_to_vertex_groups)
     bpy.utils.register_class(colors_groups_exchanger_panel)
+    bpy.utils.register_class(harmonic_weight)
 
 
 def unregister():
@@ -353,6 +394,7 @@ def unregister():
     bpy.utils.unregister_class(vertex_group_to_vertex_colors)
     bpy.utils.unregister_class(face_area_to_vertex_groups)
     bpy.utils.unregister_class(colors_groups_exchanger_panel)
+    bpy.utils.unregister_class(harmonic_weight)
 
 
 if __name__ == "__main__":
