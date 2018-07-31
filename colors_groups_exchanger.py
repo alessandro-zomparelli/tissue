@@ -33,9 +33,10 @@
 #                                                                              #
 ################################################################################
 
-import bpy
-import math
-from math import pi, sin
+import bpy, bmesh
+import math, timeit
+from math import *#pi, sin
+from statistics import mean
 
 bl_info = {
     "name": "Colors/Groups Exchanger",
@@ -49,6 +50,694 @@ bl_info = {
     "wiki_url": "",
     "tracker_url": "",
     "category": "Mesh"}
+
+
+class weight_formula(bpy.types.Operator):
+    bl_idname = "object.weight_formula"
+    bl_label = "Weight Formula"
+    bl_options = {'REGISTER', 'UNDO'}
+    formula = bpy.props.StringProperty(
+        name="Formula", default="sin(nz*10)", description="Formula to Evaluate")
+    bl_description = ("Generate a Vertex Group based on the given formula")
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "formula", text="Formula")
+        layout.label(text="Vertices Variables", icon='INFO')
+        layout.label(text="x, y, z: Coordinates")
+        layout.label(text="gx, gy, gz: Global Coordinates")
+        layout.label(text="nx, ny, nz: Normal Coordinates")
+        layout.label(text="w[i]: Existing Vertex Groups")
+        layout.label(text="(where 'i' is the index of the Vertex Group)")
+
+    def execute(self, context):
+        ob = bpy.context.active_object
+        formula = self.formula
+        vertex_group_name = "Formula " + formula
+        ob.vertex_groups.new(name=vertex_group_name)
+        do_groups = "w[" in formula
+        do_global = "gx" in formula or "gy" in formula or "gz" in formula
+        mat = ob.matrix_world
+        for v, i in zip(ob.data.vertices, range(len(ob.data.vertices))):
+            if(do_groups):
+                w = []
+                for g in ob.vertex_groups:
+                    try: w.append(g.weight(i))
+                    except: w.append(0)
+            if(do_global): gx, gy, gz = mat * v.co
+            x, y, z = v.co
+            nx, ny, nz = v.normal
+            weight = eval(formula)
+            ob.vertex_groups[vertex_group_name].add([i], weight, 'REPLACE')
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
+class edges_deformation(bpy.types.Operator):
+    bl_idname = "object.edges_deformation"
+    bl_label = "Edges Deformation"
+    bl_description = ("Compute Weight based on the deformation of edges"+
+        "according to visible modifiers.")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    bounds = bpy.props.EnumProperty(
+        items=(('MANUAL', "Manual Bounds", ""),
+            ('COMPRESSION', "Compressed Only", ""),
+            ('TENSION', "Extended Only", ""),
+            ('AUTOMATIC', "Automatic Bounds", "")),
+        default='AUTOMATIC', name="Bounds")
+
+    min_def = bpy.props.FloatProperty(
+        name="Min", default=0.5, soft_min=0, soft_max=1,
+        description="Deformations with 0 weight")
+
+    max_def = bpy.props.FloatProperty(
+        name="Max", default=2, soft_min=1, soft_max=5,
+        description="Deformations with 1 weight")
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Bounds")
+        layout.prop(self, "bounds", text="")
+        if self.bounds == 'MANUAL':
+            layout.prop(self, "min_def")
+            layout.prop(self, "max_def")
+
+    def execute(self, context):
+        try: ob = context.object
+        except:
+            self.report({'ERROR'}, "Please select an Object")
+            return {'CANCELLED'}
+        ob.vertex_groups.new(name="Edges Deformation")
+
+        me0 = ob.data
+        me = ob.to_mesh(bpy.context.scene, apply_modifiers=True,
+                settings='PREVIEW')
+        if len(me.vertices) != len(me0.vertices) or len(me.edges) != len(me0.edges):
+            self.report({'ERROR'}, "The topology of the object should be" +
+                "unaltered")
+        bm0 = bmesh.new()
+        bm0.from_mesh(me0)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        deformations = []
+        for e0, e in zip(bm0.edges, bm.edges):
+            try: deformations.append(e.calc_length()/e0.calc_length())
+            except: deformations.append(1)
+        v_deformations = []
+        for v in bm.verts:
+            vdef = []
+            for e in v.link_edges:
+                vdef.append(deformations[e.index])
+            v_deformations.append(mean(vdef))
+
+        if self.bounds == 'MANUAL':
+            min_def = self.min_def
+            max_def = self.max_def
+        elif self.bounds == 'AUTOMATIC':
+            min_def = min(v_deformations)
+            max_def = max(v_deformations)
+        elif self.bounds == 'COMPRESSION':
+            min_def = 1
+            max_def = min(v_deformations)
+        elif self.bounds == 'TENSION':
+            min_def = 1
+            max_def = max(v_deformations)
+        delta_def = max_def - min_def
+        if delta_def == 0:
+            if self.bounds == 'MANUAL':
+                delta_def = 0.0001
+            else:
+                self.report({'ERROR'}, "The object doesn't have deformations")
+                return {'CANCELLED'}
+        for i in range(len(v_deformations)):
+            weight = (v_deformations[i] - min_def)/delta_def
+            ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
+class edges_bending(bpy.types.Operator):
+    bl_idname = "object.edges_bending"
+    bl_label = "Edges Bending"
+    bl_description = ("Compute Weight based on the bending of edges"+
+        "according to visible modifiers.")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    bounds = bpy.props.EnumProperty(
+        items=(('MANUAL', "Manual Bounds", ""),
+            ('POSITIVE', "Positive Only", ""),
+            ('NEGATIVE', "Negative Only", ""),
+            ('UNSIGNED', "Absolute Bending", ""),
+            ('AUTOMATIC', "Automatic Bounds", "")),
+        default='AUTOMATIC', name="Bounds")
+
+    min_def = bpy.props.FloatProperty(
+        name="Min", default=-10, soft_min=-45, soft_max=45,
+        description="Deformations with 0 weight")
+
+    max_def = bpy.props.FloatProperty(
+        name="Max", default=10, soft_min=-45, soft_max=45,
+        description="Deformations with 1 weight")
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Bounds")
+        layout.prop(self, "bounds", text="")
+        if self.bounds == 'MANUAL':
+            layout.prop(self, "min_def")
+            layout.prop(self, "max_def")
+
+    def execute(self, context):
+        try: ob = context.object
+        except:
+            self.report({'ERROR'}, "Please select an Object")
+            return {'CANCELLED'}
+        ob.vertex_groups.new(name="Edges Bending")
+
+        me0 = ob.data
+        me = ob.to_mesh(bpy.context.scene, apply_modifiers=True,
+                settings='PREVIEW')
+        if len(me.vertices) != len(me0.vertices) or len(me.edges) != len(me0.edges):
+            self.report({'ERROR'}, "The topology of the object should be" +
+                "unaltered")
+        bm0 = bmesh.new()
+        bm0.from_mesh(me0)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        deformations = []
+        for e0, e in zip(bm0.edges, bm.edges):
+            try:
+                ang = e.calc_face_angle_signed()
+                ang0 = e0.calc_face_angle_signed()
+                if self.bounds == 'UNSIGNED':
+                    deformations.append(abs(ang-ang0))
+                else:
+                    deformations.append(ang-ang0)
+            except: deformations.append(0)
+        v_deformations = []
+        for v in bm.verts:
+            vdef = []
+            for e in v.link_edges:
+                vdef.append(deformations[e.index])
+            v_deformations.append(mean(vdef))
+        print(v_deformations)
+        if self.bounds == 'MANUAL':
+            min_def = radians(self.min_def)
+            max_def = radians(self.max_def)
+        elif self.bounds == 'AUTOMATIC':
+            min_def = min(v_deformations)
+            max_def = max(v_deformations)
+        elif self.bounds == 'POSITIVE':
+            min_def = 0
+            max_def = min(v_deformations)
+        elif self.bounds == 'NEGATIVE':
+            min_def = 0
+            max_def = max(v_deformations)
+        elif self.bounds == 'UNSIGNED':
+            min_def = 0
+            max_def = max(v_deformations)
+        delta_def = max_def - min_def
+        if delta_def == 0:
+            if self.bounds == 'MANUAL':
+                delta_def = 0.0001
+            else:
+                self.report({'ERROR'}, "The object doesn't have deformations")
+                return {'CANCELLED'}
+        for i in range(len(v_deformations)):
+            weight = (v_deformations[i] - min_def)/delta_def
+            ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
+class weight_contour_mask(bpy.types.Operator):
+    bl_idname = "object.weight_contour_mask"
+    bl_label = "Contour Mask"
+    bl_description = ("")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    use_modifiers = bpy.props.BoolProperty(
+        name="Use Modifiers", default=True,
+        description="Apply all the modifiers")
+    iso = bpy.props.FloatProperty(
+        name="Iso Value", default=0.5, soft_min=0, soft_max=1,
+        description="Threshold value")
+    bool_mask = bpy.props.BoolProperty(
+        name="Mask", default=True, description="Trim along isovalue")
+
+    def execute(self, context):
+        start_time = timeit.default_timer()
+        try:
+            check = bpy.context.object.vertex_groups[0]
+        except:
+            self.report({'ERROR'}, "The object doesn't have Vertex Groups")
+            return {'CANCELLED'}
+
+        ob0 = bpy.context.object
+
+        iso_val = self.iso
+        group_id = ob0.vertex_groups.active_index
+        vertex_group_name = ob0.vertex_groups[group_id].name
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        if self.use_modifiers:
+            me0 = ob0.to_mesh(bpy.context.scene, apply_modifiers=True,
+                settings='PREVIEW')
+        else:
+            me0 = ob0.data
+
+        # generate new bmesh
+        bm = bmesh.new()
+        bm.from_mesh(me0)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        # store weight values
+        weight = []
+        ob = bpy.data.objects.new("temp", me0)
+        for g in ob0.vertex_groups:
+            ob.vertex_groups.new(name=g.name)
+        for v in me0.vertices:
+            try:
+                #weight.append(v.groups[vertex_group_name].weight)
+                weight.append(ob.vertex_groups[vertex_group_name].weight(v.index))
+            except:
+                weight.append(0)
+
+        faces_mask = []
+        for f in bm.faces:
+            w_min = 2
+            w_max = 2
+            for v in f.verts:
+                w = weight[v.index]
+                if w_min == 2:
+                    w_max = w_min = w
+                if w > w_max: w_max = w
+                if w < w_min: w_min = w
+                if w_min < iso_val and w_max > iso_val:
+                    faces_mask.append(f)
+                    break
+        print("selected faces:" + str(len(faces_mask)))
+
+        #link_faces = [[f for f in e.link_faces] for e in bm.edges]
+
+        filtered_edges = bm.edges# me0.edges
+        faces_todo = [f.select for f in bm.faces]
+        verts = []
+        edges = []
+        delete_edges = []
+        edges_id = {}
+        _filtered_edges = []
+        n_verts = len(bm.verts)
+        count = n_verts
+        for e in filtered_edges:
+            #id0 = e.vertices[0]
+            #id1 = e.vertices[1]
+            id0 = e.verts[0].index
+            id1 = e.verts[1].index
+            w0 = weight[id0]
+            w1 = weight[id1]
+
+            #edges_id.append(str(id0)+"_"+str(id1))
+            #edges_id[str(id0)+"_"+str(id1)] = e.index
+            #edges_id[str(id1)+"_"+str(id0)] = e.index
+
+            if w0 == w1: continue
+            elif w0 > iso_val and w1 > iso_val:
+                #_filtered_edges.append(e)
+                continue
+            elif w0 < iso_val and w1 < iso_val: continue
+            elif w0 == iso_val or w1 == iso_val: continue
+            else:
+                #v0 = me0.vertices[id0].select = True
+                #v1 = me0.vertices[id1].select = True
+                v0 = me0.vertices[id0].co
+                v1 = me0.vertices[id1].co
+                v = v0.lerp(v1, (iso_val-w0)/(w1-w0))
+                delete_edges.append(e)
+                verts.append(v)
+                edges_id[str(id0)+"_"+str(id1)] = count
+                edges_id[str(id1)+"_"+str(id0)] = count
+                count += 1
+            #_filtered_edges.append(e)
+        #filtered_edges = _filtered_edges
+        print("creating faces")
+        del_faces = []
+        splitted_faces = []
+        #count = 0
+        print("new vertices: " + str(len(verts)))
+        todo = 0
+        for i in faces_todo: todo += i
+        print("faces to split: " + str(todo))
+
+        switch = False
+        # splitting faces
+        for f in faces_mask:
+            # create sub-faces slots. Once a new vertex is reached it will
+            # change slot, storing the next vertices for a new face.
+            build_faces = [[],[]]
+            #switch = False
+            verts0 = list(me0.polygons[f.index].vertices)
+            verts1 = list(verts0)
+            verts1.append(verts1.pop(0)) # shift list
+            for id0, id1 in zip(verts0, verts1):
+
+                # add first vertex to active slot
+                build_faces[switch].append(id0)
+
+                # try to split edge
+                try:
+                    # check if the edge must be splitted
+                    new_vert = edges_id[str(id0)+"_"+str(id1)]
+                    # add new vertex
+                    build_faces[switch].append(new_vert)
+                    # if there is an open face on the other slot
+                    if len(build_faces[not switch]) > 0:
+                        # store actual face
+                        splitted_faces.append(build_faces[switch])
+                        # reset actual faces and switch
+                        build_faces[switch] = []
+                        # change face slot
+                    switch = not switch
+                    # continue previous face
+                    build_faces[switch].append(new_vert)
+                except: pass
+            if len(build_faces[not switch]) == 2:
+                build_faces[not switch].append(id0)
+            if len(build_faces[not switch]) > 2:
+                splitted_faces.append(build_faces[not switch])
+            # add last face
+            splitted_faces.append(build_faces[switch])
+            del_faces.append(f.index)
+
+        print("generate new bmesh")
+        # adding new vertices
+        for v in verts: bm.verts.new(v)
+        bm.verts.ensure_lookup_table()
+
+        # deleting old edges/faces
+        bm.edges.ensure_lookup_table()
+        remove_edges = []
+        #for i in delete_edges: remove_edges.append(bm.edges[i])
+        for e in delete_edges: bm.edges.remove(e)
+
+        bm.verts.ensure_lookup_table()
+        # adding new faces
+        missed_faces = []
+        for f in splitted_faces:
+            try:
+                face_verts = [bm.verts[i] for i in f]
+                bm.faces.new(face_verts)
+            except:
+                missed_faces.append(f)
+        print("missed " + str(len(missed_faces)) + " faces")
+
+
+        if(self.bool_mask or True):
+            all_weight = weight + [iso_val+0.0001]*len(verts)
+            weight = []
+            for w, v in zip(all_weight, bm.verts):
+                if w < iso_val: bm.verts.remove(v)
+                else: weight.append(w)
+            #count = 0
+            #remove_verts = []
+            #for w in weight:
+            #    if w < iso_val: remove_verts.append(bm.verts[count])
+            #    count += 1
+            #for v in remove_verts: bm.verts.remove(v)
+        # Create mesh and object
+        print("creating curve")
+        name = ob0.name + '_Isocurves_{:.3f}'.format(iso_val)
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        ob = bpy.data.objects.new(name, me)
+
+        # Link object to scene and make active
+        scn = bpy.context.scene
+        scn.objects.link(ob)
+        scn.objects.active = ob
+        ob.select = True
+        ob0.select = False
+
+        '''
+        # Create mesh from given verts, faces.
+        #me.from_pydata(verts, edges, [])
+        me.from_pydata(new_verts,[],new_faces)
+        me.validate(verbose=False)
+        # Update mesh with new data
+        me.update()
+        '''
+
+        # generate new vertex group
+        for g in ob0.vertex_groups:
+            ob.vertex_groups.new(name=g.name)
+        #ob.vertex_groups.new(name=vertex_group_name)
+
+        print("doing weight")
+        all_weight = weight + [iso_val]*len(verts)
+        mult = 1/(1-iso_val)
+        for id in range(len(all_weight)):
+            w = (all_weight[id]-iso_val)*mult
+            ob.vertex_groups[vertex_group_name].add([id], w, 'REPLACE')
+        print("weight done")
+        #for id in range(len(weight), len(ob.data.vertices)):
+        #    ob.vertex_groups[vertex_group_name].add([id], iso_val*0, 'ADD')
+
+
+        ob.vertex_groups.active_index = group_id
+
+        # align new object
+        ob.matrix_world = ob0.matrix_world
+
+        # mask
+        if self.bool_mask and True:
+            #ob.modifiers.new(type='VERTEX_WEIGHT_EDIT', name='Threshold')
+            #ob.modifiers['Threshold'].vertex_group = vertex_group_name
+            #ob.modifiers['Threshold'].use_remove = True
+            #ob.modifiers['Threshold'].remove_threshold = iso_val
+            #ob.modifiers.new(type='MASK', name='Mask')
+            #ob.modifiers['Mask'].vertex_group = vertex_group_name
+            ob.modifiers.new(type='SOLIDIFY', name='Solidify')
+            ob.modifiers['Solidify'].thickness = 0.05
+            ob.modifiers['Solidify'].offset = 0
+            ob.modifiers['Solidify'].vertex_group = vertex_group_name
+
+        #bpy.ops.paint.weight_paint_toggle()
+        #bpy.context.space_data.viewport_shade = 'WIREFRAME'
+        print("time: " + str(timeit.default_timer() - start_time))
+
+        return {'FINISHED'}
+
+class weight_contour_curves(bpy.types.Operator):
+    bl_idname = "object.weight_contour_curves"
+    bl_label = "Contour Curves"
+    bl_description = ("")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    use_modifiers = bpy.props.BoolProperty(
+        name="Use Modifiers", default=True,
+        description="Apply all the modifiers")
+
+    min_iso = bpy.props.FloatProperty(
+        name="Min Value", default=0.25, soft_min=0, soft_max=1,
+        description="Minimum weight value")
+    max_iso = bpy.props.FloatProperty(
+        name="Max Value", default=0.75, soft_min=0, soft_max=1,
+        description="Maximum weight value")
+    n_curves = bpy.props.IntProperty(
+        name="Curves", default=3, soft_min=1, soft_max=10,
+        description="Number of Contorur Curves")
+
+    min_rad = bpy.props.FloatProperty(
+        name="Min Radius", default=0.25, soft_min=0, soft_max=1,
+        description="Minimum Curve Radius")
+    max_rad = bpy.props.FloatProperty(
+        name="Max Radius", default=0.75, soft_min=0, soft_max=1,
+        description="Maximum Curve Radius")
+
+    def execute(self, context):
+        start_time = timeit.default_timer()
+        try:
+            check = bpy.context.object.vertex_groups[0]
+        except:
+            self.report({'ERROR'}, "The object doesn't have Vertex Groups")
+            return {'CANCELLED'}
+        ob0 = bpy.context.object
+
+        group_id = ob0.vertex_groups.active_index
+        vertex_group_name = ob0.vertex_groups[group_id].name
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        if self.use_modifiers:
+            me0 = ob0.to_mesh(bpy.context.scene, apply_modifiers=True,
+                settings='PREVIEW')
+        else:
+            me0 = ob0.data
+
+        # generate new bmesh
+        bm = bmesh.new()
+        bm.from_mesh(me0)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        # store weight values
+        weight = []
+        ob = bpy.data.objects.new("temp", me0)
+        for g in ob0.vertex_groups:
+            ob.vertex_groups.new(name=g.name)
+        for v in me0.vertices:
+            try:
+                #weight.append(v.groups[vertex_group_name].weight)
+                weight.append(ob.vertex_groups[vertex_group_name].weight(v.index))
+            except:
+                weight.append(0)
+
+        filtered_edges = bm.edges
+        total_verts = []
+        total_segments = []
+        radius = []
+
+        # start iterate contours levels
+        for c in range(self.n_curves):
+            try:
+                iso_val = c*(self.max_iso-self.min_iso)/(self.n_curves-1)+self.min_iso
+                if iso_val < 0: iso_val = (self.min_iso + self.max_iso)/2
+            except:
+                iso_val = (self.min_iso + self.max_iso)/2
+            print(iso_val)
+            faces_mask = []
+            for f in bm.faces:
+                w_min = 2
+                w_max = 2
+                for v in f.verts:
+                    w = weight[v.index]
+                    if w_min == 2:
+                        w_max = w_min = w
+                    if w > w_max: w_max = w
+                    if w < w_min: w_min = w
+                    if w_min < iso_val and w_max > iso_val:
+                        faces_mask.append(f)
+                        break
+
+            faces_todo = [f.select for f in bm.faces]
+            verts = []
+
+            edges_id = {}
+            _filtered_edges = []
+            n_verts = len(bm.verts)
+            count = len(total_verts)
+            for e in filtered_edges:
+                id0 = e.verts[0].index
+                id1 = e.verts[1].index
+                w0 = weight[id0]
+                w1 = weight[id1]
+
+                if w0 == w1: continue
+                elif w0 > iso_val and w1 > iso_val:
+                    _filtered_edges.append(e)
+                    continue
+                elif w0 < iso_val and w1 < iso_val: continue
+                elif w0 == iso_val or w1 == iso_val:
+                    _filtered_edges.append(e)
+                    continue
+                else:
+                    #v0 = me0.vertices[id0].select = True
+                    #v1 = me0.vertices[id1].select = True
+                    v0 = me0.vertices[id0].co
+                    v1 = me0.vertices[id1].co
+                    v = v0.lerp(v1, (iso_val-w0)/(w1-w0))
+                    verts.append(v)
+                    edges_id[e.index] = count
+                    count += 1
+                    _filtered_edges.append(e)
+            filtered_edges = _filtered_edges
+
+            # finding segments
+            segments = []
+            for f in faces_mask:
+                seg = []
+                for e in f.edges:
+                    try:
+                        seg.append(edges_id[e.index])
+                        if len(seg) == 2:
+                            segments.append(seg)
+                            seg = []
+                    except: pass
+
+            total_segments = total_segments + segments
+            total_verts = total_verts + verts
+
+            # Radius
+
+            try:
+                iso_rad = c*(self.max_rad-self.min_rad)/(self.n_curves-1)+self.min_rad
+                if iso_rad < 0: iso_rad = (self.min_rad + self.max_rad)/2
+            except:
+                iso_rad = (self.min_rad + self.max_rad)/2
+            radius = radius + [iso_rad]*len(verts)
+
+        print("generate new bmesh")
+        bm = bmesh.new()
+        # adding new vertices
+        for v in total_verts: bm.verts.new(v)
+        bm.verts.ensure_lookup_table()
+
+        # adding new edges
+        for s in total_segments:
+            try:
+                pts = [bm.verts[i] for i in s]
+                bm.edges.new(pts)
+            except: pass
+
+        print("creating curve")
+        name = ob0.name + '_Isocurves_{:.3f}'.format(iso_val)
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        ob = bpy.data.objects.new(name, me)
+
+        # Link object to scene and make active
+        scn = bpy.context.scene
+        scn.objects.link(ob)
+        scn.objects.active = ob
+        ob.select = True
+        ob0.select = False
+
+        bpy.ops.object.convert(target='CURVE')
+        ob = context.object
+        count = 0
+        for s in ob.data.splines:
+            for p in s.points:
+                p.radius = radius[count]
+                count += 1
+        ob.data.bevel_depth = 0.01
+        ob.data.fill_mode = 'FULL'
+        ob.data.bevel_resolution = 3
+
+
+
+
+        '''
+        # Create mesh from given verts, faces.
+        #me.from_pydata(verts, edges, [])
+        me.from_pydata(new_verts,[],new_faces)
+        me.validate(verbose=False)
+        # Update mesh with new data
+        me.update()
+        '''
+
+        # align new object
+        ob.matrix_world = ob0.matrix_world
+        print("time: " + str(timeit.default_timer() - start_time))
+
+        return {'FINISHED'}
 
 class vertex_colors_to_vertex_groups(bpy.types.Operator):
     bl_idname = "object.vertex_colors_to_vertex_groups"
@@ -253,7 +942,10 @@ class curvature_to_vertex_groups(bpy.types.Operator):
         vertex_colors[-1].name = "Curvature"
         for c in vertex_colors[-1].data: c.color.r, c.color.g, c.color.b = 1,1,1
         bpy.ops.object.mode_set(mode='VERTEX_PAINT')
-        bpy.ops.paint.vertex_color_dirt(blur_strength=self.blur_strength, blur_iterations=self.blur_iterations, clean_angle=self.max_angle, dirt_angle=self.min_angle)
+        bpy.ops.paint.vertex_color_dirt(
+            blur_strength=self.blur_strength,
+            blur_iterations=self.blur_iterations, clean_angle=self.max_angle,
+            dirt_angle=self.min_angle)
         bpy.ops.object.vertex_colors_to_vertex_groups(invert=self.invert)
         bpy.ops.mesh.vertex_color_remove()
         return {'FINISHED'}
@@ -268,47 +960,71 @@ class face_area_to_vertex_groups(bpy.types.Operator):
     bl_description = ("Generate a Vertex Group based on the area of individual"
                       "faces.")
 
+    bounds = bpy.props.EnumProperty(
+        items=(('MANUAL', "Manual Bounds", ""),
+            ('AUTOMATIC', "Automatic Bounds", "")),
+        default='AUTOMATIC', name="Bounds")
+
+    min_area = bpy.props.FloatProperty(
+        name="Min", default=0.01, soft_min=0, soft_max=1,
+        description="Faces with 0 weight")
+
+    max_area = bpy.props.FloatProperty(
+        name="Max", default=0.1, soft_min=0, soft_max=1,
+        description="Faces with 1 weight")
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Bounds")
+        layout.prop(self, "bounds", text="")
+        if self.bounds == 'MANUAL':
+            layout.prop(self, "min_area")
+            layout.prop(self, "max_area")
+
     def execute(self, context):
-        obj = bpy.context.active_object
-        id_value = len(obj.vertex_groups)
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.object.vertex_group_add()
-        bpy.ops.object.vertex_group_assign()
-        obj.vertex_groups[id_value].name = 'faces_area'
-        mult = 1
+        try: ob = context.object
+        except:
+            self.report({'ERROR'}, "Please select an Object")
+            return {'CANCELLED'}
+        ob.vertex_groups.new(name="Faces Area")
 
-        if self.invert: mult = -1
+        areas = [[] for v in ob.data.vertices]
 
-        bpy.ops.object.mode_set(mode='OBJECT')
-        min_area = False
-        max_area = False
-        n_values = [0]*len(obj.data.vertices)
-        values = [0]*len(obj.data.vertices)
-        for p in obj.data.polygons:
+        for p in ob.data.polygons:
             for v in p.vertices:
-                n_values[v] += 1
-                values[v] += p.area
+                areas[v].append(p.area)
 
-                if min_area:
-                    if min_area > p.area: min_area = p.area
-                else: min_area = p.area
-
-                if max_area:
-                    if max_area < p.area: max_area = p.area
-                else: max_area = p.area
-
-        id = len(obj.vertex_groups)
-        for v in obj.data.vertices:
-            gr = v.groups
-            index = v.index
-            try:
-                gr[min(len(gr)-1, id_value)].weight = self.invert + mult * \
-                    ((values[index] / n_values[index] - min_area)/(max_area - \
-                    min_area))
-            except:
-                gr[min(len(gr)-1, id_value)].weight = 0.5
-        bpy.ops.paint.weight_paint_toggle()
+        for i in range(len(areas)):
+            areas[i] = mean(areas[i])
+        print(areas)
+        if self.bounds == 'MANUAL':
+            min_area = self.min_area
+            max_area = self.max_area
+        elif self.bounds == 'AUTOMATIC':
+            min_area = min(areas)
+            max_area = max(areas)
+        elif self.bounds == 'COMPRESSION':
+            min_area = 1
+            max_area = min(areas)
+        elif self.bounds == 'TENSION':
+            min_area = 1
+            max_area = max(areas)
+        print(min_area)
+        print(max_area)
+        delta_area = max_area - min_area
+        if delta_area == 0:
+            delta_area = 0.0001
+            if self.bounds == 'MANUAL':
+                delta_area = 0.0001
+            else:
+                self.report({'ERROR'}, "The faces have the same areas")
+                #return {'CANCELLED'}
+        for i in range(len(areas)):
+            weight = (areas[i] - min_area)/delta_area
+            ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         return {'FINISHED'}
 
 
@@ -339,13 +1055,17 @@ class harmonic_weight(bpy.types.Operator):
         max=1, description="Multiply for he Weight")
 
     def execute(self, context):
-        obj = bpy.context.active_object
-        try:
-            group_id = obj.vertex_groups.active_index
-            for v in obj.data.vertices:
-                val = v.groups[group_id].weight
-                v.groups[group_id].weight = (self.amp*(sin(val*self.freq) - self.midlevel)/2 + 0.5 + self.add*val)*(1-(1-val)*self.mult)
-        except:
+        ob = bpy.context.active_object
+        if len(ob.vertex_groups) > 0:
+            group_id = ob.vertex_groups.active_index
+            ob.vertex_groups.new(name="Harmonic")
+            for i in range(len(ob.data.vertices)):
+                try: val = ob.vertex_groups[group_id].weight(i)
+                except: val = 0
+                weight = self.amp*(sin(val*self.freq) - self.midlevel)/2 + 0.5 + self.add*val*(1-(1-val)*self.mult)
+                ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+            ob.data.update()
+        else:
             self.report({'ERROR'}, "Active object doesn't have vertex groups")
             return {'CANCELLED'}
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
@@ -375,6 +1095,15 @@ class colors_groups_exchanger_panel(bpy.types.Panel):
                 col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
                 col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
                 col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
+                col.operator("object.weight_formula", icon="OUTLINER_DATA_FONT")
+                col.separator()
+                col.label(text="Deformation Analysis:")
+                col.operator("object.edges_deformation", icon="FULLSCREEN_ENTER")
+                col.operator("object.edges_bending", icon="MOD_SIMPLEDEFORM")
+                col.separator()
+                col.label(text="Weight Contour:")
+                col.operator("object.weight_contour_curves", icon="MOD_CURVE")
+                col.operator("object.weight_contour_mask", icon="MOD_MASK")
                 col.separator()
                 col.label(text="Vertex Color from:")
                 col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VERTEX")
@@ -387,7 +1116,11 @@ def register():
     bpy.utils.register_class(vertex_group_to_vertex_colors)
     bpy.utils.register_class(face_area_to_vertex_groups)
     bpy.utils.register_class(colors_groups_exchanger_panel)
+    bpy.utils.register_class(weight_contour_curves)
+    bpy.utils.register_class(weight_contour_mask)
     bpy.utils.register_class(harmonic_weight)
+    bpy.utils.register_class(edges_deformation)
+    bpy.utils.register_class(edges_bending)
 
 
 def unregister():
@@ -396,6 +1129,10 @@ def unregister():
     bpy.utils.unregister_class(face_area_to_vertex_groups)
     bpy.utils.unregister_class(colors_groups_exchanger_panel)
     bpy.utils.unregister_class(harmonic_weight)
+    bpy.utils.unregister_class(weight_contour_curves)
+    bpy.utils.unregister_class(weight_contour_mask)
+    bpy.utils.unregister_class(edges_deformation)
+    bpy.utils.unregister_class(edges_bending)
 
 
 if __name__ == "__main__":

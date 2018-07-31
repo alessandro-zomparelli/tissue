@@ -17,13 +17,13 @@
 # ##### END GPL LICENSE BLOCK #####
 
 # --------------------------------- TISSUE ------------------------------------#
-#-------------------------------- version 0.3 ---------------------------------#
+#-------------------------------- version 0.4 ---------------------------------#
 #                                                                              #
 # Creates duplicates of selected mesh to active morphing the shape according   #
 # to target faces.                                                             #
 #                                                                              #
 #                            Alessandro Zomparelli                             #
-#                                   (2017)                                     #
+#                                   (2018)                                     #
 #                                                                              #
 # http://www.co-de-it.com/                                                     #
 # http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Mesh/Tissue      #
@@ -54,7 +54,7 @@ from mathutils import Vector
 bl_info = {
 	"name": "Tissue",
 	"author": "Alessandro Zomparelli (Co-de-iT)",
-	"version": (0, 3, 2),
+	"version": (0, 3, 3),
 	"blender": (2, 7, 9),
 	"location": "",
 	"description": "Tools for Computational Design",
