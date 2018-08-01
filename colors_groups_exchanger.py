@@ -66,7 +66,12 @@ class weight_formula(bpy.types.Operator):
         layout.label(text="Vertices Variables", icon='INFO')
         layout.label(text="x, y, z: Coordinates")
         layout.label(text="gx, gy, gz: Global Coordinates")
+        layout.label(text="relx, rely, relz: Relative Co. from 0 to 1")
         layout.label(text="nx, ny, nz: Normal Coordinates")
+        #layout.label(text="minx, miny, minz: Minimum Coordinates")
+        #layout.label(text="mingx, mingy, mingz: Minimum Global Coordinates")
+        #layout.label(text="maxx, maxy, maxz: Minimum Coordinates")
+        #layout.label(text="maxgx, maxgy, maxgz: Minimum Global Coordinates")
         layout.label(text="w[i]: Existing Vertex Groups")
         layout.label(text="(where 'i' is the index of the Vertex Group)")
 
@@ -75,10 +80,33 @@ class weight_formula(bpy.types.Operator):
         formula = self.formula
         vertex_group_name = "Formula " + formula
         ob.vertex_groups.new(name=vertex_group_name)
+        n_verts = len(ob.data.vertices)
         do_groups = "w[" in formula
         do_global = "gx" in formula or "gy" in formula or "gz" in formula
+        do_rel = "relx" in formula or "rely" in formula or "relz" in formula
+        _relx, _rely, _relz = [], [], []
+        if do_rel:
+            vx, vy, vz = [], [], []
+            for v in ob.data.vertices:
+                vx.append(v.co.x)
+                vy.append(v.co.y)
+                vz.append(v.co.z)
+            minx, miny, minz = min(vx), min(vy), min(vz)
+            maxx, maxy, maxz = max(vx), max(vy), max(vz)
+            deltax, deltay, deltaz = maxx-minx, maxy-miny, maxz-minz
+            if deltax == 0: deltax = 0.001
+            if deltay == 0: deltay = 0.001
+            if deltaz == 0: deltaz = 0.001
+            for i in range(n_verts):
+                _relx.append((vx[i]-minx)/deltax)
+                _rely.append((vy[i]-miny)/deltay)
+                _relz.append((vz[i]-minz)/deltaz)
         mat = ob.matrix_world
-        for v, i in zip(ob.data.vertices, range(len(ob.data.vertices))):
+        for v, i in zip(ob.data.vertices, range(n_verts)):
+            if(do_rel):
+                relx = _relx[i]
+                rely = _rely[i]
+                relz = _relz[i]
             if(do_groups):
                 w = []
                 for g in ob.vertex_groups:
@@ -88,7 +116,129 @@ class weight_formula(bpy.types.Operator):
             x, y, z = v.co
             nx, ny, nz = v.normal
             weight = eval(formula)
-            ob.vertex_groups[vertex_group_name].add([i], weight, 'REPLACE')
+            ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
+class weight_laplacian(bpy.types.Operator):
+    bl_idname = "object.weight_laplacian"
+    bl_label = "Weight Laplacian"
+    bl_description = ("Compute the Vertex Group Laplacian")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    bounds = bpy.props.EnumProperty(
+        items=(('MANUAL', "Manual Bounds", ""),
+            ('COMPRESSION', "Compressed Only", ""),
+            ('TENSION', "Extended Only", ""),
+            ('AUTOMATIC', "Automatic Bounds", "")),
+        default='AUTOMATIC', name="Bounds")
+
+    mode = bpy.props.EnumProperty(
+        items=(('LENGTH', "Length Weight", ""),
+            ('SIMPLE', "Simple", "")),
+        default='SIMPLE', name="Evaluation Mode")
+
+    min_def = bpy.props.FloatProperty(
+        name="Min", default=0, soft_min=-1, soft_max=0,
+        description="Deformations with 0 weight")
+
+    max_def = bpy.props.FloatProperty(
+        name="Max", default=0.5, soft_min=0, soft_max=5,
+        description="Deformations with 1 weight")
+
+    bounds_string = ""
+
+    frame = None
+
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(text="Evaluation Mode")
+        col.prop(self, "mode", text="")
+        col.label(text="Bounds")
+        col.prop(self, "bounds", text="")
+        if self.bounds == 'MANUAL':
+            col.label(text="Strain Rate \u03B5:")
+            col.prop(self, "min_def")
+            col.prop(self, "max_def")
+        col.label(text="\u03B5" + ": from " + self.bounds_string)
+
+
+    def execute(self, context):
+        try: ob = context.object
+        except:
+            self.report({'ERROR'}, "Please select an Object")
+            return {'CANCELLED'}
+
+        group_id = ob.vertex_groups.active_index
+        input_group = ob.vertex_groups[group_id].name
+        print(input_group)
+
+        group_name = "Laplacian"
+        ob.vertex_groups.new(name=group_name)
+        me = ob.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.edges.ensure_lookup_table()
+
+        # store weight values
+        weight = []
+        for v in me.vertices:
+            try:
+                weight.append(ob.vertex_groups[input_group].weight(v.index))
+            except:
+                weight.append(0)
+
+        n_verts = len(bm.verts)
+        lap = [0]*n_verts
+        print(len(lap))
+        print(len(weight))
+        for e in bm.edges:
+            if self.mode == 'LENGTH':
+                length = e.calc_length()
+                if length == 0: continue
+                id0 = e.verts[0].index
+                id1 = e.verts[1].index
+                lap[id0] += weight[id1]/length - weight[id0]/length
+                lap[id1] += weight[id0]/length - weight[id1]/length
+            else:
+                id0 = e.verts[0].index
+                id1 = e.verts[1].index
+                lap[id0] += weight[id1] - weight[id0]
+                lap[id1] += weight[id0] - weight[id1]
+
+        if self.bounds == 'MANUAL':
+            min_def = self.min_def
+            max_def = self.max_def
+        elif self.bounds == 'AUTOMATIC':
+            min_def = min(lap)
+            max_def = max(lap)
+            self.min_def = min_def
+            self.max_def = max_def
+        elif self.bounds == 'COMPRESSION':
+            min_def = 0
+            max_def = min(lap)
+            self.min_def = min_def
+            self.max_def = max_def
+        elif self.bounds == 'TENSION':
+            min_def = 0
+            max_def = max(lap)
+            self.min_def = min_def
+            self.max_def = max_def
+        delta_def = max_def - min_def
+
+        # check undeformed errors
+        if delta_def == 0: delta_def = 0.0001
+
+        for i in range(len(lap)):
+            val = (lap[i]-min_def)/delta_def
+            ob.vertex_groups[-1].add([i], val, 'REPLACE')
+        self.bounds_string = str(round(min_def,2)) + " to " + str(round(max_def,2))
+        ob.vertex_groups[-1].name = group_name + " " + self.bounds_string
+        ob.vertex_groups.update()
+        ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         return {'FINISHED'}
 
@@ -106,49 +256,84 @@ class edges_deformation(bpy.types.Operator):
             ('AUTOMATIC', "Automatic Bounds", "")),
         default='AUTOMATIC', name="Bounds")
 
+    mode = bpy.props.EnumProperty(
+        items=(('MAX', "Max Deformation", ""),
+            ('MEAN', "Average Deformation", "")),
+        default='MEAN', name="Evaluation Mode")
+
     min_def = bpy.props.FloatProperty(
-        name="Min", default=0.5, soft_min=0, soft_max=1,
+        name="Min", default=0, soft_min=-1, soft_max=0,
         description="Deformations with 0 weight")
 
     max_def = bpy.props.FloatProperty(
-        name="Max", default=2, soft_min=1, soft_max=5,
+        name="Max", default=0.5, soft_min=0, soft_max=5,
         description="Deformations with 1 weight")
+
+    bounds_string = ""
+
+    frame = None
+
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="Bounds")
-        layout.prop(self, "bounds", text="")
+        col = layout.column(align=True)
+        col.label(text="Evaluation Mode")
+        col.prop(self, "mode", text="")
+        col.label(text="Bounds")
+        col.prop(self, "bounds", text="")
         if self.bounds == 'MANUAL':
-            layout.prop(self, "min_def")
-            layout.prop(self, "max_def")
+            col.label(text="Strain Rate \u03B5:")
+            col.prop(self, "min_def")
+            col.prop(self, "max_def")
+        col.label(text="\u03B5" + ": from " + self.bounds_string)
 
     def execute(self, context):
         try: ob = context.object
         except:
             self.report({'ERROR'}, "Please select an Object")
             return {'CANCELLED'}
-        ob.vertex_groups.new(name="Edges Deformation")
 
+        # check if the object is Cloth or Softbody
+        physics = False
+        for m in ob.modifiers:
+            if m.type == 'CLOTH' or m.type == 'SOFT_BODY':
+                physics = True
+                if context.scene.frame_current == 1 and self.frame != None:
+                    context.scene.frame_current = self.frame
+                break
+        if not physics: self.frame = None
+
+        if self.mode == 'MEAN': group_name = "Average Deformation"
+        elif self.mode == 'MAX': group_name = "Max Deformation"
+        ob.vertex_groups.new(name=group_name)
         me0 = ob.data
         me = ob.to_mesh(bpy.context.scene, apply_modifiers=True,
                 settings='PREVIEW')
         if len(me.vertices) != len(me0.vertices) or len(me.edges) != len(me0.edges):
             self.report({'ERROR'}, "The topology of the object should be" +
                 "unaltered")
+            return {'CANCELLED'}
+
         bm0 = bmesh.new()
         bm0.from_mesh(me0)
         bm = bmesh.new()
         bm.from_mesh(me)
         deformations = []
         for e0, e in zip(bm0.edges, bm.edges):
-            try: deformations.append(e.calc_length()/e0.calc_length())
+            try:
+                l0 = e0.calc_length()
+                l1 = e.calc_length()
+                epsilon = (l1 - l0)/l0
+                deformations.append(epsilon)
             except: deformations.append(1)
         v_deformations = []
         for v in bm.verts:
             vdef = []
             for e in v.link_edges:
                 vdef.append(deformations[e.index])
-            v_deformations.append(mean(vdef))
+            if self.mode == 'MEAN': v_deformations.append(mean(vdef))
+            elif self.mode == 'MAX': v_deformations.append(max(vdef, key=abs))
+            #elif self.mode == 'MIN': v_deformations.append(min(vdef, key=abs))
 
         if self.bounds == 'MANUAL':
             min_def = self.min_def
@@ -156,22 +341,40 @@ class edges_deformation(bpy.types.Operator):
         elif self.bounds == 'AUTOMATIC':
             min_def = min(v_deformations)
             max_def = max(v_deformations)
+            self.min_def = min_def
+            self.max_def = max_def
         elif self.bounds == 'COMPRESSION':
-            min_def = 1
+            min_def = 0
             max_def = min(v_deformations)
+            self.min_def = min_def
+            self.max_def = max_def
         elif self.bounds == 'TENSION':
-            min_def = 1
+            min_def = 0
             max_def = max(v_deformations)
+            self.min_def = min_def
+            self.max_def = max_def
         delta_def = max_def - min_def
+
+        # check undeformed errors
         if delta_def == 0:
             if self.bounds == 'MANUAL':
                 delta_def = 0.0001
             else:
-                self.report({'ERROR'}, "The object doesn't have deformations")
+                message = "The object doesn't have deformations."
+                if physics:
+                    message = message + ("\nIf you are using Physics try to " +
+                        "save it in the cache before.")
+                self.report({'ERROR'}, message)
                 return {'CANCELLED'}
+        else:
+            if physics:
+                self.frame = context.scene.frame_current
+
         for i in range(len(v_deformations)):
             weight = (v_deformations[i] - min_def)/delta_def
             ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        self.bounds_string = str(round(min_def,2)) + " to " + str(round(max_def,2))
+        ob.vertex_groups[-1].name = group_name + " " + self.bounds_string
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
@@ -189,7 +392,7 @@ class edges_bending(bpy.types.Operator):
             ('POSITIVE', "Positive Only", ""),
             ('NEGATIVE', "Negative Only", ""),
             ('UNSIGNED', "Absolute Bending", ""),
-            ('AUTOMATIC', "Automatic Bounds", "")),
+            ('AUTOMATIC', "Signed Bending", "")),
         default='AUTOMATIC', name="Bounds")
 
     min_def = bpy.props.FloatProperty(
@@ -199,6 +402,9 @@ class edges_bending(bpy.types.Operator):
     max_def = bpy.props.FloatProperty(
         name="Max", default=10, soft_min=-45, soft_max=45,
         description="Deformations with 1 weight")
+
+    bounds_string = ""
+    frame = None
 
     def draw(self, context):
         layout = self.layout
@@ -213,8 +419,22 @@ class edges_bending(bpy.types.Operator):
         except:
             self.report({'ERROR'}, "Please select an Object")
             return {'CANCELLED'}
-        ob.vertex_groups.new(name="Edges Bending")
 
+        group_name = "Edges Bending"
+        ob.vertex_groups.new(name=group_name)
+
+        # check if the object is Cloth or Softbody
+        physics = False
+        for m in ob.modifiers:
+            if m.type == 'CLOTH' or m.type == 'SOFT_BODY':
+                physics = True
+                if context.scene.frame_current == 1 and self.frame != None:
+                    context.scene.frame_current = self.frame
+                break
+        if not physics: self.frame = None
+
+        #ob.data.update()
+        #context.scene.update()
         me0 = ob.data
         me = ob.to_mesh(bpy.context.scene, apply_modifiers=True,
                 settings='PREVIEW')
@@ -258,15 +478,27 @@ class edges_bending(bpy.types.Operator):
             min_def = 0
             max_def = max(v_deformations)
         delta_def = max_def - min_def
+
+        # check undeformed errors
         if delta_def == 0:
             if self.bounds == 'MANUAL':
                 delta_def = 0.0001
             else:
-                self.report({'ERROR'}, "The object doesn't have deformations")
+                message = "The object doesn't have deformations."
+                if physics:
+                    message = message + ("\nIf you are using Physics try to " +
+                        "save it in the cache before.")
+                self.report({'ERROR'}, message)
                 return {'CANCELLED'}
+        else:
+            if physics:
+                self.frame = context.scene.frame_current
+
         for i in range(len(v_deformations)):
             weight = (v_deformations[i] - min_def)/delta_def
             ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        self.bounds_string = str(round(min_def,2)) + " to " + str(round(max_def,2))
+        ob.vertex_groups[-1].name = group_name + " " + self.bounds_string
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
@@ -529,6 +761,7 @@ class weight_contour_mask(bpy.types.Operator):
 
         #bpy.ops.paint.weight_paint_toggle()
         #bpy.context.space_data.viewport_shade = 'WIREFRAME'
+        ob.data.update()
         print("time: " + str(timeit.default_timer() - start_time))
 
         return {'FINISHED'}
@@ -1094,6 +1327,7 @@ class colors_groups_exchanger_panel(bpy.types.Panel):
                     "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
                 col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
                 col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
+                col.operator("object.weight_laplacian", icon="SMOOTHCURVE")
                 col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
                 col.operator("object.weight_formula", icon="OUTLINER_DATA_FONT")
                 col.separator()
@@ -1121,6 +1355,7 @@ def register():
     bpy.utils.register_class(harmonic_weight)
     bpy.utils.register_class(edges_deformation)
     bpy.utils.register_class(edges_bending)
+    bpy.utils.register_class(weight_laplacian)
 
 
 def unregister():
@@ -1133,6 +1368,7 @@ def unregister():
     bpy.utils.unregister_class(weight_contour_mask)
     bpy.utils.unregister_class(edges_deformation)
     bpy.utils.unregister_class(edges_bending)
+    bpy.utils.unregister_class(weight_laplacian)
 
 
 if __name__ == "__main__":
