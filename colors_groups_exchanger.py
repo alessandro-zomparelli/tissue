@@ -34,9 +34,11 @@
 ################################################################################
 
 import bpy, bmesh
+import numpy as np
 import math, timeit
 from math import *#pi, sin
 from statistics import mean
+from numpy import *
 
 bl_info = {
     "name": "Colors/Groups Exchanger",
@@ -56,69 +58,135 @@ class weight_formula(bpy.types.Operator):
     bl_idname = "object.weight_formula"
     bl_label = "Weight Formula"
     bl_options = {'REGISTER', 'UNDO'}
+
+    ex = [
+        'cos(arctan(nx/ny)*6 + sin(rz*30)*0.5)/2 + cos(arctan(nx/ny)*6 - sin(rz*30)*0.5 + pi/2)/2 + 0.5',
+        'cos(arctan(nx/ny)*6 + sin(rz*30))/4 + cos(arctan(nx/ny)*6 - sin(rz*30))/4 + 0.5',
+        'cos(arctan(nx/ny)*6 + sin(rz*30))/2 + cos(arctan(nx/ny)*6 - sin(rz*30))/2',
+        '(sin(arctan(nx/ny)*8)*sin(nz*8)+1)/2',
+        'cos(arctan(nx/ny)*6)',
+        'cos(arctan(lx/ly)*6 + sin(rz*30)*2)',
+        'sin(nx*15)<sin(ny*15)',
+        'cos(ny*rz**2*30)',
+        'sin(rx*30) > 0',
+        'sin(nz*15)',
+        'w[0]**2',
+        'sqrt((rx-0.5)**2 + (ry-0.5)**2)*2',
+        'abs(0.5-rz)*2'
+        'rx'
+        ]
+    ex_items = list((s,s,"") for s in ex)
+    ex_items.append(('CUSTOM', "User Formula", ""))
+    examples = bpy.props.EnumProperty(
+        items = ex_items, default='CUSTOM', name="Examples")
+
+    _formula = ""
+
     formula = bpy.props.StringProperty(
-        name="Formula", default="sin(nz*10)", description="Formula to Evaluate")
+        name="Formula", default="", description="Formula to Evaluate")
     bl_description = ("Generate a Vertex Group based on the given formula")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=350)
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "formula", text="Formula")
-        layout.label(text="Vertices Variables", icon='INFO')
-        layout.label(text="x, y, z: Coordinates")
-        layout.label(text="gx, gy, gz: Global Coordinates")
-        layout.label(text="relx, rely, relz: Relative Co. from 0 to 1")
-        layout.label(text="nx, ny, nz: Normal Coordinates")
-        #layout.label(text="minx, miny, minz: Minimum Coordinates")
-        #layout.label(text="mingx, mingy, mingz: Minimum Global Coordinates")
-        #layout.label(text="maxx, maxy, maxz: Minimum Coordinates")
-        #layout.label(text="maxgx, maxgy, maxgz: Minimum Global Coordinates")
-        layout.label(text="w[i]: Existing Vertex Groups")
-        layout.label(text="(where 'i' is the index of the Vertex Group)")
+        layout.prop(self, "examples")
+        if self.examples == 'CUSTOM':
+            layout.prop(self, "formula", text="Formula")
+        layout.separator()
+        layout.label(text="Variables (for each vertex):")#, icon='INFO')
+        layout.label(text="lx, ly, lz: Local Coordinates", icon='OBJECT_DATA')#'MANIPUL')
+        layout.label(text="gx, gy, gz: Global Coordinates", icon='WORLD')
+        layout.label(text="rx, ry, rz: Local Coordinates (0 to 1)", icon='BBOX')
+        layout.label(text="nx, ny, nz: Normal Coordinates", icon='SNAP_NORMAL')
+        layout.label(text="w[0], w[1], w[2], ... : Vertex Groups", icon="GROUP_VERTEX")
+        layout.separator()
+        layout.label(text="All mathematical functions are based on Numpy", icon='INFO')
+        #layout.label(text="https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html", icon='INFO')
+        #layout.label(text="w[i]: Existing Vertex Groups", icon="GROUP_VERTEX")
+        #layout.label(text="(where 'i' is the index of the Vertex Group)")
 
     def execute(self, context):
         ob = bpy.context.active_object
-        formula = self.formula
+        if self.examples == 'CUSTOM':
+            formula = self.formula
+        else:
+            self.formula = self.examples
+            formula = self.examples
+
+        if formula == "": return {'FINISHED'}
         vertex_group_name = "Formula " + formula
         ob.vertex_groups.new(name=vertex_group_name)
-        n_verts = len(ob.data.vertices)
+
+        verts = ob.data.vertices
+        n_verts = len(verts)
         do_groups = "w[" in formula
+        do_local = "lx" in formula or "ly" in formula or "lz" in formula
         do_global = "gx" in formula or "gy" in formula or "gz" in formula
-        do_rel = "relx" in formula or "rely" in formula or "relz" in formula
-        _relx, _rely, _relz = [], [], []
-        if do_rel:
-            vx, vy, vz = [], [], []
-            for v in ob.data.vertices:
-                vx.append(v.co.x)
-                vy.append(v.co.y)
-                vz.append(v.co.z)
-            minx, miny, minz = min(vx), min(vy), min(vz)
-            maxx, maxy, maxz = max(vx), max(vy), max(vz)
-            deltax, deltay, deltaz = maxx-minx, maxy-miny, maxz-minz
-            if deltax == 0: deltax = 0.001
-            if deltay == 0: deltay = 0.001
-            if deltaz == 0: deltaz = 0.001
-            for i in range(n_verts):
-                _relx.append((vx[i]-minx)/deltax)
-                _rely.append((vy[i]-miny)/deltay)
-                _relz.append((vz[i]-minz)/deltaz)
+        do_relative = "rx" in formula or "ry" in formula or "rz" in formula
+        do_normal = "nx" in formula or "ny" in formula or "nz" in formula
         mat = ob.matrix_world
-        for v, i in zip(ob.data.vertices, range(n_verts)):
-            if(do_rel):
-                relx = _relx[i]
-                rely = _rely[i]
-                relz = _relz[i]
-            if(do_groups):
-                w = []
-                for g in ob.vertex_groups:
-                    try: w.append(g.weight(i))
-                    except: w.append(0)
-            if(do_global): gx, gy, gz = mat * v.co
-            x, y, z = v.co
-            nx, ny, nz = v.normal
+
+        for i in range(1000):
+            if "w["+str(i)+"]" in formula and i > len(ob.vertex_groups)-1:
+                self.report({'ERROR'}, "w["+str(i)+"] not found" )
+                return {'FINISHED'}
+
+        w = []
+        for i in range(len(ob.vertex_groups)):
+            w.append([])
+            if "w["+str(i)+"]" in formula:
+                vg = ob.vertex_groups[i]
+                for v in verts:
+                    try:
+                        w[i].append(vg.weight(v.index))
+                    except:
+                        w[i].append(0)
+                w[i] = array(w[i])
+
+        start_time = timeit.default_timer()
+        # compute vertex coordinates
+        if do_local or do_relative or do_global:
+            co = [0]*n_verts*3
+            verts.foreach_get('co', co)
+            np_co = array(co).reshape((n_verts, 3))
+            lx, ly, lz = array(np_co).transpose()
+            if do_relative:
+                rx = np.interp(lx, (lx.min(), lx.max()), (0, +1))
+                ry = np.interp(ly, (ly.min(), ly.max()), (0, +1))
+                rz = np.interp(lz, (lz.min(), lz.max()), (0, +1))
+            if do_global:
+                co = [v.co for v in verts]
+                global_co = []
+                for v in co:
+                    global_co.append(mat * v)
+                global_co = array(global_co).reshape((n_verts, 3))
+                gx, gy, gz = array(global_co).transpose()
+        # compute vertex normals
+        if do_normal:
+            normal = [0]*n_verts*3
+            verts.foreach_get('normal', normal)
+            normal = array(normal).reshape((n_verts, 3))
+            nx, ny, nz = array(normal).transpose()
+        #print("time: " + str(timeit.default_timer() - start_time))
+
+        #start_time = timeit.default_timer()
+        try:
             weight = eval(formula)
-            ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        except:
+            self.report({'ERROR'}, "There is something wrong" )
+            return {'FINISHED'}
+
+        #print("time: " + str(timeit.default_timer() - start_time))
+
+        #start_time = timeit.default_timer()
+        for i in range(n_verts):
+            ob.vertex_groups[-1].add([i], weight[i], 'REPLACE')
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        print("Weight Formula: " + str(timeit.default_timer() - start_time))
+
         return {'FINISHED'}
 
 class weight_laplacian(bpy.types.Operator):
@@ -151,6 +219,9 @@ class weight_laplacian(bpy.types.Operator):
 
     frame = None
 
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
 
     def draw(self, context):
         layout = self.layout
@@ -273,6 +344,9 @@ class edges_deformation(bpy.types.Operator):
 
     frame = None
 
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.modifiers) > 0
 
     def draw(self, context):
         layout = self.layout
@@ -406,6 +480,10 @@ class edges_bending(bpy.types.Operator):
     bounds_string = ""
     frame = None
 
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.modifiers) > 0
+
     def draw(self, context):
         layout = self.layout
         layout.label(text="Bounds")
@@ -518,6 +596,10 @@ class weight_contour_mask(bpy.types.Operator):
         description="Threshold value")
     bool_mask = bpy.props.BoolProperty(
         name="Mask", default=True, description="Trim along isovalue")
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
 
     def execute(self, context):
         start_time = timeit.default_timer()
@@ -777,10 +859,10 @@ class weight_contour_curves(bpy.types.Operator):
         description="Apply all the modifiers")
 
     min_iso = bpy.props.FloatProperty(
-        name="Min Value", default=0.25, soft_min=0, soft_max=1,
+        name="Min Value", default=0., soft_min=0, soft_max=1,
         description="Minimum weight value")
     max_iso = bpy.props.FloatProperty(
-        name="Max Value", default=0.75, soft_min=0, soft_max=1,
+        name="Max Value", default=1, soft_min=0, soft_max=1,
         description="Maximum weight value")
     n_curves = bpy.props.IntProperty(
         name="Curves", default=3, soft_min=1, soft_max=10,
@@ -792,6 +874,11 @@ class weight_contour_curves(bpy.types.Operator):
     max_rad = bpy.props.FloatProperty(
         name="Max Radius", default=0.75, soft_min=0, soft_max=1,
         description="Maximum Curve Radius")
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.object
+        return len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
 
     def execute(self, context):
         start_time = timeit.default_timer()
@@ -893,6 +980,8 @@ class weight_contour_curves(bpy.types.Operator):
                     _filtered_edges.append(e)
             filtered_edges = _filtered_edges
 
+            if len(verts) == 0: continue
+
             # finding segments
             segments = []
             for f in faces_mask:
@@ -930,30 +1019,33 @@ class weight_contour_curves(bpy.types.Operator):
                 bm.edges.new(pts)
             except: pass
 
-        print("creating curve")
-        name = ob0.name + '_Isocurves_{:.3f}'.format(iso_val)
-        me = bpy.data.meshes.new(name)
-        bm.to_mesh(me)
-        ob = bpy.data.objects.new(name, me)
+        try:
+            print("creating curve")
+            name = ob0.name + '_Isocurves_{:.3f}'.format(iso_val)
+            me = bpy.data.meshes.new(name)
+            bm.to_mesh(me)
+            ob = bpy.data.objects.new(name, me)
 
-        # Link object to scene and make active
-        scn = bpy.context.scene
-        scn.objects.link(ob)
-        scn.objects.active = ob
-        ob.select = True
-        ob0.select = False
+            # Link object to scene and make active
+            scn = bpy.context.scene
+            scn.objects.link(ob)
+            scn.objects.active = ob
+            ob.select = True
+            ob0.select = False
 
-        bpy.ops.object.convert(target='CURVE')
-        ob = context.object
-        count = 0
-        for s in ob.data.splines:
-            for p in s.points:
-                p.radius = radius[count]
-                count += 1
-        ob.data.bevel_depth = 0.01
-        ob.data.fill_mode = 'FULL'
-        ob.data.bevel_resolution = 3
-
+            bpy.ops.object.convert(target='CURVE')
+            ob = context.object
+            count = 0
+            for s in ob.data.splines:
+                for p in s.points:
+                    p.radius = radius[count]
+                    count += 1
+            ob.data.bevel_depth = 0.01
+            ob.data.fill_mode = 'FULL'
+            ob.data.bevel_resolution = 3
+        except:
+            self.report({'ERROR'}, "There are no values in the chosen range")
+            return {'CANCELLED'}
 
 
 
@@ -989,6 +1081,10 @@ class vertex_colors_to_vertex_groups(bpy.types.Operator):
         name="value channel", default=True, description="convert value channel")
     invert = bpy.props.BoolProperty(
          name="invert", default=False, description="invert all color channels")
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.data.vertex_colors) > 0
 
     def execute(self, context):
         obj = bpy.context.active_object
@@ -1074,6 +1170,10 @@ class vertex_group_to_vertex_colors(bpy.types.Operator):
 
     invert = bpy.props.BoolProperty(
         name="invert", default=False, description="invert color channel")
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
 
     def execute(self, context):
         obj = bpy.context.active_object
@@ -1287,6 +1387,10 @@ class harmonic_weight(bpy.types.Operator):
         name="Multiply", default=0, min=0,
         max=1, description="Multiply for he Weight")
 
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
+
     def execute(self, context):
         ob = bpy.context.active_object
         if len(ob.vertex_groups) > 0:
@@ -1306,50 +1410,66 @@ class harmonic_weight(bpy.types.Operator):
 
 
 
-class colors_groups_exchanger_panel(bpy.types.Panel):
+class color_panel(bpy.types.Panel):
     bl_label = "Tissue Tools"
     bl_category = "Tools"
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     bl_options = {'DEFAULT_CLOSED'}
-    #bl_context = "objectmode"
+    bl_context = "vertexpaint"
 
     def draw(self, context):
-        try:
-            if bpy.context.active_object.type == 'MESH':
-                layout = self.layout
-                col = layout.column(align=True)
-                col.label(text="Transform:")
-                col.operator("object.dual_mesh")
-                col.separator()
-                col.label(text="Weight from:")
-                col.operator(
-                    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
-                col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
-                col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
-                col.operator("object.weight_laplacian", icon="SMOOTHCURVE")
-                col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
-                col.operator("object.weight_formula", icon="OUTLINER_DATA_FONT")
-                col.separator()
-                col.label(text="Deformation Analysis:")
-                col.operator("object.edges_deformation", icon="FULLSCREEN_ENTER")
-                col.operator("object.edges_bending", icon="MOD_SIMPLEDEFORM")
-                col.separator()
-                col.label(text="Weight Contour:")
-                col.operator("object.weight_contour_curves", icon="MOD_CURVE")
-                col.operator("object.weight_contour_mask", icon="MOD_MASK")
-                col.separator()
-                col.label(text="Vertex Color from:")
-                col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VERTEX")
-        except:
-            pass
+        layout = self.layout
+        col = layout.column(align=True)
+        col.operator("object.vertex_colors_to_vertex_groups",
+            icon="GROUP_VERTEX", text="Convert to Weight")
+
+class weight_panel(bpy.types.Panel):
+    bl_label = "Tissue Tools"
+    bl_category = "Tools"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "TOOLS"
+    bl_options = {'DEFAULT_CLOSED'}
+    bl_context = "weightpaint"
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        #if context.object.type == 'MESH' and context.mode == 'OBJECT':
+            #col.label(text="Transform:")
+            #col.separator()
+        #elif bpy.context.mode == 'PAINT_WEIGHT':
+        col.label(text="Weight Generate:")
+        #col.operator(
+        #    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
+        col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
+        col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
+        col.operator("object.weight_formula", icon="OUTLINER_DATA_FONT")
+        #col.label(text="Weight Processing:")
+        col.separator()
+        col.operator("object.weight_laplacian", icon="SMOOTHCURVE")
+        col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
+        col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL",
+            text="Convert to Colors")
+        col.separator()
+        col.label(text="Deformation Analysis:")
+        col.operator("object.edges_deformation", icon="FULLSCREEN_ENTER")
+        col.operator("object.edges_bending", icon="MOD_SIMPLEDEFORM")
+        col.separator()
+        col.label(text="Weight Contour:")
+        col.operator("object.weight_contour_curves", icon="MOD_CURVE")
+        col.operator("object.weight_contour_mask", icon="MOD_MASK")
+        #col.separator()
+        #col.label(text="Vertex Color from:")
+        #col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VERTEX")
 
 
 def register():
     bpy.utils.register_class(vertex_colors_to_vertex_groups)
     bpy.utils.register_class(vertex_group_to_vertex_colors)
     bpy.utils.register_class(face_area_to_vertex_groups)
-    bpy.utils.register_class(colors_groups_exchanger_panel)
+    bpy.utils.register_class(weight_panel)
+    bpy.utils.register_class(color_panel)
     bpy.utils.register_class(weight_contour_curves)
     bpy.utils.register_class(weight_contour_mask)
     bpy.utils.register_class(harmonic_weight)
@@ -1362,7 +1482,8 @@ def unregister():
     bpy.utils.unregister_class(vertex_colors_to_vertex_groups)
     bpy.utils.unregister_class(vertex_group_to_vertex_colors)
     bpy.utils.unregister_class(face_area_to_vertex_groups)
-    bpy.utils.unregister_class(colors_groups_exchanger_panel)
+    bpy.utils.unregister_class(weight_panel)
+    bpy.utils.unregister_class(color_panel)
     bpy.utils.unregister_class(harmonic_weight)
     bpy.utils.unregister_class(weight_contour_curves)
     bpy.utils.unregister_class(weight_contour_mask)
