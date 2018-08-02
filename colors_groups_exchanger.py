@@ -60,7 +60,7 @@ class weight_formula(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     ex = [
-        'cos(arctan(nx/ny)*6 + sin(rz*30)*0.5)/2 + cos(arctan(nx/ny)*6 - sin(rz*30)*0.5 + pi/2)/2 + 0.5',
+        #'cos(arctan(nx/ny)*6 + sin(rz*30)*0.5)/2 + cos(arctan(nx/ny)*6 - sin(rz*30)*0.5 + pi/2)/2 + 0.5',
         'cos(arctan(nx/ny)*6 + sin(rz*30))/4 + cos(arctan(nx/ny)*6 - sin(rz*30))/4 + 0.5',
         'cos(arctan(nx/ny)*6 + sin(rz*30))/2 + cos(arctan(nx/ny)*6 - sin(rz*30))/2',
         '(sin(arctan(nx/ny)*8)*sin(nz*8)+1)/2',
