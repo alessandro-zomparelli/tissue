@@ -61,8 +61,8 @@ class weight_formula(bpy.types.Operator):
 
     ex = [
         #'cos(arctan(nx/ny)*6 + sin(rz*30)*0.5)/2 + cos(arctan(nx/ny)*6 - sin(rz*30)*0.5 + pi/2)/2 + 0.5',
-        'cos(arctan(nx/ny)*6 + sin(rz*30))/4 + cos(arctan(nx/ny)*6 - sin(rz*30))/4 + 0.5',
-        'cos(arctan(nx/ny)*6 + sin(rz*30))/2 + cos(arctan(nx/ny)*6 - sin(rz*30))/2',
+        'cos(arctan(nx/ny)*i1*2 + sin(rz*i3))/i2 + cos(arctan(nx/ny)*i1*2 - sin(rz*i3))/i2 + 0.5',
+        'cos(arctan(nx/ny)*i1*2 + sin(rz*i2))/2 + cos(arctan(nx/ny)*i1*2 - sin(rz*i2))/2',
         '(sin(arctan(nx/ny)*i1)*sin(nz*i1)+1)/2',
         'cos(arctan(nx/ny)*f1)',
         'cos(arctan(lx/ly)*f1 + sin(rz*f2)*f3)',
