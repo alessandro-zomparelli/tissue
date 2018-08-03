@@ -72,15 +72,16 @@ class weight_formula(bpy.types.Operator):
         'sin(nz*15)',
         'w[0]**2',
         'sqrt((rx-0.5)**2 + (ry-0.5)**2)*2',
-        'abs(0.5-rz)*2'
+        'abs(0.5-rz)*2',
         'rx'
         ]
     ex_items = list((s,s,"") for s in ex)
     ex_items.append(('CUSTOM', "User Formula", ""))
+
     examples = bpy.props.EnumProperty(
         items = ex_items, default='CUSTOM', name="Examples")
 
-    _formula = ""
+    old_ex = ""
 
     formula = bpy.props.StringProperty(
         name="Formula", default="", description="Formula to Evaluate")
@@ -92,8 +93,18 @@ class weight_formula(bpy.types.Operator):
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "examples")
-        if self.examples == 'CUSTOM':
-            layout.prop(self, "formula", text="Formula")
+        #if self.examples == 'CUSTOM':
+        layout.prop(self, "formula", text="Formula")
+        #try: self.examples = self.formula
+        #except: pass
+
+        if self.examples != self.old_ex and self.examples != 'CUSTOM':
+            self.formula = self.examples
+            self.old_ex = self.examples
+        elif self.formula != self.examples:
+            self.examples = 'CUSTOM'
+        formula = self.formula
+
         layout.separator()
         layout.label(text="Variables (for each vertex):")#, icon='INFO')
         layout.label(text="lx, ly, lz: Local Coordinates", icon='OBJECT_DATA')#'MANIPUL')
@@ -109,11 +120,18 @@ class weight_formula(bpy.types.Operator):
 
     def execute(self, context):
         ob = bpy.context.active_object
-        if self.examples == 'CUSTOM':
-            formula = self.formula
-        else:
+        #if self.examples == 'CUSTOM':
+        #    formula = self.formula
+        #else:
+        #self.formula = self.examples
+        #    formula = self.examples
+
+        if self.examples != self.old_ex and self.examples != 'CUSTOM':
             self.formula = self.examples
-            formula = self.examples
+            self.old_ex = self.examples
+        elif self.formula != self.examples:
+            self.examples = 'CUSTOM'
+        formula = self.formula
 
         if formula == "": return {'FINISHED'}
         vertex_group_name = "Formula " + formula
@@ -181,8 +199,13 @@ class weight_formula(bpy.types.Operator):
         #print("time: " + str(timeit.default_timer() - start_time))
 
         #start_time = timeit.default_timer()
-        for i in range(n_verts):
-            ob.vertex_groups[-1].add([i], weight[i], 'REPLACE')
+        weight = nan_to_num(weight)
+        if type(weight) == int or type(weight) == float:
+            for i in range(n_verts):
+                ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+        elif type(weight) == ndarray:
+            for i in range(n_verts):
+                ob.vertex_groups[-1].add([i], weight[i], 'REPLACE')
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         print("Weight Formula: " + str(timeit.default_timer() - start_time))
