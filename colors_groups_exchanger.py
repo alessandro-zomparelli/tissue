@@ -63,13 +63,13 @@ class weight_formula(bpy.types.Operator):
         #'cos(arctan(nx/ny)*6 + sin(rz*30)*0.5)/2 + cos(arctan(nx/ny)*6 - sin(rz*30)*0.5 + pi/2)/2 + 0.5',
         'cos(arctan(nx/ny)*6 + sin(rz*30))/4 + cos(arctan(nx/ny)*6 - sin(rz*30))/4 + 0.5',
         'cos(arctan(nx/ny)*6 + sin(rz*30))/2 + cos(arctan(nx/ny)*6 - sin(rz*30))/2',
-        '(sin(arctan(nx/ny)*8)*sin(nz*8)+1)/2',
-        'cos(arctan(nx/ny)*6)',
-        'cos(arctan(lx/ly)*6 + sin(rz*30)*2)',
+        '(sin(arctan(nx/ny)*i1)*sin(nz*i1)+1)/2',
+        'cos(arctan(nx/ny)*f1)',
+        'cos(arctan(lx/ly)*f1 + sin(rz*f2)*f3)',
         'sin(nx*15)<sin(ny*15)',
-        'cos(ny*rz**2*30)',
+        'cos(ny*rz**2*i1)',
         'sin(rx*30) > 0',
-        'sin(nz*15)',
+        'sin(nz*i1)',
         'w[0]**2',
         'sqrt((rx-0.5)**2 + (ry-0.5)**2)*2',
         'abs(0.5-rz)*2',
@@ -86,6 +86,37 @@ class weight_formula(bpy.types.Operator):
     formula = bpy.props.StringProperty(
         name="Formula", default="", description="Formula to Evaluate")
     bl_description = ("Generate a Vertex Group based on the given formula")
+
+    slider_f01 = bpy.props.FloatProperty(
+        name="f1", default=1, description="Slider")
+    bl_description = ("Slider Float 1")
+    slider_f02 = bpy.props.FloatProperty(
+        name="f2", default=1, description="Slider")
+    bl_description = ("Slider Float 2")
+    slider_f03 = bpy.props.FloatProperty(
+        name="f3", default=1, description="Slider")
+    bl_description = ("Slider Float 3")
+    slider_f04 = bpy.props.FloatProperty(
+        name="f4", default=1, description="Slider")
+    bl_description = ("Slider Float 4")
+    slider_f05 = bpy.props.FloatProperty(
+        name="f5", default=1, description="Slider")
+    bl_description = ("Slider Float 5")
+    slider_i01 = bpy.props.IntProperty(
+        name="i1", default=1, description="Slider")
+    bl_description = ("Slider Integer 1")
+    slider_i02 = bpy.props.IntProperty(
+        name="i2", default=1, description="Slider")
+    bl_description = ("Slider Integer 2")
+    slider_i03 = bpy.props.IntProperty(
+        name="i3", default=1, description="Slider")
+    bl_description = ("Slider Integer 3")
+    slider_i04 = bpy.props.IntProperty(
+        name="i4", default=1, description="Slider")
+    bl_description = ("Slider Integer 4")
+    slider_i05 = bpy.props.IntProperty(
+        name="i5", default=1, description="Slider")
+    bl_description = ("Slider Integer 5")
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=350)
@@ -106,12 +137,26 @@ class weight_formula(bpy.types.Operator):
         formula = self.formula
 
         layout.separator()
+        if "f1" in formula: layout.prop(self, "slider_f01")
+        if "f2" in formula: layout.prop(self, "slider_f02")
+        if "f3" in formula: layout.prop(self, "slider_f03")
+        if "f4" in formula: layout.prop(self, "slider_f04")
+        if "f5" in formula: layout.prop(self, "slider_f05")
+        if "i1" in formula: layout.prop(self, "slider_i01")
+        if "i2" in formula: layout.prop(self, "slider_i02")
+        if "i3" in formula: layout.prop(self, "slider_i03")
+        if "i4" in formula: layout.prop(self, "slider_i04")
+        if "i5" in formula: layout.prop(self, "slider_i05")
+
+        layout.separator()
         layout.label(text="Variables (for each vertex):")#, icon='INFO')
         layout.label(text="lx, ly, lz: Local Coordinates", icon='OBJECT_DATA')#'MANIPUL')
         layout.label(text="gx, gy, gz: Global Coordinates", icon='WORLD')
         layout.label(text="rx, ry, rz: Local Coordinates (0 to 1)", icon='BBOX')
         layout.label(text="nx, ny, nz: Normal Coordinates", icon='SNAP_NORMAL')
         layout.label(text="w[0], w[1], w[2], ... : Vertex Groups", icon="GROUP_VERTEX")
+        layout.label(text="f1, f2, f3, f4, f5: Float Sliders", icon="BUTS")
+        layout.label(text="i1, i2, i3, i4, i5: Integer Sliders", icon="BUTS")
         layout.separator()
         layout.label(text="All mathematical functions are based on Numpy", icon='INFO')
         #layout.label(text="https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html", icon='INFO')
@@ -125,6 +170,9 @@ class weight_formula(bpy.types.Operator):
         #else:
         #self.formula = self.examples
         #    formula = self.examples
+
+        f1, f2, f3, f4, f5 = self.slider_f01, self.slider_f02, self.slider_f03, self.slider_f04, self.slider_f05
+        i1, i2, i3, i4, i5 = self.slider_i01, self.slider_i02, self.slider_i03, self.slider_i04, self.slider_i05
 
         if self.examples != self.old_ex and self.examples != 'CUSTOM':
             self.formula = self.examples
