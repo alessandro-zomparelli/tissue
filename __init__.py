@@ -33,7 +33,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 5),
+    "version": (0, 3, ),
     "blender": (2, 7, 9),
     "location": "",
     "description": "Tools for Computational Design",
@@ -60,7 +60,7 @@ else:
     from . import uv_to_mesh
 
 import bpy
-from bpy.props import PointerProperty
+from bpy.props import PointerProperty, CollectionProperty
 
 
 def register():
@@ -68,6 +68,12 @@ def register():
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tessellate_numpy.tissue_tessellate_prop
                                             )
+    bpy.types.Object.formula_settings = CollectionProperty(
+                                            type=colors_groups_exchanger.formula_prop
+                                            )
+    bpy.types.Object.reaction_diffusion_settings = PointerProperty(
+                        type=colors_groups_exchanger.reaction_diffusion_prop
+                        )
 
 
 def unregister():
