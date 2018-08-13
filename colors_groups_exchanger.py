@@ -78,13 +78,31 @@ class formula_prop(PropertyGroup):
     int_var = IntVectorProperty(name="", description="", default=(0, 0, 0, 0, 0), size=5)
 
 class reaction_diffusion_prop(PropertyGroup):
-    dt = FloatProperty(default=1)
-    time_steps = IntProperty(default=5)
-    f = FloatProperty(default=0.055)
-    k = FloatProperty(default=0.062)
-    diff_a = FloatProperty(default=0.2)
-    diff_b = FloatProperty(default=0.1)
     run = BoolProperty(default=False)
+
+    time_steps = bpy.props.IntProperty(
+        name="Steps", default=10, min=0, soft_max=50,
+        description="Number of Steps")
+
+    dt = bpy.props.FloatProperty(
+        name="dt", default=0.2, min=0, soft_max=0.2,
+        description="Time Step")
+
+    diff_a = bpy.props.FloatProperty(
+        name="Diff A", default=1, min=0, soft_max=2,
+        description="Diffusion A")
+
+    diff_b = bpy.props.FloatProperty(
+        name="Diff B", default=0.5, min=0, soft_max=2,
+        description="Diffusion B")
+
+    f = bpy.props.FloatProperty(
+        name="f", default=0.055, min=0, soft_max=0.5, precision=3,
+        description="Feed Rate")
+
+    k = bpy.props.FloatProperty(
+        name="k", default=0.062, min=0, soft_max=0.5, precision=3,
+        description="Kill Rate")
 
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
     verts = ob.data.vertices
@@ -2051,14 +2069,9 @@ class weight_panel(bpy.types.Panel):
         col.separator()
         col.label(text="Simulations:")
         #col.operator("object.reaction_diffusion", icon="MOD_OCEAN")
-        if context.object.reaction_diffusion_settings.run:
-            col.operator("object.start_reaction_diffusion",
-                        icon="MOD_OCEAN",
-                        text="Stop Reaction-Diffusion")
-        else:
-            col.operator("object.start_reaction_diffusion",
-                        icon="MOD_OCEAN",
-                        text="Start Reaction-Diffusion")
+        col.operator("object.start_reaction_diffusion",
+                    icon="MOD_OCEAN",
+                    text="Reaction-Diffusion")
 
         #col.prop(context.object, "reaction_diffusion_run", icon="PLAY", text="Run Simulation")
         ####col.prop(context.object, "reaction_diffusion_run")
@@ -2114,7 +2127,6 @@ class start_reaction_diffusion(bpy.types.Operator):
         bpy.app.handlers.frame_change_post.append(reaction_diffusion_def)
 
         ob = context.object
-        ob.reaction_diffusion_settings.run = not ob.reaction_diffusion_settings.run
         ob.reaction_diffusion_settings.dt = self.dt
         ob.reaction_diffusion_settings.time_steps = self.time_steps
         ob.reaction_diffusion_settings.f = self.f
@@ -2127,15 +2139,20 @@ class start_reaction_diffusion(bpy.types.Operator):
             vg = ob.vertex_groups['A']
         except:
             ob.vertex_groups.new(name='A')
-            for v in ob.data.vertices:
-                ob.vertex_groups['A'].add([v.index], 1, 'REPLACE')
         # check vertex group B
         try:
             vg = ob.vertex_groups['B']
         except:
             ob.vertex_groups.new(name='B')
-            for v in ob.data.vertices:
-                ob.vertex_groups['B'].add([v.index], 0, 'ADD')
+
+        for v in ob.data.vertices:
+            ob.vertex_groups['A'].add([v.index], 1, 'REPLACE')
+            ob.vertex_groups['B'].add([v.index], 0, 'REPLACE')
+
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+
         return {'FINISHED'}
 
 from bpy.app.handlers import persistent
@@ -2195,13 +2212,50 @@ def reaction_diffusion_def(scene):
                 ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
             ob.vertex_groups.update()
             ob.data.update()
-            ob.update()
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
             bpy.ops.paint.weight_paint_toggle()
             bpy.ops.paint.weight_paint_toggle()
 
             #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
             #except:
             #    pass
+
+class reaction_diffusion_panel(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "physics"
+    bl_label = "Reaction-Diffusion"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.reaction_diffusion_settings
+        layout = self.layout
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        if not ("A" and "B" in ob.vertex_groups):
+            row.operator("object.start_reaction_diffusion",
+                        icon="MOD_OCEAN",
+                        text="Reaction-Diffusion")
+        else:
+            row.operator("object.start_reaction_diffusion",
+                        icon="MOD_OCEAN",
+                        text="Reset Reaction-Diffusion")
+            row = col.row(align=True)
+            row.prop(props, "run", text="Run Reaction-Diffusion")
+            col = layout.column(align=True)
+            row = col.row(align=True)
+            row.prop(props, "time_steps")
+            row.prop(props, "dt")
+            col.separator()
+            row = col.row(align=True)
+            row.prop(props, "diff_a")
+            row.prop(props, "diff_b")
+            #col.separator()
+            row = col.row(align=True)
+            row.prop(props, "f")
+            row.prop(props, "k")
 
 
 def register():
@@ -2219,6 +2273,7 @@ def register():
     bpy.utils.register_class(weight_laplacian)
     bpy.utils.register_class(reaction_diffusion)
     bpy.utils.register_class(start_reaction_diffusion)
+    bpy.utils.register_class(reaction_diffusion_panel)
     #bpy.app.handlers.frame_change_post.append(reaction_diffusion_def)
 
 
@@ -2237,6 +2292,7 @@ def unregister():
     bpy.utils.unregister_class(weight_laplacian)
     bpy.utils.unregister_class(reaction_diffusion)
     bpy.utils.unregister_class(start_reaction_diffusion)
+    bpy.utils.unregister_class(reaction_diffusion_panel)
     #bpy.app.handlers.frame_change_post.remove(reaction_diffusion_def)
 
 if __name__ == "__main__":
