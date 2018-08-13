@@ -41,7 +41,7 @@ from bpy.props import (
         EnumProperty,
         FloatProperty,
         IntProperty,
-        StringProperty,
+        StringProperty
         )
 from mathutils import Vector
 import numpy as np
@@ -65,6 +65,234 @@ def lerp3(v1, v2, v3, v4, v):
     nor.normalize()
     return loc + nor * v.z
 
+def anim_tessellate_active(self, context):
+    ob = context.object
+    if ob.tissue_tessellate.generator != '':
+        anim_tessellate_object(ob)
+
+def anim_tessellate_object(ob):
+    scene = bpy.context.scene
+    active_object = bpy.context.object
+    selected_objects = [o for o in bpy.data.objects if o.select]
+    bpy.ops.object.select_all(action='DESELECT')
+
+    # tessellate settings
+    generator = ob.tissue_tessellate.generator
+    component = ob.tissue_tessellate.component
+    zscale = ob.tissue_tessellate.zscale
+    scale_mode = ob.tissue_tessellate.scale_mode
+    rotation_mode = ob.tissue_tessellate.rotation_mode
+    offset = ob.tissue_tessellate.offset
+    merge = ob.tissue_tessellate.merge
+    merge_thres = ob.tissue_tessellate.merge_thres
+    gen_modifiers = ob.tissue_tessellate.gen_modifiers
+    com_modifiers = ob.tissue_tessellate.com_modifiers
+    bool_random = ob.tissue_tessellate.bool_random
+    random_seed = ob.tissue_tessellate.random_seed
+    fill_mode = ob.tissue_tessellate.fill_mode
+    bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
+    bool_selection = ob.tissue_tessellate.bool_selection
+    bool_shapekeys = ob.tissue_tessellate.bool_shapekeys
+    mode = ob.tissue_tessellate.mode
+    bool_smooth = ob.tissue_tessellate.bool_smooth
+    try:
+        scene.objects.active = ob
+        ob0 = bpy.data.objects[generator]
+        ob1 = bpy.data.objects[component]
+    except:
+        return None
+    temp_ob = tassellate(
+            ob0, ob1, offset, zscale, gen_modifiers, com_modifiers,
+            mode, scale_mode, rotation_mode, random_seed, fill_mode,
+            bool_vertex_group, bool_selection, bool_shapekeys
+            )
+
+    ob.data = temp_ob.data
+    bpy.data.objects.remove(temp_ob)
+    ob.select = True
+    if bool_smooth: bpy.ops.object.shade_smooth()
+    if merge:
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(
+            use_extend=False, use_expand=False, type='VERT')
+        bpy.ops.mesh.select_non_manifold(
+            extend=False, use_wire=False, use_boundary=True,
+            use_multi_face=False, use_non_contiguous=False, use_verts=False)
+        bpy.ops.mesh.remove_doubles(
+            threshold=merge_thres, use_unselected=False)
+        bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # MATERIALS
+    try:
+        # create materials list
+        polygon_materials = [p.material_index for p in ob1.data.polygons] * int(
+                len(ob.data.polygons) / len(ob1.data.polygons))
+        # assign old material
+        component_materials = [slot.material for slot in ob1.material_slots]
+        for i in range(len(component_materials)):
+            bpy.ops.object.material_slot_add()
+            bpy.context.object.material_slots[i].material = \
+                component_materials[i]
+        for i in range(len(ob.data.polygons)):
+            ob.data.polygons[i].material_index = polygon_materials[i]
+    except:
+        pass
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in selected_objects: o.select = True
+    scene.objects.active = active_object
+
+def anim_tessellate(scene):
+    for ob in scene.objects:
+        if ob.tissue_tessellate.bool_run:
+            anim_tessellate_object(ob)
+
+class tissue_tessellate_prop(PropertyGroup):
+    bool_run = BoolProperty(
+        name="Animatable Tessellation",
+        description="Automatically recompute the tessellation when the frame is changed",
+        default=False
+        )
+    zscale = FloatProperty(
+        name="Scale", default=1, soft_min=0, soft_max=10,
+        description="Scale factor for the component thickness",
+        update = anim_tessellate_active
+        )
+    scale_mode = EnumProperty(
+        items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Proportional", "")),
+        default='CONSTANT',
+        name="Z-Scale according to faces size",
+        update = anim_tessellate_active
+        )
+    offset = FloatProperty(
+        name="Surface Offset",
+        default=0,
+        min=-1,
+        max=1,
+        soft_min=-1,
+        soft_max=1,
+        description="Surface offset",
+        update = anim_tessellate_active
+        )
+    mode = EnumProperty(
+        items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Adaptive", "")),
+        default='ADAPTIVE',
+        name="Component Mode",
+        update = anim_tessellate_active
+        )
+    rotation_mode = EnumProperty(
+        items=(('RANDOM', "Random", ""),
+               ('UV', "Active UV", ""),
+               ('DEFAULT', "Default", "")),
+        default='DEFAULT',
+        name="Component Rotation",
+        update = anim_tessellate_active
+        )
+    fill_mode = EnumProperty(
+        items=(('QUAD', "Quad", ""), ('FAN', "Fan", "")),
+        default='QUAD',
+        name="Fill Mode",
+        update = anim_tessellate_active
+        )
+    gen_modifiers = BoolProperty(
+        name="Generator Modifiers",
+        default=False,
+        description="Apply modifiers to base object",
+        update = anim_tessellate_active
+        )
+    com_modifiers = BoolProperty(
+        name="Component Modifiers",
+        default=False,
+        description="Apply modifiers to component object",
+        update = anim_tessellate_active
+        )
+    merge = BoolProperty(
+        name="Merge",
+        default=False,
+        description="Merge vertices in adjacent duplicates",
+        update = anim_tessellate_active
+        )
+    merge_thres = FloatProperty(
+        name="Distance",
+        default=0.001,
+        soft_min=0,
+        soft_max=10,
+        description="Limit below which to merge vertices",
+        update = anim_tessellate_active
+        )
+    generator = StringProperty(
+        name="",
+        description="Base object for the tessellation",
+        default="",
+        update = anim_tessellate_active
+        )
+    component = StringProperty(
+        name="",
+        description="Component object for the tessellation",
+        default="",
+        update = anim_tessellate_active
+        )
+    bool_random = BoolProperty(
+        name="Randomize",
+        default=False,
+        description="Randomize component rotation",
+        update = anim_tessellate_active
+        )
+    random_seed = IntProperty(
+        name="Seed",
+        default=0,
+        soft_min=0,
+        soft_max=10,
+        description="Random seed",
+        update = anim_tessellate_active
+        )
+    bool_vertex_group = BoolProperty(
+        name="Map Vertex Group",
+        default=False,
+        description="Map the active Vertex Group from the Base object to generated geometry",
+        update = anim_tessellate_active
+        )
+    bool_selection = BoolProperty(
+        name="On selected Faces",
+        default=False,
+        description="Create Tessellation only on selected faces",
+        update = anim_tessellate_active
+        )
+    bool_shapekeys = BoolProperty(
+        name="Use Shape Keys",
+        default=False,
+        description="Use component's active Shape Key according to "
+                    "active Vertex Group of the base object",
+        update = anim_tessellate_active
+        )
+    bool_smooth = BoolProperty(
+        name="Smooth Shading",
+        default=False,
+        description="Output faces with smooth shading rather than flat shaded",
+        update = anim_tessellate_active
+        )
+
+def store_parameters(operator, ob):
+    ob.tissue_tessellate.generator = operator.generator
+    ob.tissue_tessellate.component = operator.component
+    ob.tissue_tessellate.zscale = operator.zscale
+    ob.tissue_tessellate.offset = operator.offset
+    ob.tissue_tessellate.gen_modifiers = operator.gen_modifiers
+    ob.tissue_tessellate.com_modifiers = operator.com_modifiers
+    ob.tissue_tessellate.mode = operator.mode
+    ob.tissue_tessellate.rotation_mode = operator.rotation_mode
+    ob.tissue_tessellate.merge = operator.merge
+    ob.tissue_tessellate.merge_thres = operator.merge_thres
+    ob.tissue_tessellate.scale_mode = operator.scale_mode
+    ob.tissue_tessellate.bool_random = operator.bool_random
+    ob.tissue_tessellate.random_seed = operator.random_seed
+    ob.tissue_tessellate.fill_mode = operator.fill_mode
+    ob.tissue_tessellate.bool_vertex_group = operator.bool_vertex_group
+    ob.tissue_tessellate.bool_selection = operator.bool_selection
+    ob.tissue_tessellate.bool_shapekeys = operator.bool_shapekeys
+    ob.tissue_tessellate.bool_smooth = operator.bool_smooth
+    return ob
 
 def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                scale_mode, rotation_mode, rand_seed, fill_mode,
@@ -410,54 +638,13 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
     return new_ob
 
 
-def store_parameters(operator, ob):
-    ob.tissue_tessellate.generator = operator.generator
-    ob.tissue_tessellate.component = operator.component
-    ob.tissue_tessellate.zscale = operator.zscale
-    ob.tissue_tessellate.offset = operator.offset
-    ob.tissue_tessellate.gen_modifiers = operator.gen_modifiers
-    ob.tissue_tessellate.com_modifiers = operator.com_modifiers
-    ob.tissue_tessellate.mode = operator.mode
-    ob.tissue_tessellate.rotation_mode = operator.rotation_mode
-    ob.tissue_tessellate.merge = operator.merge
-    ob.tissue_tessellate.merge_thres = operator.merge_thres
-    ob.tissue_tessellate.scale_mode = operator.scale_mode
-    ob.tissue_tessellate.bool_random = operator.bool_random
-    ob.tissue_tessellate.random_seed = operator.random_seed
-    ob.tissue_tessellate.fill_mode = operator.fill_mode
-    ob.tissue_tessellate.bool_vertex_group = operator.bool_vertex_group
-    ob.tissue_tessellate.bool_selection = operator.bool_selection
-    ob.tissue_tessellate.bool_shapekeys = operator.bool_shapekeys
-    return ob
-
-
-class tissue_tessellate_prop(PropertyGroup):
-    generator = StringProperty()
-    component = StringProperty()
-    offset = FloatProperty()
-    zscale = FloatProperty(default=1)
-    merge = BoolProperty()
-    merge_thres = FloatProperty()
-    gen_modifiers = BoolProperty()
-    com_modifiers = BoolProperty()
-    mode = StringProperty()
-    rotation_mode = StringProperty()
-    scale_mode = StringProperty()
-    fill_mode = StringProperty()
-    bool_random = BoolProperty()
-    random_seed = IntProperty()
-    vertexgroup = StringProperty()
-    bool_vertex_group = BoolProperty()
-    bool_selection = BoolProperty()
-    bool_shapekeys = BoolProperty()
-
-
 class tessellate(Operator):
     bl_idname = "object.tessellate"
     bl_label = "Tessellate"
     bl_description = ("Create a copy of selected object on the active object's "
                       "faces, adapting the shape to the different faces")
     bl_options = {'REGISTER', 'UNDO'}
+
 
     object_name = StringProperty(
             name="",
@@ -559,6 +746,12 @@ class tessellate(Operator):
             description="Use component's active Shape Key according to "
                         "active Vertex Group of the base object"
             )
+    bool_smooth = BoolProperty(
+            name="Smooth Shading",
+            default=True,
+            description="Output faces with smooth shading rather than flat shaded",
+            update = anim_tessellate_active
+            )
     working_on = ""
 
     @staticmethod
@@ -587,7 +780,7 @@ class tessellate(Operator):
             layout.label(icon='INFO')
             layout.label(text="Please, select two different objects")
             layout.label(text="Select first the Component object, then select")
-            layout.label(text="the Base mesh.")
+            layout.label(text="the Base mesh")
         elif not bool_meshes and not bool_working:
             layout = self.layout
             layout.label(icon='INFO')
@@ -781,6 +974,9 @@ class tessellate(Operator):
                 row.prop(self, "merge_thres")
             row = col.row(align=True)
 
+            row = col.row(align=True)
+            row.prop(self, "bool_smooth")
+
             # ADVANCED
             col = layout.column(align=True)
             col.label(text="Advanced Settings:")
@@ -819,6 +1015,14 @@ class tessellate(Operator):
             self.generator = ob0.name
         except:
             self.report({'ERROR'}, "A Generator mesh object must be selected")
+
+        # managing handlers for realtime update
+        old_handlers = []
+        for h in bpy.app.handlers.frame_change_post:
+            if "anim_tessellate" in str(h):
+                old_handlers.append(h)
+        for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
+        bpy.app.handlers.frame_change_post.append(anim_tessellate)
 
         # component object
         sel = bpy.context.selected_objects
@@ -862,7 +1066,6 @@ class tessellate(Operator):
             message = "Generator must be Mesh Objects!"
             self.report({'ERROR'}, message)
             self.generator = ""
-
         if self.component != "" and self.generator != "":
             if bpy.ops.object.select_all.poll():
                 bpy.ops.object.select_all(action='TOGGLE')
@@ -923,6 +1126,7 @@ class tessellate(Operator):
                 new_ob.data.polygons[i].material_index = polygon_materials[i]
         except:
             pass
+        if self.bool_smooth: bpy.ops.object.shade_smooth()
 
         return {'FINISHED'}
 
@@ -1032,6 +1236,7 @@ class update_tessellate(Operator):
                 ob.data.polygons[i].material_index = polygon_materials[i]
         except:
             pass
+        if ob.tissue_tessellate.bool_smooth: bpy.ops.object.shade_smooth()
 
         return {'FINISHED'}
 
@@ -1500,13 +1705,13 @@ class tessellate_panel(Panel):
         col.label(text="Tessellate Add:")
         col.operator("object.tessellate")
 
-        col = layout.column(align=True)
-        col.label(text="Tessellate Edit:")
-        col.operator("object.settings_tessellate")
+        #col = layout.column(align=True)
+        #col.label(text="Tessellate Edit:")
+        #col.operator("object.settings_tessellate")
         col.operator("object.update_tessellate")
 
-        col = layout.column(align=True)
-        col.operator("mesh.rotate_face")
+        #col = layout.column(align=True)
+        #col.operator("mesh.rotate_face")
 
         col.separator()
         col.label(text="Other:")
@@ -1516,6 +1721,149 @@ class tessellate_panel(Panel):
         act = context.active_object
         if act and act.type == 'MESH':
             col.operator("object.uv_to_mesh", icon="GROUP_UVS")
+
+
+class tessellate_object_panel(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_label = "Tessellate"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_tessellate
+        layout = self.layout
+        col = layout.column(align=True)
+        col.prop(props, "bool_run")
+        if props.generator == "" or props.component == "": col.enabled = False
+
+
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.label(text="BASE :")
+        row.label(text="COMPONENT :")
+        row = col.row(align=True)
+
+        col2 = row.column(align=True)
+        col2.prop_search(props, "generator", bpy.data, "objects", text="")
+        row.separator()
+        col2 = row.column(align=True)
+        col2.prop_search(props, "component", bpy.data, "objects", text="")
+        if props.generator != "" and props.component != "":
+
+            row = col.row(align=True)
+            col2 = row.column(align=True)
+            col2.prop(props, "gen_modifiers", text="Use Modifiers")
+
+            if len(bpy.data.objects[props.generator].modifiers) == 0:
+                col2.enabled = False
+                #props.gen_modifiers = False
+
+            col2 = row.column(align=True)
+            col2.prop(props, "com_modifiers", text="Use Modifiers")
+
+            if len(bpy.data.objects[props.component].modifiers) == 0:
+                col2.enabled = False
+                #props.com_modifiers = False
+
+            # On selected faces
+            row = col.row(align=True)
+            row.prop(props, "bool_selection", text="On selected Faces")
+
+            col.separator()
+
+            # Fill and Rotation
+            row = col.row(align=True)
+            row.label(text="Fill Mode:")
+            row.separator()
+            row.label(text="Rotation:")
+            row = col.row(align=True)
+
+            # fill
+            row.prop(props, "fill_mode", text="", icon='NONE', expand=False,
+                     slider=True, toggle=False, icon_only=False, event=False,
+                     full_event=False, emboss=True, index=-1)
+            row.separator()
+
+            # rotation
+            row.prop(props, "rotation_mode", text="", icon='NONE', expand=False,
+                     slider=True, toggle=False, icon_only=False, event=False,
+                     full_event=False, emboss=True, index=-1)
+
+            if props.rotation_mode == 'RANDOM':
+                row = col.row(align=True)
+                row.prop(props, "random_seed")
+
+            if props.rotation_mode == 'UV':
+                uv_error = False
+                if props.fill_mode == 'FAN':
+                    row = col.row(align=True)
+                    row.label(text="UV rotation doesn't work in FAN mode",
+                              icon='ERROR')
+                    uv_error = True
+
+                if len(bpy.data.objects[props.generator].data.uv_layers) == 0:
+                    row = col.row(align=True)
+                    row.label(text="'" + bpy.data.objects[props.generator].name +
+                              " doesn't have UV Maps", icon='ERROR')
+                    uv_error = True
+                if uv_error:
+                    row = col.row(align=True)
+                    row.label(text="Default rotation will be used instead",
+                              icon='INFO')
+
+            # component XY
+            row = col.row(align=True)
+            row.label(text="Component XY:")
+            row = col.row(align=True)
+            row.prop(props, "mode", expand=True)
+
+            # component Z
+            col.label(text="Component Z:")
+            row = col.row(align=True)
+            row.prop(props, "scale_mode", expand=True)
+            col.prop(props, "zscale", text="Scale", icon='NONE', expand=False,
+                     slider=True, toggle=False, icon_only=False, event=False,
+                     full_event=False, emboss=True, index=-1)
+            col.prop(props, "offset", text="Offset", icon='NONE', expand=False,
+                     slider=True, toggle=False, icon_only=False, event=False,
+                     full_event=False, emboss=True, index=-1)
+
+
+            # merge
+            col = layout.column(align=True)
+            row = col.row(align=True)
+            row.prop(props, "merge")
+            if props.merge:
+                row.prop(props, "merge_thres")
+            row = col.row(align=True)
+            row.prop(props, "bool_smooth")
+
+            # ADVANCED #
+            col = layout.column(align=True)
+            #tessellate.rotation_mode
+
+            col.label(text="Advanced Settings:")
+            # vertex group + shape keys
+            row = col.row(align=True)
+            col2 = row.column(align=True)
+            col2.prop(props, "bool_vertex_group")
+
+            if len(bpy.data.objects[props.generator].vertex_groups) == 0:
+                col2.enabled = False
+            col2 = row.column(align=True)
+            col2.prop(props, "bool_shapekeys", text="Use Shape Keys")
+
+            if len(bpy.data.objects[props.generator].vertex_groups) == 0 or \
+                    bpy.data.objects[props.component].data.shape_keys is None:
+                col2.enabled = False
+                #props.bool_shapekeys = False
+            elif len(bpy.data.objects[props.generator].vertex_groups) == 0 or \
+                    bpy.data.objects[props.component].data.shape_keys is not None:
+                if len(bpy.data.objects[props.component].data.shape_keys.key_blocks) < 2:
+                    col2.enabled = False
+                    #prop.bool_shapekeys = False
 
 
 class rotate_face(Operator):
@@ -1560,6 +1908,8 @@ def register():
     bpy.utils.register_class(settings_tessellate)
     bpy.utils.register_class(tessellate_panel)
     bpy.utils.register_class(rotate_face)
+    bpy.utils.register_class(tessellate_object_panel)
+
 
 
 def unregister():
@@ -1569,6 +1919,7 @@ def unregister():
     bpy.utils.unregister_class(settings_tessellate)
     bpy.utils.unregister_class(tessellate_panel)
     bpy.utils.unregister_class(rotate_face)
+    bpy.utils.unregister_class(tessellate_object_panel)
 
 
 if __name__ == "__main__":

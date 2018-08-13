@@ -1741,7 +1741,6 @@ class vertex_colors_to_vertex_groups(bpy.types.Operator):
             bpy.ops.paint.weight_paint_toggle()
         return {'FINISHED'}
 
-
 class vertex_group_to_vertex_colors(bpy.types.Operator):
     bl_idname = "object.vertex_group_to_vertex_colors"
     bl_label = "Vertex Group"
@@ -2060,6 +2059,9 @@ class weight_panel(bpy.types.Panel):
             col.operator("object.start_reaction_diffusion",
                         icon="MOD_OCEAN",
                         text="Start Reaction-Diffusion")
+
+        #col.prop(context.object, "reaction_diffusion_run", icon="PLAY", text="Run Simulation")
+        ####col.prop(context.object, "reaction_diffusion_run")
         #col.separator()
         #col.label(text="Vertex Color from:")
         #col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VERTEX")
@@ -2133,7 +2135,7 @@ class start_reaction_diffusion(bpy.types.Operator):
         except:
             ob.vertex_groups.new(name='B')
             for v in ob.data.vertices:
-                ob.vertex_groups['B'].add([v.index], 0, 'REPLACE')
+                ob.vertex_groups['B'].add([v.index], 0, 'ADD')
         return {'FINISHED'}
 
 from bpy.app.handlers import persistent
@@ -2191,9 +2193,9 @@ def reaction_diffusion_def(scene):
             for i in range(n_verts):
                 ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
                 ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
-            #ob.vertex_groups.update()
-            #ob.data.update()
-            #ob.update()
+            ob.vertex_groups.update()
+            ob.data.update()
+            ob.update()
             bpy.ops.paint.weight_paint_toggle()
             bpy.ops.paint.weight_paint_toggle()
 

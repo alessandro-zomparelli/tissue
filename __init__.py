@@ -33,7 +33,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, ),
+    "version": (0, 3, 3),
     "blender": (2, 7, 9),
     "location": "",
     "description": "Tools for Computational Design",
@@ -60,7 +60,9 @@ else:
     from . import uv_to_mesh
 
 import bpy
-from bpy.props import PointerProperty, CollectionProperty
+from bpy.props import PointerProperty, CollectionProperty, BoolProperty
+
+
 
 
 def register():
@@ -74,6 +76,10 @@ def register():
     bpy.types.Object.reaction_diffusion_settings = PointerProperty(
                         type=colors_groups_exchanger.reaction_diffusion_prop
                         )
+    bpy.types.Object.reaction_diffusion_run = BoolProperty(
+        name="Run Reaction-Diffusion",
+        description="Automatically iterate the simulation when the frame is changed. The simulation can't go backwards!",
+        default=False)
 
 
 def unregister():
