@@ -2420,7 +2420,7 @@ def reaction_diffusion_def(scene):
             #bpy.ops.object.mode_set(mode='EDIT')
             #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
             for ps in ob.particle_systems:
-                if ps.vertex_group_density == 'B':
+                if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
             bpy.ops.paint.weight_paint_toggle()
