@@ -85,15 +85,15 @@ class reaction_diffusion_prop(PropertyGroup):
         description="Number of Steps")
 
     dt = bpy.props.FloatProperty(
-        name="dt", default=0.2, min=0, soft_max=0.2,
+        name="dt", default=1, min=0, soft_max=0.2,
         description="Time Step")
 
     diff_a = bpy.props.FloatProperty(
-        name="Diff A", default=1, min=0, soft_max=2,
+        name="Diff A", default=0.1, min=0, soft_max=2, precision=3,
         description="Diffusion A")
 
     diff_b = bpy.props.FloatProperty(
-        name="Diff B", default=0.5, min=0, soft_max=2,
+        name="Diff B", default=0.05, min=0, soft_max=2, precision=3,
         description="Diffusion B")
 
     f = bpy.props.FloatProperty(
@@ -103,6 +103,10 @@ class reaction_diffusion_prop(PropertyGroup):
     k = bpy.props.FloatProperty(
         name="k", default=0.062, min=0, soft_max=0.5, precision=3,
         description="Kill Rate")
+
+    diff_mult = bpy.props.FloatProperty(
+        name="Scale", default=1, min=0, soft_max=1, max=2, precision=2,
+        description="Multiplier for the diffusion of both substances")
 
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
     verts = ob.data.vertices
@@ -490,6 +494,10 @@ class weight_laplacian(bpy.types.Operator):
         name="k", default=0.062, min=0, soft_max=0.5,
         description="Kill Rate")
 
+    diff_mult = bpy.props.FloatProperty(
+        name="Scale", default=1, min=0, soft_max=1, max=2, precision=2,
+        description="Multiplier for the diffusion of both substances")
+
     bounds_string = ""
 
     frame = None
@@ -527,8 +535,8 @@ class weight_laplacian(bpy.types.Operator):
         b = array(b)
         f = self.f
         k = self.k
-        diff_a = self.diff_a
-        diff_b = self.diff_b
+        diff_a = self.diff_a * self.diff_mult
+        diff_b = self.diff_b * self.diff_mult
         dt = self.dt
 
         # initialize
@@ -2127,12 +2135,57 @@ class start_reaction_diffusion(bpy.types.Operator):
         bpy.app.handlers.frame_change_post.append(reaction_diffusion_def)
 
         ob = context.object
+        '''
         ob.reaction_diffusion_settings.dt = self.dt
         ob.reaction_diffusion_settings.time_steps = self.time_steps
         ob.reaction_diffusion_settings.f = self.f
         ob.reaction_diffusion_settings.k = self.k
         ob.reaction_diffusion_settings.diff_a = self.diff_a
         ob.reaction_diffusion_settings.diff_b = self.diff_b
+        '''
+
+        # check vertex group A
+        try:
+            vg = ob.vertex_groups['A']
+        except:
+            ob.vertex_groups.new(name='A')
+        # check vertex group B
+        try:
+            vg = ob.vertex_groups['B']
+        except:
+            ob.vertex_groups.new(name='B')
+
+        for v in ob.data.vertices:
+            ob.vertex_groups['A'].add([v.index], 1, 'REPLACE')
+            ob.vertex_groups['B'].add([v.index], 0, 'REPLACE')
+
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+
+        return {'FINISHED'}
+
+class reset_reaction_diffusion_weight(bpy.types.Operator):
+    bl_idname = "object.reset_reaction_diffusion_weight"
+    bl_label = "Reset Reaction Diffusion Weight"
+    bl_description = ("Set A and B weight to default values")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.object.type == 'MESH'
+
+    def execute(self, context):
+        # remove existing handlers
+        old_handlers = []
+        for h in bpy.app.handlers.frame_change_post:
+            if "reaction_diffusion" in str(h):
+                old_handlers.append(h)
+        for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
+        # add new handler
+        bpy.app.handlers.frame_change_post.append(reaction_diffusion_def)
+
+        ob = context.object
 
         # check vertex group A
         try:
@@ -2158,7 +2211,156 @@ class start_reaction_diffusion(bpy.types.Operator):
 from bpy.app.handlers import persistent
 
 
-#@persistent
+@persistent
+def reaction_diffusion_def_blur(scene):
+    for ob in scene.objects:
+        if ob.reaction_diffusion_settings.run:
+            #try:
+            me = ob.data
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            bm.edges.ensure_lookup_table()
+
+            # store weight values
+            a = []
+            b = []
+            for v in me.vertices:
+                try:
+                    a.append(ob.vertex_groups["A"].weight(v.index))
+                except:
+                    a.append(0)
+                try:
+                    b.append(ob.vertex_groups["B"].weight(v.index))
+                except:
+                    b.append(0)
+
+            a = array(a)
+            b = array(b)
+            props = ob.reaction_diffusion_settings
+            dt = props.dt
+            time_steps = props.time_steps
+            f = props.f
+            k = props.k
+            diff_a = props.diff_a * props.diff_mult
+            diff_b = props.diff_b * props.diff_mult
+
+            n_verts = len(bm.verts)
+            bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+            ob.data.use_paint_mask_vertex = True
+
+            for i in range(time_steps):
+                ab2 = a*b**2
+                ob.vertex_groups.active = ob.vertex_groups['A']
+                bpy.ops.object.vertex_group_smooth(group_select_mode='ACTIVE', factor=diff_a)
+                ob.vertex_groups.active = ob.vertex_groups['B']
+                bpy.ops.object.vertex_group_smooth(group_select_mode='ACTIVE', factor=diff_b)
+
+                a = []
+                b = []
+                for v in me.vertices:
+                    a.append(ob.vertex_groups["A"].weight(v.index))
+                    b.append(ob.vertex_groups["B"].weight(v.index))
+                a = array(a)
+                b = array(b)
+
+                a += - (ab2 + f*(1-a))*dt
+                b += (ab2 - (k+f)*b)*dt
+
+            a = nan_to_num(a)
+            b = nan_to_num(b)
+
+            for i in range(n_verts):
+                ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
+                ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
+            ob.vertex_groups.update()
+            ob.data.update()
+            #bpy.ops.object.mode_set(mode='EDIT')
+            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT
+            bpy.ops.paint.weight_paint_toggle()
+            bpy.ops.paint.weight_paint_toggle()
+
+            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+            #except:
+            #    pass
+
+def reaction_diffusion_def_(scene):
+    for ob in scene.objects:
+        if ob.reaction_diffusion_settings.run:
+            #try:
+            me = ob.data
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            bm.edges.ensure_lookup_table()
+
+            # store weight values
+            a = []
+            b = []
+            for v in me.vertices:
+                try:
+                    a.append(ob.vertex_groups["A"].weight(v.index))
+                except:
+                    a.append(0)
+                try:
+                    b.append(ob.vertex_groups["B"].weight(v.index))
+                except:
+                    b.append(0)
+
+            a = array(a)
+            b = array(b)
+            props = ob.reaction_diffusion_settings
+            dt = props.dt
+            time_steps = props.time_steps
+            f = props.f
+            k = props.k
+            diff_a = props.diff_a * props.diff_mult
+            diff_b = props.diff_b * props.diff_mult
+
+            n_verts = len(bm.verts)
+            for i in range(time_steps):
+                lap_a = zeros((n_verts))#[0]*n_verts
+                lap_b = zeros((n_verts))#[0]*n_verts
+                #print(len(lap))
+                #print(len(weight))
+                if i == 0:
+                    lap_map = [[] for i in range(n_verts)]
+                    lap_mult = []
+                    for e in bm.edges:
+                        id0 = e.verts[0].index
+                        id1 = e.verts[1].index
+                        lap_map[id0].append(id1)
+                        lap_map[id1].append(id0)
+                    for id in range(n_verts):
+                         lap_mult.append(len(lap_map[id]))
+                    lap_mult = array(lap_mult)
+                    lap_map = array(lap_map)
+                for id in range(n_verts):
+                    map = lap_map[id]
+                    lap_a[id] = a[lap_map[id]].sum()
+                    lap_b[id] = b[lap_map[id]].sum()
+                lap_a -= a*lap_mult
+                lap_b -= b*lap_mult
+                ab2 = a*b**2
+
+                a += (diff_a*lap_a - ab2 + f*(1-a))*dt
+                b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
+
+            a = nan_to_num(a)
+            b = nan_to_num(b)
+
+            for i in range(n_verts):
+                ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
+                ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
+            ob.vertex_groups.update()
+            ob.data.update()
+            #bpy.ops.object.mode_set(mode='EDIT')
+            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+            bpy.ops.paint.weight_paint_toggle()
+            bpy.ops.paint.weight_paint_toggle()
+
+            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+            #except:
+            #    pass
+
 def reaction_diffusion_def(scene):
     for ob in scene.objects:
         if ob.reaction_diffusion_settings.run:
@@ -2183,19 +2385,18 @@ def reaction_diffusion_def(scene):
 
             a = array(a)
             b = array(b)
-            dt = ob.reaction_diffusion_settings.dt
-            time_steps = ob.reaction_diffusion_settings.time_steps
-            f = ob.reaction_diffusion_settings.f
-            k = ob.reaction_diffusion_settings.k
-            diff_a = ob.reaction_diffusion_settings.diff_a
-            diff_b = ob.reaction_diffusion_settings.diff_b
+            props = ob.reaction_diffusion_settings
+            dt = props.dt
+            time_steps = props.time_steps
+            f = props.f
+            k = props.k
+            diff_a = props.diff_a * props.diff_mult
+            diff_b = props.diff_b * props.diff_mult
 
             n_verts = len(bm.verts)
             for i in range(time_steps):
-                lap_a = zeros((n_verts))#[0]*n_verts
-                lap_b = zeros((n_verts))#[0]*n_verts
-                #print(len(lap))
-                #print(len(weight))
+                lap_a = zeros((n_verts))
+                lap_b = zeros((n_verts))
                 for e in bm.edges:
                     id0 = e.verts[0].index
                     id1 = e.verts[1].index
@@ -2204,16 +2405,24 @@ def reaction_diffusion_def(scene):
                     lap_b[id0] += b[id1] - b[id0]
                     lap_b[id1] += b[id0] - b[id1]
                 ab2 = a*b**2
+
                 a += (diff_a*lap_a - ab2 + f*(1-a))*dt
                 b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
+
+                a = nan_to_num(a)
+                b = nan_to_num(b)
 
             for i in range(n_verts):
                 ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
                 ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
             ob.vertex_groups.update()
             ob.data.update()
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+            #bpy.ops.object.mode_set(mode='EDIT')
+            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+            for ps in ob.particle_systems:
+                if ps.vertex_group_density == 'B':
+                    ps.invert_vertex_group_density = not ps.invert_vertex_group_density
+                    ps.invert_vertex_group_density = not ps.invert_vertex_group_density
             bpy.ops.paint.weight_paint_toggle()
             bpy.ops.paint.weight_paint_toggle()
 
@@ -2224,11 +2433,20 @@ def reaction_diffusion_def(scene):
 class reaction_diffusion_panel(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
-    bl_context = "physics"
+    bl_context = "data"
     bl_label = "Reaction-Diffusion"
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
+        # remove existing handlers
+        old_handlers = []
+        for h in bpy.app.handlers.frame_change_post:
+            if "reaction_diffusion" in str(h):
+                old_handlers.append(h)
+        for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
+        # add new handler
+        bpy.app.handlers.frame_change_post.append(reaction_diffusion_def)
+
         ob = context.object
         props = ob.reaction_diffusion_settings
         layout = self.layout
@@ -2252,6 +2470,8 @@ class reaction_diffusion_panel(Panel):
             row = col.row(align=True)
             row.prop(props, "diff_a")
             row.prop(props, "diff_b")
+            row = col.row(align=True)
+            row.prop(props, "diff_mult")
             #col.separator()
             row = col.row(align=True)
             row.prop(props, "f")
@@ -2274,7 +2494,9 @@ def register():
     bpy.utils.register_class(reaction_diffusion)
     bpy.utils.register_class(start_reaction_diffusion)
     bpy.utils.register_class(reaction_diffusion_panel)
-    #bpy.app.handlers.frame_change_post.append(reaction_diffusion_def)
+    bpy.utils.register_class(reset_reaction_diffusion_weight)
+    bpy.app.handlers.frame_change_post.append(reaction_diffusion_def)
+    #bpy.app.handlers.load_post(reaction_diffusion_def)
 
 
 def unregister():
@@ -2293,6 +2515,7 @@ def unregister():
     bpy.utils.unregister_class(reaction_diffusion)
     bpy.utils.unregister_class(start_reaction_diffusion)
     bpy.utils.unregister_class(reaction_diffusion_panel)
+    bpy.utils.unregister_class(reset_reaction_diffusion_weight)
     #bpy.app.handlers.frame_change_post.remove(reaction_diffusion_def)
 
 if __name__ == "__main__":
