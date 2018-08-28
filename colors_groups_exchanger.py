@@ -331,8 +331,8 @@ class weight_formula(bpy.types.Operator):
         new_formula.int_var = i_sliders
         new_formula.float_var = f_sliders
 
-        for f in ob.formula_settings:
-            print(f.name, f.formula, f.int_var, f.float_var)
+        #for f in ob.formula_settings:
+        #    print(f.name, f.formula, f.int_var, f.float_var)
         return {'FINISHED'}
 
 class _weight_laplacian(bpy.types.Operator):
