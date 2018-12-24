@@ -55,7 +55,7 @@ class dual_mesh(Operator):
     bl_description = ("Convert a generic mesh into a polygonal mesh")
     bl_options = {'REGISTER', 'UNDO'}
 
-    quad_method = EnumProperty(
+    quad_method : EnumProperty(
             items=[('BEAUTY', 'Beauty',
                     'Split the quads in nice triangles, slower method'),
                     ('FIXED', 'Fixed',
@@ -70,7 +70,7 @@ class dual_mesh(Operator):
             default="FIXED",
             options={'LIBRARY_EDITABLE'}
             )
-    polygon_method = EnumProperty(
+    polygon_method : EnumProperty(
             items=[
                 ('BEAUTY', 'Beauty', 'Arrange the new triangles evenly'),
                 ('CLIP', 'Clip',
@@ -80,12 +80,12 @@ class dual_mesh(Operator):
             default="BEAUTY",
             options={'LIBRARY_EDITABLE'}
             )
-    preserve_borders = BoolProperty(
+    preserve_borders : BoolProperty(
             name="Preserve Borders",
             default=True,
             description="Preserve original borders"
             )
-    apply_modifiers = BoolProperty(
+    apply_modifiers : BoolProperty(
             name="Apply Modifiers",
             default=True,
             description="Apply object's modifiers"
@@ -102,16 +102,6 @@ class dual_mesh(Operator):
         else:
             sel = bpy.context.selected_objects
         doneMeshes = []
-
-        '''
-        if self.new_object:
-            bpy.ops.object.duplicate_move()
-            for i in range(len(sel)):
-                bpy.context.selected_objects[i].name = sel[i].name + "_dual"
-                if sel[i] == act:
-                    bpy.context.scene.objects.active = bpy.context.selected_objects[i]
-            sel = bpy.context.selected_objects
-        '''
 
         for ob0 in sel:
             if ob0.type != 'MESH':
@@ -138,8 +128,8 @@ class dual_mesh(Operator):
                 bpy.ops.object.convert(target='MESH')
             ob.data = ob.data.copy()
             bpy.ops.object.select_all(action='DESELECT')
-            ob.select = True
-            bpy.context.scene.objects.active = ob0
+            ob.select_set(True)
+            bpy.context.view_layer.objects.active = ob0
             bpy.ops.object.mode_set(mode='EDIT')
 
             # prevent borders erosion
@@ -153,16 +143,7 @@ class dual_mesh(Operator):
                     )
             bpy.ops.mesh.extrude_region_move(
                     MESH_OT_extrude_region={"mirror": False},
-                    TRANSFORM_OT_translate={"value": (0, 0, 0),
-                    "constraint_axis": (False, False, False),
-                    "constraint_orientation": 'GLOBAL', "mirror": False,
-                    "proportional": 'DISABLED',
-                    "proportional_edit_falloff": 'SMOOTH', "proportional_size": 1,
-                    "snap": False, "snap_target": 'CLOSEST',
-                    "snap_point": (0, 0, 0), "snap_align": False,
-                    "snap_normal": (0, 0, 0), "gpencil_strokes": False,
-                    "texture_space": False, "remove_on_cancel": False,
-                    "release_confirm": False}
+                    TRANSFORM_OT_translate={"value": (0, 0, 0)}
                     )
 
             bpy.ops.mesh.select_mode(
@@ -185,19 +166,21 @@ class dual_mesh(Operator):
             bpy.ops.object.modifier_apply(
                     apply_as='DATA', modifier='dual_mesh_subsurf'
                     )
+
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_all(action='DESELECT')
 
             verts = ob.data.vertices
 
             bpy.ops.object.mode_set(mode='OBJECT')
-            verts[0].select = True
+            verts[-1].select = True
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_more(use_face_step=False)
 
             bpy.ops.mesh.select_similar(
                 type='EDGE', compare='EQUAL', threshold=0.01)
             bpy.ops.mesh.select_all(action='INVERT')
+
             bpy.ops.mesh.dissolve_verts()
             bpy.ops.mesh.select_all(action='DESELECT')
 
@@ -244,7 +227,7 @@ class dual_mesh(Operator):
             bm = bmesh.from_edit_mesh(ob.data)
             for v in bm.verts:
                 if len(v.link_edges) == 2 and len(v.link_faces) < 3:
-                    v.select_set(True)
+                    v.select = True
 
             # dissolve
             bpy.ops.mesh.dissolve_verts()
@@ -274,42 +257,9 @@ class dual_mesh(Operator):
                 o.data = ob.data
 
         for o in sel:
-            o.select = True
+            o.select_set(True)
 
-        bpy.context.scene.objects.active = act
+        bpy.context.view_layer.objects.active = act
         bpy.ops.object.mode_set(mode=mode)
 
         return {'FINISHED'}
-
-
-"""
-class dual_mesh_panel(bpy.types.Panel):
-    bl_label = "Dual Mesh"
-    bl_category = "Tools"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "TOOLS"
-    bl_context = "objectmode"
-
-    def draw(self, context):
-        layout = self.layout
-        col = layout.column(align=True)
-        try:
-            if bpy.context.active_object.type == 'MESH':
-                col.operator("object.dual_mesh")
-        except:
-            pass
-"""
-
-
-def register():
-    bpy.utils.register_class(dual_mesh)
-    # bpy.utils.register_class(dual_mesh_panel)
-
-
-def unregister():
-    bpy.utils.unregister_class(dual_mesh)
-    # bpy.utils.unregister_class(dual_mesh_panel)
-
-
-if __name__ == "__main__":
-    register()

@@ -33,8 +33,8 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 4),
-    "blender": (2, 7, 9),
+    "version": (0, 3, 5),
+    "blender": (2, 80, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
@@ -62,11 +62,47 @@ else:
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
 
+classes = (
+    tessellate_numpy.tissue_tessellate_prop,
+    tessellate_numpy.tessellate,
+    tessellate_numpy.update_tessellate,
+    tessellate_numpy.tessellate_panel,
+    tessellate_numpy.rotate_face,
+    tessellate_numpy.tessellate_object_panel,
 
+    colors_groups_exchanger.face_area_to_vertex_groups,
+    colors_groups_exchanger.vertex_colors_to_vertex_groups,
+    colors_groups_exchanger.vertex_group_to_vertex_colors,
+    colors_groups_exchanger.weight_panel,
+    colors_groups_exchanger.color_panel,
+    colors_groups_exchanger.weight_contour_curves,
+    colors_groups_exchanger.weight_contour_mask,
+    colors_groups_exchanger.weight_contour_displace,
+    colors_groups_exchanger.harmonic_weight,
+    colors_groups_exchanger.edges_deformation,
+    colors_groups_exchanger.edges_bending,
+    colors_groups_exchanger.weight_laplacian,
+    colors_groups_exchanger.reaction_diffusion,
+    colors_groups_exchanger.start_reaction_diffusion,
+    colors_groups_exchanger.reaction_diffusion_panel,
+    colors_groups_exchanger.reset_reaction_diffusion_weight,
+    colors_groups_exchanger.formula_prop,
+    colors_groups_exchanger.reaction_diffusion_prop,
+    colors_groups_exchanger.weight_formula,
+    colors_groups_exchanger.curvature_to_vertex_groups,
 
+    dual_mesh.dual_mesh,
+
+    lattice.lattice_along_surface,
+
+    uv_to_mesh.uv_to_mesh
+)
 
 def register():
-    bpy.utils.register_module(__name__)
+    from bpy.utils import register_class
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    #bpy.utils.register_module(__name__)
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tessellate_numpy.tissue_tessellate_prop
                                             )
@@ -76,9 +112,13 @@ def register():
     bpy.types.Object.reaction_diffusion_settings = PointerProperty(
                         type=colors_groups_exchanger.reaction_diffusion_prop
                         )
-
+    # colors_groups_exchanger
+    bpy.app.handlers.frame_change_post.append(colors_groups_exchanger.reaction_diffusion_def)
 
 def unregister():
+    from bpy.utils import unregister_class
+    for cls in classes:
+        bpy.utils.unregister_class(cls)
     tessellate_numpy.unregister()
     colors_groups_exchanger.unregister()
     dual_mesh.unregister()
