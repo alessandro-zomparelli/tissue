@@ -101,7 +101,6 @@ def anim_tessellate(scene):
     if bpy.context.mode in ('OBJECT', 'PAINT_WEIGHT'):
         old_mode = bpy.context.mode
         if old_mode == 'PAINT_WEIGHT': old_mode = 'WEIGHT_PAINT'
-        print(old_mode)
         for ob in scene.objects:
             if ob.tissue_tessellate.bool_run:
                 for o in scene.objects: ob.select_set(False)
@@ -443,7 +442,7 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
 
     # Adaptive Z
     if scale_mode == 'ADAPTIVE':
-        mult = bb[2]/(bb[0]*bb[1])*patch_faces
+        mult = 1/(bb[0]*bb[1])*patch_faces
         verts_area = []
         bm = bmesh.new()
         bm.from_mesh(me0)
@@ -712,13 +711,6 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
     # Component statistics
     n_verts = len(me1.vertices)
-    # n_edges = len(me1.edges)
-    # n_faces = len(me1.polygons)
-
-    # Component transformations
-    # loc = ob1.location
-    # dim = ob1.dimensions
-    # scale = ob1.scale
 
     # Create empty lists
     new_verts = []
@@ -817,7 +809,6 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             vy_key.append(key1[:, 1])
             vz_key.append(key1[:, 2])
             sk_np.append([])
-        print(sk_np)
 
     # All vertex group
     if bool_vertex_group:
@@ -873,7 +864,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
     # Adaptive Z
     if scale_mode == 'ADAPTIVE':
-        mult = bb[2]/(bb[0]*bb[1])
+        mult = 1/(bb[0]*bb[1])
         verts_area = []
         bm = bmesh.new()
         bm.from_mesh(me0)
@@ -992,7 +983,6 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                         except:
                             _ws0.append(0)
                     ws0.append(np.array(_ws0))
-                print(ws0)
 
         # considering only 4 vertices
         vs0 = np.array((vs0[0], vs0[1], vs0[2], vs0[-1]))
@@ -1011,7 +1001,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
         # vertex z to normal
         if scale_mode == "ADAPTIVE":
             sz = np.array([verts_area[i] for i in p.vertices])
-            # Interpolate vertex weight
+            # Interpolate vertex height
             sz0 = sz[0] + (sz[1] - sz[0]) * vx
             sz1 = sz[3] + (sz[2] - sz[3]) * vx
             sz2 = sz0 + (sz1 - sz0) * vy
@@ -1022,7 +1012,6 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
         if bool_vertex_group:
             w2 = []
             for _ws0 in ws0:
-                print(_ws0)
                 _ws0 = np.array((_ws0[0], _ws0[1], _ws0[2], _ws0[-1]))
                 # Interpolate vertex weight
                 w0 = _ws0[0] + (_ws0[1] - _ws0[0]) * vx
@@ -1042,8 +1031,14 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                 nv1 = nvs0[3] + (nvs0[2] - nvs0[3]) * vxk
                 nv2 = nv0 + (nv1 - nv0) * vyk
                 # vertex z to normal
-                v3_key = v2 + nv2 * vzk * (sqrt(p.area) if
-                                              scale_mode == "ADAPTIVE" else 1)
+                if scale_mode == 'ADAPTIVE':
+                    precise_height = True
+                    if precise_height:
+                        sz0 = sz[0] + (sz[1] - sz[0]) * vxk
+                        sz1 = sz[3] + (sz[2] - sz[3]) * vxk
+                        sz2 = sz0 + (sz1 - sz0) * vyk
+                    v3_key = v2 + nv2 * vzk * sz2
+                else: v3_key = v2 + nv2 * vzk
                 if j == 0:
                     sk_np[sk_count] = v3_key
                 else:
@@ -1061,7 +1056,6 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             # Appending vertex group
             if bool_vertex_group:
                 for id in range(len(w2)):
-                    print(id)
                     vg_np[id] = np.concatenate((vg_np[id], w2[id]), axis=0)
             # Appending faces
             for p in fs1:
@@ -1877,7 +1871,7 @@ class update_tessellate(Operator):
         for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
 
         end_time = time.time()
-        print(end_time-start_time)
+        print("Tessellation time: {:.4f} sec".format(end_time-start_time))
 
         return {'FINISHED'}
 
