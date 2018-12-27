@@ -786,7 +786,6 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             # set all keys to 0
             for _sk in ob1.data.shape_keys.key_blocks: _sk.value = 0
             sk.value = 1
-            if com_modifiers: new_patch.shape_key_add(name=sk.name)
 
             if basis:
                 basis = False
@@ -800,7 +799,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                 source = sk.data
 
             shapekeys = []
-            for v in sk.data:
+            for v in source:
                 if mode == "ADAPTIVE":
                     vert = v.co - min_c
                     vert[0] = vert[0] / bb[0]
@@ -818,6 +817,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             vy_key.append(key1[:, 1])
             vz_key.append(key1[:, 2])
             sk_np.append([])
+        print(sk_np)
 
     # All vertex group
     if bool_vertex_group:
@@ -1092,15 +1092,17 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
     if bool_shapekeys:
         sk_count = 0
-        print(sk_np)
         for sk, val in zip(ob1.data.shape_keys.key_blocks, original_key_values):
             sk.value = val
             new_ob.shape_key_add(name=sk.name)
             new_ob.data.shape_keys.key_blocks[sk.name].value = val
             # set shape keys vertices
             sk_data = new_ob.data.shape_keys.key_blocks[sk.name].data
-            for id in range(len(new_ob.data.vertices)):
-                sk_data[id].co = sk_np[sk_count][id]
+            if sk_count == 0:
+                sk_count += 1
+                continue
+            for id in range(len(sk_data)):
+                sk_data[id].co = sk_np[sk_count-1][id]
             sk_count += 1
         if bool_vertex_group:
             for sk in new_ob.data.shape_keys.key_blocks:
