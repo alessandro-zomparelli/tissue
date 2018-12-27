@@ -42,10 +42,7 @@ bl_info = {
 import bpy
 import bmesh
 from bpy.types import Operator
-from bpy.props import (
-        BoolProperty,
-        FloatProperty,
-        )
+from bpy.props import (BoolProperty, StringProperty, FloatProperty)
 from mathutils import Vector
 
 
@@ -253,6 +250,8 @@ class lattice_along_surface(Operator):
             soft_max=1,
             description="Lattice displace"
             )
+    grid_object = ""
+    source_object = ""
 
     def draw(self, context):
         layout = self.layout
@@ -282,12 +281,6 @@ class lattice_along_surface(Operator):
             slider=True, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1
             )
-        """
-        col.prop(
-            self, "scale_z", text="W", icon='NONE', expand=False,
-            slider=True, toggle=False, icon_only=False, event=False,
-            full_event=False, emboss=True, index=-1)
-        """
         col.separator()
         col.label(text="Flip:")
         row = col.row()
@@ -303,31 +296,42 @@ class lattice_along_surface(Operator):
         col.prop(self, "set_parent")
 
     def execute(self, context):
-        if len(bpy.context.selected_objects) != 2:
-            self.report({'ERROR'}, "Please, select two objects")
-            return {'CANCELLED'}
-        grid_obj = bpy.context.active_object
-        if grid_obj.type not in ('MESH', 'CURVE', 'SURFACE'):
-            self.report({'ERROR'}, "The surface object is not valid. Only Mesh,"
-                        "Curve and Surface objects are allowed.")
-            return {'CANCELLED'}
-        obj = None
-        for o in bpy.context.selected_objects:
-            if o.name != grid_obj.name and o.type in \
-                    ('MESH', 'CURVE', 'SURFACE', 'FONT'):
-                obj = o
-                o.select_set(False)
-                break
-        try:
-            obj_dim = obj.dimensions
+        if self.source_object == self.grid_object == "" or True:
+            if len(bpy.context.selected_objects) != 2:
+                self.report({'ERROR'}, "Please, select two objects")
+                return {'CANCELLED'}
+            grid_obj = bpy.context.active_object
+            if grid_obj.type not in ('MESH', 'CURVE', 'SURFACE'):
+                self.report({'ERROR'}, "The surface object is not valid. Only Mesh,"
+                            "Curve and Surface objects are allowed.")
+                return {'CANCELLED'}
+            obj = None
+            for o in bpy.context.selected_objects:
+                if o.name != grid_obj.name and o.type in \
+                        ('MESH', 'CURVE', 'SURFACE', 'FONT'):
+                    obj = o
+                    o.select_set(False)
+                    break
+            try:
+                obj_dim = obj.dimensions
+                obj_me = obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+            except:
+                self.report({'ERROR'}, "The object to deform is not valid. Only "
+                            "Mesh, Curve, Surface and Font objects are allowed.")
+                return {'CANCELLED'}
+            self.grid_object = grid_obj.name
+            self.source_object = obj.name
+        else:
+            grid_obj = bpy.data.objects[self.grid_object]
+            obj = bpy.data.objects[self.source_object]
             obj_me = obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
-        except:
-            self.report({'ERROR'}, "The object to deform is not valid. Only "
-                        "Mesh, Curve, Surface and Font objects are allowed.")
-            return {'CANCELLED'}
+            for o in bpy.context.selected_objects: o.select_set(False)
+            grid_obj.select_set(True)
+            bpy.context.view_layer.objects.active = grid_obj
 
-        bpy.ops.object.duplicate_move()
-        grid_obj = bpy.context.active_object
+        grid_obj = grid_obj.copy()#bpy.ops.object.duplicate_move()
+        grid_obj.data = grid_obj.data.copy()
+        #grid_obj = bpy.context.object
         bpy.ops.object.convert(target='MESH')
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         grid_mesh = grid_obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
@@ -344,7 +348,8 @@ class lattice_along_surface(Operator):
         max = Vector((0, 0, 0))
         first = True
         for v in obj_me.vertices:
-            vert = obj.matrix_world @ v.co
+            v0 = v.co.copy()
+            vert = obj.matrix_world @ v0
             if vert[0] < min[0] or first:
                 min[0] = vert[0]
             if vert[1] < min[1] or first:
@@ -360,6 +365,7 @@ class lattice_along_surface(Operator):
             first = False
 
         bb = max - min
+        print(bb)
         lattice_loc = (max + min) / 2
         bpy.ops.object.add(type='LATTICE', view_align=False,
                            enter_editmode=False)
@@ -420,12 +426,14 @@ class lattice_along_surface(Operator):
                             i = nu - i - 1
                         if self.flipV:
                             j = nv - j - 1
+
                         lattice.data.points[i + j * nu + w * nu * nv].co_deform.x = \
                                 target_point.x / bpy.data.objects[lattice.name].scale.x
                         lattice.data.points[i + j * nu + w * nu * nv].co_deform.y = \
                                 target_point.y / bpy.data.objects[lattice.name].scale.y
                         lattice.data.points[i + j * nu + w * nu * nv].co_deform.z = \
                                 target_point.z / bpy.data.objects[lattice.name].scale.z
+
         except:
             bpy.ops.object.mode_set(mode='OBJECT')
             grid_obj.select_set(True)
@@ -442,15 +450,11 @@ class lattice_along_surface(Operator):
                 self.report({'ERROR'}, "The grid mesh is not correct")
                 return {'CANCELLED'}
 
-        # grid_obj.data = old_grid_data
-        # print(old_grid_matrix)
-        # grid_obj.matrix_world = old_grid_matrix
-
         bpy.ops.object.mode_set(mode='OBJECT')
-        grid_obj.select_set(True)
-        lattice.select_set(False)
+        #grid_obj.select_set(True)
+        #lattice.select_set(False)
         obj.select_set(False)
-        bpy.ops.object.delete(use_global=False)
+        #bpy.ops.object.delete(use_global=False)
         bpy.context.view_layer.objects.active = lattice
         lattice.select_set(True)
 

@@ -47,7 +47,7 @@ from bpy.props import (
 from mathutils import Vector
 import numpy as np
 from math import sqrt
-import random
+import random, time
 import bmesh
 
 
@@ -55,10 +55,15 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 
+def _lerp2(v1, v2, v3, v4, v):
+    v12 = v1.lerp(v2,v.x) # + (v2 - v1) * v.x
+    v34 = v3.lerp(v4,v.x) # + (v4 - v3) * v.x
+    return v12.lerp(v34, v.y)# + (v34 - v12) * v.y
+
 def lerp2(v1, v2, v3, v4, v):
     v12 = v1 + (v2 - v1) * v.x
-    v43 = v4 + (v3 - v4) * v.x
-    return v12 + (v43 - v12) * v.y
+    v34 = v3 + (v4 - v3) * v.x
+    return v12 + (v34 - v12) * v.y
 
 
 def lerp3(v1, v2, v3, v4, v):
@@ -219,7 +224,7 @@ class tissue_tessellate_prop(PropertyGroup):
     bool_vertex_group : BoolProperty(
         name="Map Vertex Group",
         default=False,
-        description="Map the active Vertex Group from the Base object to generated geometry",
+        description="Transfer all Vertex Groups from Base object",
         update = anim_tessellate_active
         )
     bool_selection : BoolProperty(
@@ -231,8 +236,9 @@ class tissue_tessellate_prop(PropertyGroup):
     bool_shapekeys : BoolProperty(
         name="Use Shape Keys",
         default=False,
-        description="Use component's active Shape Key according to "
-                    "active Vertex Group of the base object",
+        description="Transfer Component's Shape Keys. If the name of Vertex "
+                    "Groups and Shape Keys are the same, they will be "
+                    "automatically combined",
         update = anim_tessellate_active
         )
     bool_smooth : BoolProperty(
@@ -266,6 +272,12 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Material ID",
         update = anim_tessellate_active
         )
+    bool_dissolve_seams : BoolProperty(
+        name="Dissolve Seams",
+        default=False,
+        description="Dissolve all seam edges",
+        update = anim_tessellate_active
+        )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -290,6 +302,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_materials = operator.bool_materials
     ob.tissue_tessellate.bool_material_id = operator.bool_material_id
     ob.tissue_tessellate.material_id = operator.material_id
+    ob.tissue_tessellate.bool_dissolve_seams = operator.bool_dissolve_seams
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -298,6 +311,22 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                bool_selection, bool_shapekeys, bool_material_id, material_id):
     random.seed(rand_seed)
     old_me0 = ob0.data      # Store generator mesh
+
+    me0 = ob0.to_mesh(bpy.context.depsgraph, True)
+
+    # Check if zero faces are selected
+    bool_cancel = True
+    for p in me0.polygons:
+        check_sel = check_mat = False
+        if not bool_selection or p.select: check_sel = True
+        if not bool_material_id or p.material_index == material_id: check_mat = True
+        if check_sel and check_mat:
+                bool_cancel = False
+                break
+    if bool_cancel:
+        return 0
+
+    ob0.data = me0
 
     levels = 0
     sculpt_levels = 0
@@ -314,37 +343,32 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                 render_levels = m.render_levels
             else: bool_multires = False
 
-    me0 = ob0.to_mesh(bpy.context.depsgraph, True)
-    ob0.data = me0
-    base_polygons = []
-
-    # Check if zero faces are selected
-    if bool_selection:
-        for p in ob0.data.polygons:
-            if p.select:
-                base_polygons.append(p)
-    else:
-        base_polygons = ob0.data.polygons
-    if len(base_polygons) == 0:
-        return 0
+    # set Shape Keys to zero
+    if bool_shapekeys:
+        try:
+            original_key_values = []
+            for sk in ob1.data.shape_keys.key_blocks:
+                original_key_values.append(sk.value)
+                sk.value = 0
+        except:
+            bool_shapekeys = False
 
     # Apply component modifiers
+    mod_visibility = []
     if com_modifiers:
         me1 = ob1.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
-    else:
-        me1 = ob1.data
+    elif not bool_shapekeys:
+        # must use to_mesh in order to apply the shape keys
+        for m in ob1.modifiers:
+            mod_visibility.append(m.show_viewport)
+            m.show_viewport = False
+        me1 = ob1.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+    else: me1 = ob1.data
 
     verts0 = me0.vertices   # Collect generator vertices
 
     # Component statistics
     n_verts = len(me1.vertices)
-    # n_edges = len(me1.edges)
-    # n_faces = len(me1.polygons)
-
-    # Component transformations
-    # loc = ob1.location
-    # dim = ob1.dimensions
-    # scale = ob1.scale
 
     # Create empty lists
     new_verts = []
@@ -400,17 +424,20 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
     bpy.ops.object.select_all(action='DESELECT')
     new_patch = None
 
-    # Active vertex group
+    # All vertex group
     if bool_vertex_group:
         try:
             weight = []
-            group_index = ob0.vertex_groups.active_index
-            active_vertex_group = ob0.vertex_groups[group_index]
-            for v in me0.vertices:
-                try:
-                    weight.append(active_vertex_group.weight(v.index))
-                except:
-                    weight.append(0)
+            #group_index = ob0.vertex_groups.active_index
+            #active_vertex_group = ob0.vertex_groups[group_index]
+            for vg in ob0.vertex_groups:
+                _weight = []
+                for v in me0.vertices:
+                    try:
+                        _weight.append(vg.weight(v.index))
+                    except:
+                        _weight.append(0)
+                weight.append(_weight)
         except:
             bool_vertex_group = False
 
@@ -445,7 +472,8 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
 
         # Vertex Group
         if bool_vertex_group:
-            new_patch.vertex_groups.new(name="generator_group")
+            for vg in ob0.vertex_groups:
+                new_patch.vertex_groups.new(name=vg.name)
 
         # find patch faces
         faces = [[[0] for ii in range(sides)] for jj in range(sides)]
@@ -521,6 +549,7 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                     verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
 
         step = 1/sides
+
         for vert, patch_vert in zip(verts1, new_patch.data.vertices):
             u = int(vert[0]//step)
             v = int(vert[1]//step)
@@ -532,55 +561,97 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
             v01 = verts[u][min(v+1, sides)]
             v11 = verts[min(u+1,sides)][min(v+1,sides)]
 
-            p000 = v00.co
-            p100 = v10.co
-            p010 = v01.co
-            p110 = v11.co
-            pu00 = p000.lerp(p100, fu)
-            pu10 = p010.lerp(p110, fu)
-            puv0 = pu00.lerp(pu10, fv)
-
-            p001 = v00.co + v00.normal*zscale
-            p101 = v10.co + v10.normal*zscale
-            p011 = v01.co + v01.normal*zscale
-            p111 = v11.co + v11.normal*zscale
-            pu01 = p001.lerp(p101, fu)
-            pu11 = p011.lerp(p111, fu)
-            puv1 = pu01.lerp(pu11, fv)
-
-            vz = vert.z
+            fw = vert.z
             if scale_mode == 'ADAPTIVE':
                 a00 = verts_area[v00.index]
                 a10 = verts_area[v10.index]
                 a01 = verts_area[v01.index]
                 a11 = verts_area[v11.index]
-                au0 = a00 + (a10-a00)*fu
-                au1 = a01 + (a11-a01)*fu
-                auv = au0 + (au1-au0)*fv
-                vz*=auv
+                fw*=lerp2(a00,a10,a01,a11,Vector((fu,fv,0)))
 
-            puvw = puv0.lerp(puv1, vz)
-            patch_vert.co = puvw
+            fvec = Vector((fu,fv,fw))
+            patch_vert.co = lerp3(v00, v10, v01, v11, fvec)
 
             # Vertex Group
             if bool_vertex_group:
-                w00 = weight[v00.index]
-                w10 = weight[v10.index]
-                w01 = weight[v01.index]
-                w11 = weight[v11.index]
-                wu0 = w00 + (w10-w00)*fu
-                wu1 = w01 + (w11-w01)*fu
-                wuv = wu0 + (wu1-wu0)*fv
-                new_patch.vertex_groups["generator_group"].add([patch_vert.index],
-                                                            wuv, "ADD")
+                for _weight, vg in zip(weight, new_patch.vertex_groups):
+                    w00 = _weight[v00.index]
+                    w10 = _weight[v10.index]
+                    w01 = _weight[v01.index]
+                    w11 = _weight[v11.index]
+                    wuv = lerp2(w00,w10,w01,w11, fvec)
+                    vg.add([patch_vert.index], wuv, "ADD")
+
+        if bool_shapekeys:
+            basis = com_modifiers
+            for sk in ob1.data.shape_keys.key_blocks:
+                # set all keys to 0
+                for _sk in ob1.data.shape_keys.key_blocks: _sk.value = 0
+                sk.value = 1
+                if com_modifiers: new_patch.shape_key_add(name=sk.name)
+
+                if basis:
+                    basis = False
+                    continue
+
+                # Apply component modifiers
+                if com_modifiers:
+                    sk_data = ob1.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+                    source = sk_data.vertices
+                else:
+                    source = sk.data
+
+                #sk_verts0 = sk_me0.vertices   # Collect generator vertices
+                #sk_verts1 = []
+                for sk_v, _v in zip(source, me1.vertices):
+                    #if sk_v.co == _v.co: continue
+                    if mode == "ADAPTIVE":
+                        sk_vert = sk_v.co - min_c  # (ob1.matrix_world * v.co) - min_c
+                        sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
+                        sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
+                        sk_vert[2] = (sk_vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+                    else:
+                        sk_vert = sk_v.co.xyz
+                        sk_vert[2] = (sk_vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+                    #sk_verts1.append(sk_vert)
+
+                    u = max(min(sides, int(sk_vert[0]//step)),0)
+                    v = max(min(sides, int(sk_vert[1]//step)),0)
+                    fu = (sk_vert[0]%step)/step
+                    fv = (sk_vert[1]%step)/step
+
+                    v00 = verts[u][v]
+                    v10 = verts[min(u+1,sides)][v]
+                    v01 = verts[u][min(v+1, sides)]
+                    v11 = verts[min(u+1,sides)][min(v+1,sides)]
+
+                    fw = sk_vert.z
+                    if scale_mode == 'ADAPTIVE':
+                        a00 = verts_area[v00.index]
+                        a10 = verts_area[v10.index]
+                        a01 = verts_area[v01.index]
+                        a11 = verts_area[v11.index]
+                        fw*=lerp2(a00,a10,a01,a11,Vector((fu,fv,0)))
+
+                    fvec = Vector((fu,fv,fw))
+                    sk_co = lerp3(v00, v10, v01, v11, fvec)
+
+                    new_patch.data.shape_keys.key_blocks[sk.name].data[_v.index].co = sk_co
 
     ob0.data = old_me0
     if not bool_correct: return 0
 
     bpy.ops.object.join()
 
-    bpy.ops.object.join()
-    print(new_patch)
+    if bool_shapekeys:
+        for sk, val in zip(ob1.data.shape_keys.key_blocks, original_key_values):
+            sk.value = val
+            new_patch.data.shape_keys.key_blocks[sk.name].value = val
+        if bool_vertex_group:
+            for sk in new_patch.data.shape_keys.key_blocks:
+                for vg in new_patch.vertex_groups:
+                    if sk.name == vg.name:
+                        sk.vertex_group = vg.name
 
     new_name = ob0.name + "_" + ob1.name
     new_patch.name = "tessellate_temp"
@@ -591,6 +662,10 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                 m.levels = levels
                 m.sculpt_levels = sculpt_levels
                 m.render_levels = render_levels
+    # restore original modifiers visibility for component object
+    if not com_modifiers:
+        for m, vis in zip(ob1.modifiers, mod_visibility):
+            m.show_viewport = vis
 
     return new_patch
 
@@ -617,6 +692,15 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
         base_polygons = ob0.data.polygons
     if len(base_polygons) == 0:
         return 0
+
+    if bool_shapekeys:
+        try:
+            original_key_values = []
+            for sk in ob1.data.shape_keys.key_blocks:
+                original_key_values.append(sk.value)
+                sk.value = 0
+        except:
+            bool_shapekeys = False
 
     # Apply component modifiers
     if com_modifiers:
@@ -691,18 +775,32 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
     new_edges = es1[:]
 
     # SHAPE KEYS
-    shapekeys = []
-    do_shapekeys = False
-    if me1.shape_keys is not None and bool_shapekeys:
-        if len(me1.shape_keys.key_blocks) > 1:
+    if bool_shapekeys:
+        basis = com_modifiers
+        vx_key = []
+        vy_key = []
+        vz_key = []
+        sk_np = []
+        for sk in ob1.data.shape_keys.key_blocks:
             do_shapekeys = True
+            # set all keys to 0
+            for _sk in ob1.data.shape_keys.key_blocks: _sk.value = 0
+            sk.value = 1
+            if com_modifiers: new_patch.shape_key_add(name=sk.name)
 
-            # Read active key
-            active_key = ob1.active_shape_key_index
-            if active_key == 0:
-                active_key = 1
+            if basis:
+                basis = False
+                continue
 
-            for v in me1.shape_keys.key_blocks[active_key].data:
+            # Apply component modifiers
+            if com_modifiers:
+                sk_data = ob1.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+                source = sk_data.vertices
+            else:
+                source = sk.data
+
+            shapekeys = []
+            for v in sk.data:
                 if mode == "ADAPTIVE":
                     vert = v.co - min_c
                     vert[0] = vert[0] / bb[0]
@@ -716,21 +814,25 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
             # Component vertices
             key1 = np.array([v for v in shapekeys]).reshape(len(shapekeys), 3, 1)
-            vx_key = key1[:, 0]
-            vy_key = key1[:, 1]
-            vz_key = key1[:, 2]
+            vx_key.append(key1[:, 0])
+            vy_key.append(key1[:, 1])
+            vz_key.append(key1[:, 2])
+            sk_np.append([])
 
-    # Active vertex group
+    # All vertex group
     if bool_vertex_group:
         try:
             weight = []
-            group_index = ob0.vertex_groups.active_index
-            active_vertex_group = ob0.vertex_groups[group_index]
-            for v in me0.vertices:
-                try:
-                    weight.append(active_vertex_group.weight(v.index))
-                except:
-                    weight.append(0)
+            #group_index = ob0.vertex_groups.active_index
+            #active_vertex_group = ob0.vertex_groups[group_index]
+            for vg in ob0.vertex_groups:
+                _weight = []
+                for v in me0.vertices:
+                    try:
+                        _weight.append(vg.weight(v.index))
+                    except:
+                        _weight.append(0)
+                weight.append(_weight)
         except:
             bool_vertex_group = False
 
@@ -750,8 +852,9 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
             # Vertex Group
             if bool_vertex_group:
-                center_weight = sum([weight[i] for i in p.vertices]) / len(p.vertices)
-                weight.append(center_weight)
+                for w in weight:
+                    center_weight = sum([w[i] for i in p.vertices]) / len(p.vertices)
+                    w.append(center_weight)
 
             for i in range(len(p.vertices)):
                 fan_polygons.append((p.vertices[i],
@@ -780,10 +883,12 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             faces = v.link_faces
             for f in faces:
                 area += f.calc_area()
-            area/=len(faces)
-            area*=mult
-            verts_area.append(sqrt(area))
-
+            try:
+                area/=len(faces)
+                area*=mult
+                verts_area.append(sqrt(area))
+            except:
+                verts_area.append(0)
     count = 0   # necessary for UV calculation
 
     # TESSELLATION
@@ -807,13 +912,14 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             # vertex weight
             if bool_vertex_group:
                 ws0 = []
-                for i in shifted_vertices:
-                    try:
-                        ws0.append(weight[i])
-                    except:
-                        ws0.append(0)
-
-                ws0 = np.array(ws0)
+                for w in weight:
+                    _ws0 = []
+                    for i in shifted_vertices:
+                        try:
+                            _ws0.append(w[i])
+                        except:
+                            _ws0.append(0)
+                    ws0.append(np.array(_ws0))
 
         # UV rotation
         elif rotation_mode == 'UV' and len(ob0.data.uv_layers) > 0 and \
@@ -860,12 +966,14 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             # Vertex weight
             if bool_vertex_group:
                 ws0 = []
-                for i in vertUV:
-                    try:
-                        ws0.append(weight[i])
-                    except:
-                        ws0.append(0)
-                ws0 = np.array(ws0)
+                for w in weight:
+                    _ws0 = []
+                    for i in vertUV:
+                        try:
+                            _ws0.append(w[i])
+                        except:
+                            _ws0.append(0)
+                    ws0.append(np.array(_ws0))
 
             count += len(p.vertices)
 
@@ -876,12 +984,15 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             # Vertex weight
             if bool_vertex_group:
                 ws0 = []
-                for i in p.vertices:
-                    try:
-                        ws0.append(weight[i])
-                    except:
-                        ws0.append(0)
-                ws0 = np.array(ws0)
+                for w in weight:
+                    _ws0 = []
+                    for i in p.vertices:
+                        try:
+                            _ws0.append(w[i])
+                        except:
+                            _ws0.append(0)
+                    ws0.append(np.array(_ws0))
+                print(ws0)
 
         # considering only 4 vertices
         vs0 = np.array((vs0[0], vs0[1], vs0[2], vs0[-1]))
@@ -909,38 +1020,49 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             v3 = v2 + nv2 * vz
 
         if bool_vertex_group:
-            ws0 = np.array((ws0[0], ws0[1], ws0[2], ws0[-1]))
-            # Interpolate vertex weight
-            w0 = ws0[0] + (ws0[1] - ws0[0]) * vx
-            w1 = ws0[3] + (ws0[2] - ws0[3]) * vx
-            w2 = w0 + (w1 - w0) * vy
+            w2 = []
+            for _ws0 in ws0:
+                print(_ws0)
+                _ws0 = np.array((_ws0[0], _ws0[1], _ws0[2], _ws0[-1]))
+                # Interpolate vertex weight
+                w0 = _ws0[0] + (_ws0[1] - _ws0[0]) * vx
+                w1 = _ws0[3] + (_ws0[2] - _ws0[3]) * vx
+                w2.append(w0 + (w1 - w0) * vy)
 
-            # Shapekeys
-            if do_shapekeys:
+        # Shapekeys
+        if bool_shapekeys:
+            sk_count = 0
+            for vxk, vyk, vzk in zip(vx_key, vy_key, vz_key):
                 # remapped vertex coordinates
-                v0 = vs0[0] + (vs0[1] - vs0[0]) * vx_key
-                v1 = vs0[3] + (vs0[2] - vs0[3]) * vx_key
-                v2 = v0 + (v1 - v0) * vy_key
+                v0 = vs0[0] + (vs0[1] - vs0[0]) * vxk
+                v1 = vs0[3] + (vs0[2] - vs0[3]) * vxk
+                v2 = v0 + (v1 - v0) * vyk
                 # remapped vertex normal
-                nv0 = nvs0[0] + (nvs0[1] - nvs0[0]) * vx_key
-                nv1 = nvs0[3] + (nvs0[2] - nvs0[3]) * vx_key
-                nv2 = nv0 + (nv1 - nv0) * vy_key
+                nv0 = nvs0[0] + (nvs0[1] - nvs0[0]) * vxk
+                nv1 = nvs0[3] + (nvs0[2] - nvs0[3]) * vxk
+                nv2 = nv0 + (nv1 - nv0) * vyk
                 # vertex z to normal
-                v3_key = v2 + nv2 * vz_key * (sqrt(p.area) if
+                v3_key = v2 + nv2 * vzk * (sqrt(p.area) if
                                               scale_mode == "ADAPTIVE" else 1)
-                v3 = v3 + (v3_key - v3) * w2
+                if j == 0:
+                    sk_np[sk_count] = v3_key
+                else:
+                    sk_np[sk_count] = np.concatenate((sk_np[sk_count], v3_key), axis=0)
+                #v3 = v3 + (v3_key - v3) * w2
+                sk_count += 1
 
         if j == 0:
             new_verts_np = v3
             if bool_vertex_group:
-                new_vertex_group_np = w2
+                vg_np = [np.array(_w2) for _w2 in w2]
         else:
             # Appending vertices
             new_verts_np = np.concatenate((new_verts_np, v3), axis=0)
             # Appending vertex group
             if bool_vertex_group:
-                new_vertex_group_np = np.concatenate((new_vertex_group_np, w2),
-                                                     axis=0)
+                for id in range(len(w2)):
+                    print(id)
+                    vg_np[id] = np.concatenate((vg_np[id], w2[id]), axis=0)
             # Appending faces
             for p in fs1:
                 new_faces.append([i + n_verts * j for i in p])
@@ -963,11 +1085,29 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
     # vertex group
     if bool_vertex_group:
-        new_ob.vertex_groups.new(name="generator_group")
-        for i in range(len(new_vertex_group_np)):
-            new_ob.vertex_groups["generator_group"].add([i],
-                                                        new_vertex_group_np[i],
-                                                        "ADD")
+        for vg in ob0.vertex_groups:
+            new_ob.vertex_groups.new(name=vg.name)
+            for i in range(len(vg_np[vg.index])):
+                new_ob.vertex_groups[vg.name].add([i], vg_np[vg.index][i],"ADD")
+
+    if bool_shapekeys:
+        sk_count = 0
+        print(sk_np)
+        for sk, val in zip(ob1.data.shape_keys.key_blocks, original_key_values):
+            sk.value = val
+            new_ob.shape_key_add(name=sk.name)
+            new_ob.data.shape_keys.key_blocks[sk.name].value = val
+            # set shape keys vertices
+            sk_data = new_ob.data.shape_keys.key_blocks[sk.name].data
+            for id in range(len(new_ob.data.vertices)):
+                sk_data[id].co = sk_np[sk_count][id]
+            sk_count += 1
+        if bool_vertex_group:
+            for sk in new_ob.data.shape_keys.key_blocks:
+                for vg in new_ob.vertex_groups:
+                    if sk.name == vg.name:
+                        sk.vertex_group = vg.name
+
     return new_ob
 
 
@@ -1032,7 +1172,7 @@ class tessellate(Operator):
             )
     merge : BoolProperty(
             name="Merge",
-            default=True,
+            default=False,
             description="Merge vertices in adjacent duplicates"
             )
     merge_thres : FloatProperty(
@@ -1057,8 +1197,7 @@ class tessellate(Operator):
     bool_vertex_group : BoolProperty(
             name="Map Vertex Group",
             default=False,
-            description="Map the active "
-                        "Vertex Group from the Base object to generated geometry"
+            description="Transfer all Vertex Groups from Base object"
             )
     bool_selection : BoolProperty(
             name="On selected Faces",
@@ -1068,12 +1207,13 @@ class tessellate(Operator):
     bool_shapekeys : BoolProperty(
             name="Use Shape Keys",
             default=False,
-            description="Use component's active Shape Key according to "
-                        "active Vertex Group of the base object"
+            description="Transfer Component's Shape Keys. If the name of Vertex "
+                        "Groups and Shape Keys are the same, they will be "
+                        "automatically combined"
             )
     bool_smooth : BoolProperty(
             name="Smooth Shading",
-            default=True,
+            default=False,
             description="Output faces with smooth shading rather than flat shaded"
             )
     bool_materials : BoolProperty(
@@ -1100,6 +1240,11 @@ class tessellate(Operator):
             name="Tessellation on Material ID",
             default=False,
             description="Apply the component only on the selected Material"
+            )
+    bool_dissolve_seams : BoolProperty(
+            name="Dissolve Seams",
+            default=False,
+            description="Dissolve all seam edges"
             )
     material_id : IntProperty(
             name="Material ID",
@@ -1181,6 +1326,7 @@ class tessellate(Operator):
             if len(bpy.data.objects[self.generator].modifiers) == 0:
                 col2.enabled = False
                 self.gen_modifiers = False
+            row.separator()
             col2 = row.column(align=True)
             col2.prop(self, "com_modifiers", text="Use Modifiers", icon='MODIFIER')
 
@@ -1233,23 +1379,25 @@ class tessellate(Operator):
 
             # Fill and Rotation
             row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.label(text="Fill Mode:")
-            col2.prop(
+            row.label(text="Fill Mode:")
+            row.label(text="Rotation:")
+            row = col.row(align=True)
+            #col2 = row.column(align=True)
+            row.prop(
                 self, "fill_mode", text="", icon='NONE', expand=False,
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
 
             # Rotation
+            row.separator()
             col2 = row.column(align=True)
-            col2.label(text="Rotation:")
             col2.prop(
                 self, "rotation_mode", text="", icon='NONE', expand=False,
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
             if self.rotation_mode == 'RANDOM':
                 col2.prop(self, "random_seed")
-            row.separator()
+
             if self.rotation_mode == 'UV':
                 uv_error = False
                 if self.fill_mode == 'FAN':
@@ -1298,13 +1446,14 @@ class tessellate(Operator):
             col = layout.column(align=True)
             row = col.row(align=True)
             row.prop(self, "merge")
-
             if self.merge:
                 row.prop(self, "merge_thres")
             row = col.row(align=True)
 
             row = col.row(align=True)
             row.prop(self, "bool_smooth")
+            if self.merge:
+                row.prop(self, "bool_dissolve_seams")
 
             # LIMITED TESSELLATION
             col = layout.column(align=True)
@@ -1340,23 +1489,24 @@ class tessellate(Operator):
                 row2.enabled = False
                 #props.bool_shapekeys = False
             elif len(ob0.vertex_groups) == 0 or \
-                    self.component.data.shape_keys is not None:
+                    ob1.data.shape_keys is not None:
                 if len(ob1.data.shape_keys.key_blocks) < 2:
                     row2.enabled = False
                     #prop.bool_shapekeys = False
 
             # TRANFER DATA
-            col = layout.column(align=True)
-            col.label(text="Component Data:")
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.prop(self, "bool_materials", icon='MATERIAL_DATA')
-            row.separator()
-            col2 = row.column(align=True)
-            col2.prop(self, "bool_crease", icon='EDGESEL')
-            if self.fill_mode == 'PATCH':
-                col.enabled = False
-                col.label(text='Not needed in Patch mode', icon='INFO')
+            if self.fill_mode != 'PATCH':
+                col = layout.column(align=True)
+                col.label(text="Component Data:")
+                row = col.row(align=True)
+                col2 = row.column(align=True)
+                col2.prop(self, "bool_materials", icon='MATERIAL_DATA')
+                row.separator()
+                col2 = row.column(align=True)
+                col2.prop(self, "bool_crease", icon='EDGESEL')
+                if self.fill_mode == 'PATCH':
+                    col.enabled = False
+                    col.label(text='Not needed in Patch mode', icon='INFO')
 
     def execute(self, context):
         try:
@@ -1450,7 +1600,26 @@ class tessellate(Operator):
                 bpy.context.collection.objects.link(new_ob)
             new_ob.select_set(True)
             bpy.context.view_layer.objects.active = new_ob
-            # merge vertices
+
+
+            # MERGE VERTICES
+            if self.merge and self.bool_dissolve_seams and self.fill_mode != 'PATCH':
+                # map seams
+                bm = bmesh.new()
+                bm.from_mesh(ob1.data)
+                seams = []
+                for f in bm.faces:
+                    for e in f.edges:
+                        seams.append(e.seam)
+                bm = bmesh.new()
+                bm.from_mesh(new_ob.data)
+                count = 0
+                for f in bm.faces:
+                    for e in f.edges:
+                        new_ob.data.edges[e.index].use_seam = seams[count % len(seams)]
+                        count+=1
+                new_ob.data.edges.update()
+
             if self.merge:
                 bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.select_mode(
@@ -1462,6 +1631,17 @@ class tessellate(Operator):
                 bpy.ops.mesh.remove_doubles(
                     threshold=self.merge_thres, use_unselected=False)
                 bpy.ops.object.mode_set(mode='OBJECT')
+                if self.bool_dissolve_seams:
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.select_mode(type='EDGE')
+                    bpy.ops.mesh.select_all(action='DESELECT')
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    for e in new_ob.data.edges:
+                        e.select = e.use_seam
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.dissolve_edges()
+                    bpy.ops.object.mode_set(mode='OBJECT')
+
             # store object properties
             new_ob = store_parameters(self, new_ob)
 
@@ -1523,6 +1703,7 @@ class update_tessellate(Operator):
         return checking in bpy.data.objects.keys()
 
     def execute(self, context):
+        start_time = time.time()
 
         # managing handlers for realtime update
         old_handlers = []
@@ -1554,6 +1735,7 @@ class update_tessellate(Operator):
             bool_smooth = ob.tissue_tessellate.bool_smooth
             bool_materials = ob.tissue_tessellate.bool_materials
             bool_crease = ob.tissue_tessellate.bool_crease
+            bool_dissolve_seams = ob.tissue_tessellate.bool_dissolve_seams
             bool_material_id = ob.tissue_tessellate.bool_material_id
             material_id = ob.tissue_tessellate.material_id
 
@@ -1586,6 +1768,7 @@ class update_tessellate(Operator):
                     )
 
         if temp_ob == 0:
+            for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
             message = "Zero faces selected in the Base mesh!"
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
@@ -1594,15 +1777,13 @@ class update_tessellate(Operator):
 
         # copy vertex group
         if bool_vertex_group:
-            if not "generator_group" in ob.vertex_groups.keys():
-                ob.vertex_groups.new(name="generator_group")
-                vg = ob.vertex_groups["generator_group"]
-            for i in range(len(ob.data.vertices)):
-                try:
-                    weight = temp_ob.vertex_groups["generator_group"].weight(i)
-                    vg.add([i], weight, 'REPLACE')
-                except:
-                    pass
+            for vg in temp_ob.vertex_groups:
+                if not vg.name in ob.vertex_groups.keys():
+                    ob.vertex_groups.new(name=vg.name)
+                new_vg = ob.vertex_groups[vg.name]
+                for i in range(len(ob.data.vertices)):
+                    weight = vg.weight(i)
+                    new_vg.add([i], weight, 'REPLACE')
 
         bpy.data.objects.remove(temp_ob)
         ob.select_set(True)
@@ -1648,7 +1829,24 @@ class update_tessellate(Operator):
                 except:
                     pass
 
-        # merge vertices
+        # MERGE VERTICES
+        if merge and bool_dissolve_seams and fill_mode != 'PATCH':
+            # map seams
+            bm = bmesh.new()
+            bm.from_mesh(ob1.data)
+            seams = []
+            for f in bm.faces:
+                for e in f.edges:
+                    seams.append(e.seam)
+            bm = bmesh.new()
+            bm.from_mesh(ob.data)
+            count = 0
+            for f in bm.faces:
+                for e in f.edges:
+                    ob.data.edges[e.index].use_seam = seams[count % len(seams)]
+                    count+=1
+            ob.data.edges.update()
+
         if merge:
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_mode(
@@ -1659,12 +1857,25 @@ class update_tessellate(Operator):
             bpy.ops.mesh.remove_doubles(
                 threshold=merge_thres, use_unselected=False)
             bpy.ops.object.mode_set(mode='OBJECT')
+            if bool_dissolve_seams:
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(type='EDGE')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+                for e in ob.data.edges:
+                    e.select = e.use_seam
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.dissolve_edges()
+
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.mode_set(mode='OBJECT')
 
         if bool_smooth: bpy.ops.object.shade_smooth()
 
         for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
+
+        end_time = time.time()
+        print(end_time-start_time)
 
         return {'FINISHED'}
 
@@ -1794,13 +2005,14 @@ class tessellate_object_panel(Panel):
             row.separator()
 
             # rotation
-            row.prop(props, "rotation_mode", text="", icon='NONE', expand=False,
+            col2 = row.column(align=True)
+            col2.prop(props, "rotation_mode", text="", icon='NONE', expand=False,
                      slider=True, toggle=False, icon_only=False, event=False,
                      full_event=False, emboss=True, index=-1)
 
             if props.rotation_mode == 'RANDOM':
-                row = col.row(align=True)
-                row.prop(props, "random_seed")
+                #row = col.row(align=True)
+                col2.prop(props, "random_seed")
 
             if props.rotation_mode == 'UV':
                 uv_error = False
@@ -1846,6 +2058,8 @@ class tessellate_object_panel(Panel):
                 row.prop(props, "merge_thres")
             row = col.row(align=True)
             row.prop(props, "bool_smooth")
+            if props.merge:
+                row.prop(props, "bool_dissolve_seams")
 
             # LIMITED TESSELLATION
             col = layout.column(align=True)
@@ -1887,17 +2101,18 @@ class tessellate_object_panel(Panel):
                     #prop.bool_shapekeys = False
 
             # TRANFER DATA
-            col = layout.column(align=True)
-            col.label(text="Component Data:")
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.prop(props, "bool_materials", icon='MATERIAL_DATA')
-            row.separator()
-            col2 = row.column(align=True)
-            col2.prop(props, "bool_crease", icon='EDGESEL')
-            if props.fill_mode == 'PATCH':
-                col.enabled = False
-                col.label(text='Not needed in Patch mode', icon='INFO')
+            if props.fill_mode != 'PATCH':
+                col = layout.column(align=True)
+                col.label(text="Component Data:")
+                row = col.row(align=True)
+                col2 = row.column(align=True)
+                col2.prop(props, "bool_materials", icon='MATERIAL_DATA')
+                row.separator()
+                col2 = row.column(align=True)
+                col2.prop(props, "bool_crease", icon='EDGESEL')
+                if props.fill_mode == 'PATCH':
+                    col.enabled = False
+                    col.label(text='Not needed in Patch mode', icon='INFO')
 
 
 class rotate_face(Operator):
