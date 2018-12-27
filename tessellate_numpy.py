@@ -408,7 +408,6 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
             vert = v.co.xyz
             vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
         verts1.append(vert)
-    print("Pippo")
 
     patch_faces = 4**levels
     sides = int(sqrt(patch_faces))
