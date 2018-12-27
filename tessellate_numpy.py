@@ -310,7 +310,6 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                bool_selection, bool_shapekeys, bool_material_id, material_id):
     random.seed(rand_seed)
     old_me0 = ob0.data      # Store generator mesh
-
     me0 = ob0.to_mesh(bpy.context.depsgraph, True)
 
     # Check if zero faces are selected
@@ -326,6 +325,7 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
         return 0
 
     ob0.data = me0
+    verts0 = me0.vertices
 
     levels = 0
     sculpt_levels = 0
@@ -408,6 +408,7 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
             vert = v.co.xyz
             vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
         verts1.append(vert)
+    print("Pippo")
 
     patch_faces = 4**levels
     sides = int(sqrt(patch_faces))
@@ -419,8 +420,9 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
     new_edges = []
     new_faces = []
 
-    bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.object.select_all(action='DESELECT')
+    #bpy.ops.object.mode_set(mode='OBJECT')
+    for o in bpy.data.objects: o.select_set(False)
+    #bpy.ops.object.select_all(action='DESELECT')
     new_patch = None
 
     # All vertex group
@@ -458,6 +460,10 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
 
     random.seed(rand_seed)
     bool_correct = False
+
+    _faces = [[[0] for ii in range(sides)] for jj in range(sides)]
+    _verts = [[[0] for ii in range(sides+1)] for jj in range(sides+1)]
+
     for i in range(n_patches):
         poly = me0.polygons[i*patch_faces]
         if bool_selection and not poly.select: continue
@@ -475,38 +481,42 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                 new_patch.vertex_groups.new(name=vg.name)
 
         # find patch faces
-        faces = [[[0] for ii in range(sides)] for jj in range(sides)]
+        faces = _faces.copy()
+        verts = _verts.copy()
+        shift1 = sides
+        shift2 = sides*2-1
+        shift3 = sides*3-2
         for j in range(patch_faces):
             if j < patch_faces0:
                 if levels == 0:
-                    faces[j%sides0][j//sides0] = me0.polygons[j+i*patch_faces]
+                    u = j%sides0
+                    v = j//sides0
                 else:
-                    faces[j%sides0+1][j//sides0+1] = me0.polygons[j+i*patch_faces]
-            elif j < patch_faces0 + sides:
-                jj = j-patch_faces0
-                faces[jj][0] = me0.polygons[j+i*patch_faces]
-            elif j < patch_faces0 + sides*2-1:
-                jj = j-(patch_faces0 + sides)+1
-                faces[sides-1][jj] = me0.polygons[j+i*patch_faces]
-            elif j < patch_faces0 + sides*3-2:
-                jj = j-(patch_faces0 + sides*2-1)
-                faces[sides-jj-2][sides-1] = me0.polygons[j+i*patch_faces]
+                    u = j%sides0+1
+                    v = j//sides0+1
+            elif j < patch_faces0 + shift1:
+                u = j-patch_faces0
+                v = 0
+            elif j < patch_faces0 + shift2:
+                u = sides-1
+                v = j-(patch_faces0 + sides)+1
+            elif j < patch_faces0 + shift3:
+                jj = j-(patch_faces0 + shift2)
+                u = sides-jj-2
+                v = sides-1
             else:
-                jj = j-(patch_faces0 + sides*3-2)
-                faces[0][sides-jj-2] = me0.polygons[j+i*patch_faces]
-
-        # generate vertices grid
-        verts = [[[0] for ii in range(int(sqrt(patch_faces)+1))] for jj in range(int(sqrt(patch_faces)+1))]
-        for v in range(sides+1):
-            for u in range(sides+1):
-                if v == sides and u == sides:
-                    verts[u][v] = me0.vertices[faces[u-1][v-1].vertices[2]]
-                elif v < sides and u == sides:
-                    verts[u][v] = me0.vertices[faces[u-1][v].vertices[1]]
-                elif v == sides and u < sides:
-                    verts[u][v] = me0.vertices[faces[u][v-1].vertices[3]]
-                else:
-                    verts[u][v] = me0.vertices[faces[u][v].vertices[0]]
+                jj = j-(patch_faces0 + shift3)
+                u = 0
+                v = sides-jj-2
+            face = me0.polygons[j+i*patch_faces]
+            faces[u][v] = face
+            verts[u][v] = verts0[face.vertices[0]]
+            if u == sides-1:
+                verts[sides][v] = verts0[face.vertices[1]]
+            if v == sides-1:
+                verts[u][sides] = verts0[face.vertices[3]]
+            if u == v == sides-1:
+                verts[sides][sides] = verts0[face.vertices[2]]
 
         # Random rotation
         if rotation_mode == 'RANDOM':
@@ -548,10 +558,9 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                     verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
 
         step = 1/sides
-
         for vert, patch_vert in zip(verts1, new_patch.data.vertices):
-            u = int(vert[0]//step)
-            v = int(vert[1]//step)
+            u = max(min(sides, int(vert[0]//step)),0)
+            v = max(min(sides, int(vert[1]//step)),0)
             fu = (vert[0]%step)/step
             fv = (vert[1]%step)/step
 
@@ -857,10 +866,6 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
         me0 = fan_me
         verts0 = me0.vertices
         base_polygons = me0.polygons
-        """
-        for i in range(len(selected_faces)):
-            fan_me.polygons[i].select = selected_faces[i]
-        """
 
     # Adaptive Z
     if scale_mode == 'ADAPTIVE':
@@ -1562,7 +1567,7 @@ class tessellate(Operator):
         if self.component != "" and self.generator != "":
             if bpy.ops.object.select_all.poll():
                 bpy.ops.object.select_all(action='TOGGLE')
-
+            bpy.ops.object.mode_set(mode='OBJECT')
             if self.fill_mode == 'PATCH':
                 new_ob = tassellate_patch(
                         ob0, ob1, self.offset, self.zscale,
