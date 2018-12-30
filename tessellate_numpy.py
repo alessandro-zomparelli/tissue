@@ -97,7 +97,7 @@ def anim_tessellate(scene):
     scene = bpy.context.scene
     try: active_object = bpy.context.object
     except: active_object = None
-    selected_objects = bpy.context.selected_objects
+    selected_objects = [ob for ob in bpy.context.selected_objects]
     if bpy.context.mode in ('OBJECT', 'PAINT_WEIGHT'):
         old_mode = bpy.context.mode
         if old_mode == 'PAINT_WEIGHT': old_mode = 'WEIGHT_PAINT'
@@ -109,9 +109,10 @@ def anim_tessellate(scene):
                 try: bpy.ops.object.update_tessellate()
                 except: pass
         # restore selected objects
-        for o in scene.objects: ob.select_set(False)
+        for o in scene.objects: o.select_set(False)
         for o in selected_objects:
             o.select_set(True)
+        print(selected_objects)
         bpy.context.view_layer.objects.active = active_object
         bpy.ops.object.mode_set(mode=old_mode)
 
@@ -148,7 +149,10 @@ class tissue_tessellate_prop(PropertyGroup):
         update = anim_tessellate_active
         )
     mode : EnumProperty(
-        items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Adaptive", "")),
+        items=(
+            ('ADAPTIVE', "Bounds", "The component fits automatically the size of the target face"),
+            ('CONSTANT', "Local", "Based on Local coordinates, from 0 to 1"),
+            ('GLOBAL', 'Global', "Based on Global coordinates, from 0 to 1")),
         default='ADAPTIVE',
         name="Component Mode",
         update = anim_tessellate_active
@@ -332,7 +336,13 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
     render_levels = 0
     bool_multires = False
     multires_name = ""
-    for m in ob0.modifiers:
+    not_allowed  = ['FLUID_SIMULATION', 'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD',
+                    'DECIMATE', 'EDGE_SPLIT', 'MASK', 'MIRROR', 'REMESH',
+                    'SCREW', 'SOLIDIFY', 'TRIANGULATE', 'WIREFRAME', 'SKIN',
+                    'EXPLODE', 'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SMOKE']
+    modifiers0 = [m for m in ob0.modifiers]
+    modifiers0.reverse()
+    for m in modifiers0:
         if m.type in ('SUBSURF', 'MULTIRES') and m.show_viewport:
             levels = m.levels
             if m.type == 'MULTIRES':
@@ -341,6 +351,10 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                 sculpt_levels = m.sculpt_levels
                 render_levels = m.render_levels
             else: bool_multires = False
+            break
+        elif m.type in not_allowed:
+            ob0.data = old_me0
+            return "modifiers_error"
 
     # set Shape Keys to zero
     if bool_shapekeys:
@@ -404,9 +418,12 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
             vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
             vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
             vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-        else:
+        elif mode == 'CONSTANT':
             vert = v.co.xyz
             vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+        elif mode == 'GLOBAL':
+            vert = ob1.matrix_world @ v.co
+            vert[2] *= zscale
         verts1.append(vert)
 
     patch_faces = 4**levels
@@ -414,6 +431,8 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
     sides0 = sides-2
     patch_faces0 = int((sides-2)**2)
     n_patches = int(len(me0.polygons)/patch_faces)
+    if len(me0.polygons)%patch_faces != 0:
+        return "topology_error"
 
     new_verts = []
     new_edges = []
@@ -558,25 +577,43 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
 
         step = 1/sides
         for vert, patch_vert in zip(verts1, new_patch.data.vertices):
-            u = max(min(sides, int(vert[0]//step)),0)
-            v = max(min(sides, int(vert[1]//step)),0)
-            fu = (vert[0]%step)/step
-            fv = (vert[1]%step)/step
-
+            # grid coordinates
+            u = int(vert[0]//step)
+            v = int(vert[1]//step)
+            u1 = min(u+1, sides)
+            v1 = min(v+1, sides)
+            if mode != 'ADAPTIVE':
+                if u > sides-1:
+                    u = sides-1
+                    u1 = sides
+                if u < 0:
+                    u = 0
+                    u1 = 1
+                if v > sides-1:
+                    v = sides-1
+                    v1 = sides
+                if v < 0:
+                    v = 0
+                    v1 = 1
             v00 = verts[u][v]
-            v10 = verts[min(u+1,sides)][v]
-            v01 = verts[u][min(v+1, sides)]
-            v11 = verts[min(u+1,sides)][min(v+1,sides)]
-
+            v10 = verts[u1][v]
+            v01 = verts[u][v1]
+            v11 = verts[u1][v1]
+            # factor coordinates
+            fu = (vert[0]-u*step)/step
+            fv = (vert[1]-v*step)/step
             fw = vert.z
+            # interpolate Z scaling factor
+            fvec2d = Vector((fu,fv,0))
             if scale_mode == 'ADAPTIVE':
                 a00 = verts_area[v00.index]
                 a10 = verts_area[v10.index]
                 a01 = verts_area[v01.index]
                 a11 = verts_area[v11.index]
-                fw*=lerp2(a00,a10,a01,a11,Vector((fu,fv,0)))
-
+                fw*=lerp2(a00,a10,a01,a11,fvec2d)
+            # build factor vector
             fvec = Vector((fu,fv,fw))
+            # interpolate vertex on patch
             patch_vert.co = lerp3(v00, v10, v01, v11, fvec)
 
             # Vertex Group
@@ -586,7 +623,7 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                     w10 = _weight[v10.index]
                     w01 = _weight[v01.index]
                     w11 = _weight[v11.index]
-                    wuv = lerp2(w00,w10,w01,w11, fvec)
+                    wuv = lerp2(w00,w10,w01,w11, fvec2d)
                     vg.add([patch_vert.index], wuv, "ADD")
 
         if bool_shapekeys:
@@ -607,32 +644,46 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                     source = sk_data.vertices
                 else:
                     source = sk.data
-
-                #sk_verts0 = sk_me0.vertices   # Collect generator vertices
-                #sk_verts1 = []
                 for sk_v, _v in zip(source, me1.vertices):
-                    #if sk_v.co == _v.co: continue
                     if mode == "ADAPTIVE":
                         sk_vert = sk_v.co - min_c  # (ob1.matrix_world * v.co) - min_c
                         sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
                         sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
                         sk_vert[2] = (sk_vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-                    else:
+                    elif mode == 'CONSTANT':
                         sk_vert = sk_v.co.xyz
                         sk_vert[2] = (sk_vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-                    #sk_verts1.append(sk_vert)
+                    elif mode == 'GLOBAL':
+                        sk_vert = ob1.matrix_world @ sk_v.co
+                        sk_vert[2] *= zscale
 
-                    u = max(min(sides, int(sk_vert[0]//step)),0)
-                    v = max(min(sides, int(sk_vert[1]//step)),0)
-                    fu = (sk_vert[0]%step)/step
-                    fv = (sk_vert[1]%step)/step
-
+                    # grid coordinates
+                    u = int(sk_vert[0]//step)
+                    v = int(sk_vert[1]//step)
+                    u1 = min(u+1, sides)
+                    v1 = min(v+1, sides)
+                    if mode != 'ADAPTIVE':
+                        if u > sides-1:
+                            u = sides-1
+                            u1 = sides
+                        if u < 0:
+                            u = 0
+                            u1 = 1
+                        if v > sides-1:
+                            v = sides-1
+                            v1 = sides
+                        if v < 0:
+                            v = 0
+                            v1 = 1
                     v00 = verts[u][v]
-                    v10 = verts[min(u+1,sides)][v]
-                    v01 = verts[u][min(v+1, sides)]
-                    v11 = verts[min(u+1,sides)][min(v+1,sides)]
-
+                    v10 = verts[u1][v]
+                    v01 = verts[u][v1]
+                    v11 = verts[u1][v1]
+                    # factor coordinates
+                    fu = (sk_vert[0]-u*step)/step
+                    fv = (sk_vert[1]-v*step)/step
                     fw = sk_vert.z
+
                     if scale_mode == 'ADAPTIVE':
                         a00 = verts_area[v00.index]
                         a10 = verts_area[v10.index]
@@ -651,6 +702,7 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
     bpy.ops.object.join()
 
     if bool_shapekeys:
+        # set original values and combine Shape Keys and Vertex Groups
         for sk, val in zip(ob1.data.shape_keys.key_blocks, original_key_values):
             sk.value = val
             new_patch.data.shape_keys.key_blocks[sk.name].value = val
@@ -755,9 +807,12 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
             vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
             vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
             vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-        else:
+        elif mode == 'CONSTANT':
             vert = v.co.xyz
             vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+        elif mode == 'GLOBAL':
+            vert = ob1.matrix_world @ v.co
+            vert[2] *= zscale
         verts1.append(vert)
 
     # component vertices
@@ -776,7 +831,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
     # SHAPE KEYS
     if bool_shapekeys:
-        basis = com_modifiers
+        basis = True #com_modifiers
         vx_key = []
         vy_key = []
         vz_key = []
@@ -797,6 +852,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                 source = sk_data.vertices
             else:
                 source = sk.data
+            print(source)
 
             shapekeys = []
             for v in source:
@@ -805,10 +861,13 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                     vert[0] = vert[0] / bb[0]
                     vert[1] = vert[1] / bb[1]
                     vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-                else:
+                elif mode == 'CONSTANT':
                     vert = v.co.xyz
                     vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * \
                               zscale
+                elif mode == 'GLOBAL':
+                    vert = ob1.matrix_world @ v.co
+                    vert[2] *= zscale
                 shapekeys.append(vert)
 
             # Component vertices
@@ -1089,6 +1148,7 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                 new_ob.vertex_groups[vg.name].add([i], vg_np[vg.index][i],"ADD")
 
     if bool_shapekeys:
+        basis = com_modifiers
         sk_count = 0
         for sk, val in zip(ob1.data.shape_keys.key_blocks, original_key_values):
             sk.value = val
@@ -1144,7 +1204,10 @@ class tessellate(Operator):
             description="Surface offset"
             )
     mode : EnumProperty(
-            items=(('CONSTANT', "Constant", ""), ('ADAPTIVE', "Adaptive", "")),
+            items=(
+                ('ADAPTIVE', "Bounds", "The component fits automatically the size of the target face"),
+                ('CONSTANT', "Local", "Based on Local coordinates, from 0 to 1"),
+                ('GLOBAL', 'Global', "Based on Global coordinates, from 0 to 1")),
             default='ADAPTIVE',
             name="Component Mode"
             )
@@ -1419,7 +1482,7 @@ class tessellate(Operator):
 
             # Component XY
             row = col.row(align=True)
-            row.label(text="Component XY:")
+            row.label(text="Component Coordinates:")
             row = col.row(align=True)
             row.prop(
                 self, "mode", text="Component XY", icon='NONE', expand=True,
@@ -1427,7 +1490,7 @@ class tessellate(Operator):
                 full_event=False, emboss=True, index=-1)
 
             # Component Z
-            col.label(text="Component Z:")
+            col.label(text="Thickness:")
             row = col.row(align=True)
             row.prop(
                 self, "scale_mode", text="Scale Mode", icon='NONE', expand=True,
@@ -1590,6 +1653,16 @@ class tessellate(Operator):
                 message = "Zero faces selected in the Base mesh!"
                 self.report({'ERROR'}, message)
                 return {'CANCELLED'}
+            if new_ob == "modifiers_error":
+                message = "Modifiers that change the topology of the mesh \n" \
+                         "after the last Subsurf (or Multires) are not allowed."
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
+            if new_ob == "topology_error":
+                message = "Make sure that the topology of the mesh before \n" \
+                          "the last Subsurf (or Multires) is quads only."
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
 
             new_ob.name = self.object_name
 
@@ -1674,6 +1747,9 @@ class tessellate(Operator):
 
         # smooth
         if self.bool_smooth: bpy.ops.object.shade_smooth()
+
+        for mesh in bpy.data.meshes:
+            if not mesh.users: bpy.data.meshes.remove(mesh)
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -1772,6 +1848,16 @@ class update_tessellate(Operator):
             message = "Zero faces selected in the Base mesh!"
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
+        if temp_ob == "modifiers_error":
+            message = "Modifiers that change the topology of the mesh \n" \
+                      "after the last Subsurf (or Multires) are not allowed."
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+        if temp_ob == "topology_error":
+            message = "Make sure that the topology of the mesh before \n" \
+                      "the last Subsurf (or Multires) is quads only."
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
 
         ob.data = temp_ob.data.copy()
 
@@ -1854,8 +1940,14 @@ class update_tessellate(Operator):
             bpy.ops.mesh.select_non_manifold(
                 extend=False, use_wire=False, use_boundary=True,
                 use_multi_face=False, use_non_contiguous=False, use_verts=False)
+
+            #bpy.ops.mesh.select_all(action='SELECT') ####
+
             bpy.ops.mesh.remove_doubles(
                 threshold=merge_thres, use_unselected=False)
+
+            #bpy.ops.mesh.normals_make_consistent(inside=False) ####
+
             bpy.ops.object.mode_set(mode='OBJECT')
             if bool_dissolve_seams:
                 bpy.ops.object.mode_set(mode='EDIT')
@@ -1876,6 +1968,9 @@ class update_tessellate(Operator):
 
         end_time = time.time()
         print("Tessellation time: {:.4f} sec".format(end_time-start_time))
+
+        for mesh in bpy.data.meshes:
+            if not mesh.users: bpy.data.meshes.remove(mesh)
 
         return {'FINISHED'}
 
@@ -2034,12 +2129,12 @@ class tessellate_object_panel(Panel):
 
             # component XY
             row = col.row(align=True)
-            row.label(text="Component XY:")
+            row.label(text="Component Coordinates:")
             row = col.row(align=True)
             row.prop(props, "mode", expand=True)
 
             # component Z
-            col.label(text="Component Z:")
+            col.label(text="Thickness:")
             row = col.row(align=True)
             row.prop(props, "scale_mode", expand=True)
             col.prop(props, "zscale", text="Scale", icon='NONE', expand=False,
