@@ -7,12 +7,12 @@ http://www.co-de-it.com/wordpress/code/blender-tissue
 
 Official version (master): https://github.com/alessandro-zomparelli/tissue/archive/master.zip
 
-Latest development version (dev-1): https://github.com/alessandro-zomparelli/tissue/tree/dev1
+Latest development version (dev1): https://github.com/alessandro-zomparelli/tissue/tree/dev1
 (Includes animatable Tessellation)
 
 ### Blender 2.80
 
-Latest development version (dev-1): https://github.com/alessandro-zomparelli/tissue/tree/b280-dev
+Latest development version (b280-dev): https://github.com/alessandro-zomparelli/tissue/tree/b280-dev
 (Includes animatable Tessellation and Patch method)
 
 
