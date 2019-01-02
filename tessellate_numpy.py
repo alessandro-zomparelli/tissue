@@ -368,20 +368,6 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
             ob0.data = old_me0
             return "modifiers_error"
 
-    '''
-    for m in modifiers0:
-        m.show_viewport = False
-        if m.name == multires_name: break
-    ob0.modifiers.update()
-    check_me0 = ob0.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
-    for m, vis in zip(modifiers0, show_modifiers):
-        m.show_viewport = vis
-    for p in check_me0.polygons:
-        print(len(p.vertices))
-        if len(p.vertices) != 4:
-            return 'topology_error'
-    '''
-
     # set Shape Keys to zero
     if bool_shapekeys:
         try:
