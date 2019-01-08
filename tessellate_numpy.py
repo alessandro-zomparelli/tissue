@@ -290,6 +290,29 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Dissolve all seam edges",
         update = anim_tessellate_active
         )
+    iterations : IntProperty(
+        name="Iterations",
+        default=1,
+        min=1,
+        soft_max=5,
+        description="Automatically repeat the Tessellation using the "
+                    + "generated geometry as new base object.\nUsefull for "
+                    + "for branching systems. Dangerous!",
+        update = anim_tessellate_active
+        )
+    bool_face_normals : BoolProperty(
+        name="Face Normals",
+        default=False,
+        description="Use Faces Normals instead of Vertices Normals."
+                        + "Needed for branching systems.",
+        update = anim_tessellate_active
+        )
+    bool_combine : BoolProperty(
+        name="Combine unused",
+        default=False,
+        description="Combine the generated geometry with unused faces",
+        update = anim_tessellate_active
+        )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -315,6 +338,9 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_material_id = operator.bool_material_id
     ob.tissue_tessellate.material_id = operator.material_id
     ob.tissue_tessellate.bool_dissolve_seams = operator.bool_dissolve_seams
+    ob.tissue_tessellate.iterations = operator.iterations
+    ob.tissue_tessellate.bool_face_normals = operator.bool_face_normals
+    ob.tissue_tessellate.bool_combine = operator.bool_combine
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -477,7 +503,9 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
 
     # Adaptive Z
     if scale_mode == 'ADAPTIVE':
-        mult = 1/(bb[0]*bb[1])*patch_faces
+        if mode == 'ADAPTIVE': com_area = (bb[0]*bb[1])
+        else: com_area = 1
+        mult = 1/com_area*patch_faces
         verts_area = []
         bm = bmesh.new()
         bm.from_mesh(me0)
@@ -747,21 +775,32 @@ def tassellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
 def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                scale_mode, rotation_mode, rand_seed, fill_mode,
                bool_vertex_group, bool_selection, bool_shapekeys,
-               bool_material_id, material_id):
+               bool_material_id, material_id, face_normal):
+
     random.seed(rand_seed)
+
     if ob0.type == 'MESH': old_me0 = ob0.data      # Store generator mesh
 
     me0 = ob0.to_mesh(bpy.context.depsgraph, apply_modifiers = gen_modifiers)
     if ob0.type == 'MESH': ob0.data = me0
     base_polygons = []
+    base_face_normals = []
 
     # Check if zero faces are selected
-    if bool_selection and ob0.type == 'MESH':
+    if (bool_selection and ob0.type == 'MESH') or bool_material_id:
         for p in ob0.data.polygons:
-            if p.select:
+            if (bool_selection and ob0.type == 'MESH'):
+                is_sel = p.select
+            else: is_sel = True
+            if bool_material_id:
+                is_mat = p.material_index == material_id
+            else: is_mat = True
+            if is_sel and is_mat:
                 base_polygons.append(p)
+                base_face_normals.append(p.normal)
     else:
         base_polygons = me0.polygons
+        base_face_normals = [p.normal for p in me0.polygons]
     if len(base_polygons) == 0:
         return 0
 
@@ -906,7 +945,8 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
 
     # Adaptive Z
     if scale_mode == 'ADAPTIVE':
-        com_area = (bb[0]*bb[1])
+        if mode == 'ADAPTIVE': com_area = (bb[0]*bb[1])
+        else: com_area = 1
         if com_area == 0: mult = 1
         else: mult = 1/com_area
         verts_area = []
@@ -929,6 +969,9 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
     if fill_mode == 'FAN':
         fan_verts = [v.co.to_tuple() for v in me0.vertices]
         fan_polygons = []
+        fan_select = []
+        fan_material = []
+        fan_normals = []
         # selected_faces = []
         for p in base_polygons:
             # if bool_selection and not p.select: continue
@@ -954,22 +997,34 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                 fan_polygons.append((p.vertices[i],
                                      p.vertices[(i + 1) % len(p.vertices)],
                                      last_vert, last_vert))
-                # if bool_selection: selected_faces.append(p.select)
+
+                if bool_material_id: fan_material.append(p.material_index)
+                if bool_selection: fan_select.append(p.select)
+                if face_normal:
+                    fan_normals.append(p.normal)
+
         fan_me = bpy.data.meshes.new('Fan.Mesh')
         fan_me.from_pydata(tuple(fan_verts), [], tuple(fan_polygons))
         me0 = fan_me.copy()
         bpy.data.meshes.remove(fan_me)
         verts0 = me0.vertices
         base_polygons = me0.polygons
+        if face_normal: base_face_normals = fan_normals
 
     count = 0   # necessary for UV calculation
 
     # TESSELLATION
     j = 0
+    jj = -1
     bool_correct = False
     for p in base_polygons:
-        if bool_selection and not p.select: continue
-        if bool_material_id and not p.material_index == material_id: continue
+        #if fill_mode == 'FAN':
+        #    jj += 1
+        #    if bool_selection and not fan_select[jj]: continue
+        #    if bool_material_id and not fan_material[jj] == material_id: continue
+        #else:
+        #    if bool_selection and not p.select: continue
+        #    if bool_material_id and not p.material_index == material_id: continue
 
         bool_correct = True
         if rotation_mode == 'UV' and ob0.type != 'MESH':
@@ -1072,6 +1127,9 @@ def tassellate(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
         # considering only 4 vertices
         vs0 = np.array((vs0[0], vs0[1], vs0[2], vs0[-1]))
         nvs0 = np.array((nvs0[0], nvs0[1], nvs0[2], nvs0[-1]))
+        if face_normal:
+            fn = np.array(base_face_normals[j].to_tuple())
+            nvs0 = [fn]*4
 
         # remapped vertex coordinates
         v0 = vs0[0] + (vs0[1] - vs0[0]) * vx
@@ -1347,6 +1405,26 @@ class tessellate(Operator):
             min=0,
             description="Material ID"
             )
+    iterations : IntProperty(
+            name="Iterations",
+            default=1,
+            min=1,
+            soft_max=5,
+            description="Automatically repeat the Tessellation using the "
+                        + "generated geometry as new base object.\nUsefull for "
+                        + "for branching systems. Dangerous!"
+            )
+    bool_face_normals : BoolProperty(
+            name="Face Normals",
+            default=False,
+            description="Use Faces Normals instead of Vertices Normals."
+                            + "Needed for branching systems"
+            )
+    bool_combine : BoolProperty(
+            name="Combine unused",
+            default=False,
+            description="Combine the generated geometry with unused faces"
+            )
     working_on : ""
 
     def draw(self, context):
@@ -1574,6 +1652,9 @@ class tessellate(Operator):
             row = col.row(align=True)
             col2 = row.column(align=True)
             col2.prop(self, "bool_selection", text="On selected Faces", icon='RESTRICT_SELECT_OFF')
+            if self.bool_material_id or self.bool_selection:
+                #col2 = row.column(align=True)
+                col2.prop(self, "bool_combine")
             row.separator()
             if ob0.type != 'MESH':
                 col2.enabled = False
@@ -1586,6 +1667,13 @@ class tessellate(Operator):
             # ADVANCED #
             col = layout.column(align=True)
             col.label(text="Advanced Settings:")
+            row = col.row(align=True)
+            col2 = row.column(align=True)
+            col2.prop(self, 'iterations', text='Repeat')
+            row.separator()
+            col2 = row.column(align=True)
+            col2.prop(self, 'bool_face_normals')
+            col.separator()
             # vertex group + shape keys
             row = col.row(align=True)
             col2 = row.column(align=True)
@@ -1612,6 +1700,7 @@ class tessellate(Operator):
             except:
                 row2.enabled = False
 
+
             # TRANFER DATA
             if self.fill_mode != 'PATCH':
                 col = layout.column(align=True)
@@ -1625,6 +1714,7 @@ class tessellate(Operator):
                 if self.fill_mode == 'PATCH':
                     col.enabled = False
                     col.label(text='Not needed in Patch mode', icon='INFO')
+
 
     def execute(self, context):
         try:
@@ -1687,24 +1777,112 @@ class tessellate(Operator):
             if bpy.ops.object.select_all.poll():
                 bpy.ops.object.select_all(action='TOGGLE')
             bpy.ops.object.mode_set(mode='OBJECT')
-            if self.fill_mode == 'PATCH':
-                new_ob = tassellate_patch(
-                        ob0, ob1, self.offset, self.zscale,
-                        self.com_modifiers, self.mode, self.scale_mode,
-                        self.rotation_mode, self.random_seed,
-                        self.bool_vertex_group, self.bool_selection,
-                        self.bool_shapekeys, self.bool_material_id,
-                        self.material_id
-                        )
-            else:
-                new_ob = tassellate(
-                        ob0, ob1, self.offset, self.zscale, self.gen_modifiers,
-                        self.com_modifiers, self.mode, self.scale_mode,
-                        self.rotation_mode, self.random_seed, self.fill_mode,
-                        self.bool_vertex_group, self.bool_selection,
-                        self.bool_shapekeys, self.bool_material_id,
-                        self.material_id
-                        )
+
+            new_ob = ob0.copy()
+            new_ob.data = ob0.data.copy()
+            new_ob.modifiers.update()
+            bpy.ops.object.select_all(action='DESELECT')
+            bpy.context.collection.objects.link(new_ob)
+            iter_objects = [new_ob]
+            base_ob = new_ob
+
+            for iter in range(self.iterations):
+                try:
+                    if self.fill_mode == 'PATCH':
+                        new_ob = tassellate_patch(
+                                base_ob, ob1, self.offset, self.zscale,
+                                self.com_modifiers, self.mode, self.scale_mode,
+                                self.rotation_mode, self.random_seed,
+                                self.bool_vertex_group, self.bool_selection,
+                                self.bool_shapekeys, self.bool_material_id,
+                                self.material_id
+                                )
+                    else:
+                        new_ob = tassellate(
+                                base_ob, ob1, self.offset, self.zscale, self.gen_modifiers,
+                                self.com_modifiers, self.mode, self.scale_mode,
+                                self.rotation_mode, self.random_seed, self.fill_mode,
+                                self.bool_vertex_group, self.bool_selection,
+                                self.bool_shapekeys, self.bool_material_id,
+                                self.material_id, self.bool_face_normals
+                                )
+
+                        try:
+                            bpy.context.collection.objects.link(new_ob)
+                            new_ob.select_set(True)
+                            bpy.context.view_layer.objects.active = new_ob
+                        except:
+                            continue
+
+                        # EDGE CREASES
+                        try:
+                            if self.bool_crease:
+                                creases = [e.crease for e in ob1.data.edges]
+                                for e in new_ob.data.edges:
+                                    e.crease = creases[e.index % len(creases)]
+                        except:
+                            pass
+
+                        # MATERIALS
+                        if self.bool_materials or self.bool_material_id:
+                            try:
+                                # create materials list
+                                data1 = ob1.to_mesh(bpy.context.depsgraph, self.com_modifiers)
+                                polygon_materials = [p.material_index for p in data1.polygons] * int(
+                                        len(new_ob.data.polygons) / len(data1.polygons))
+                                # assign old material
+                                component_materials = [slot.material for slot in ob1.material_slots]
+                                for i in range(len(component_materials)):
+                                    bpy.ops.object.material_slot_add()
+                                    bpy.context.object.material_slots[i].material = \
+                                        component_materials[i]
+                                for i in range(len(new_ob.data.polygons)):
+                                    new_ob.data.polygons[i].material_index = polygon_materials[i]
+                            except:
+                                pass
+
+                        # SELECTION
+                        if self.bool_selection:
+                            try:
+                                # create selection list
+                                polygon_selection = [p.select for p in ob1.data.polygons] * int(
+                                        len(new_ob.data.polygons) / len(ob1.data.polygons))
+                                for i in range(len(new_ob.data.polygons)):
+                                    new_ob.data.polygons[i].select = polygon_selection[i]
+                            except:
+                                pass
+
+                    if (self.bool_selection or self.bool_material_id) and self.bool_combine:
+                        bm = bmesh.new()
+                        last_mesh = iter_objects[-1].data
+                        if self.fill_mode == 'PATCH':
+                            last_mesh = iter_objects[-1].to_mesh(bpy.context.depsgraph, True)
+                        bm.from_mesh(last_mesh)
+                        bm.faces.ensure_lookup_table()
+                        if self.bool_material_id and self.bool_selection:
+                            m_id = self.material_id
+                            remove_faces = [f for f in bm.faces if f.material_index == m_id and f.select]
+                        elif self.bool_selection:
+                            remove_faces = [f for f in bm.faces if f.select]
+                        else:
+                            m_id = self.material_id
+                            remove_faces = [f for f in bm.faces if f.material_index == m_id]
+                        bmesh.ops.delete(bm, geom=remove_faces, context='FACES')
+                        bm.to_mesh(last_mesh)
+                        last_mesh.update()
+                        iter_objects[-1].data = last_mesh
+                        base_ob = new_ob.copy()
+                        iter_objects.append(new_ob)
+                    else:
+                        bpy.data.objects.remove(base_ob)
+                        base_ob = new_ob
+                        iter_objects = [new_ob]
+                    new_ob.location = ob0.location
+                    new_ob.matrix_world = ob0.matrix_world
+                except:
+                    if iter > 0:
+                        new_ob = iter_objects[-1]
+                    break
 
             if new_ob == 0:
                 message = "Zero faces selected in the Base mesh!"
@@ -1721,13 +1899,12 @@ class tessellate(Operator):
                 self.report({'ERROR'}, message)
                 return {'CANCELLED'}
 
+            ### REPEAT
+            for o in iter_objects:
+                o.select_set(True)
+            bpy.ops.object.join()
+
             new_ob.name = self.object_name
-
-            new_ob.location = ob0.location
-            new_ob.matrix_world = ob0.matrix_world
-
-            if self.fill_mode != 'PATCH':
-                bpy.context.collection.objects.link(new_ob)
             new_ob.select_set(True)
             bpy.context.view_layer.objects.active = new_ob
 
@@ -1779,7 +1956,7 @@ class tessellate(Operator):
             self.object_name = new_ob.name
             self.working_on = self.object_name
 
-        if not self.fill_mode == 'PATCH':
+        if not self.fill_mode == 'PATCH' and False:
             # EDGE CREASES
             try:
                 if self.bool_crease:
@@ -1850,7 +2027,7 @@ class update_tessellate(Operator):
         for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
         bpy.app.handlers.frame_change_post.append(anim_tessellate)
 
-        ob = bpy.context.active_object
+        ob = bpy.context.object
         if not self.go:
             generator = ob.tissue_tessellate.generator
             component = ob.tissue_tessellate.component
@@ -1875,6 +2052,9 @@ class update_tessellate(Operator):
             bool_dissolve_seams = ob.tissue_tessellate.bool_dissolve_seams
             bool_material_id = ob.tissue_tessellate.bool_material_id
             material_id = ob.tissue_tessellate.material_id
+            iterations = ob.tissue_tessellate.iterations
+            bool_face_normals = ob.tissue_tessellate.bool_face_normals
+            bool_combine = ob.tissue_tessellate.bool_combine
 
         try:
             generator.name
@@ -1890,41 +2070,155 @@ class update_tessellate(Operator):
         ob0 = generator
         ob1 = component
 
-        if fill_mode == 'PATCH':
-            temp_ob = tassellate_patch(
-                    ob0, ob1, offset, zscale, com_modifiers, mode, scale_mode,
-                    rotation_mode, random_seed, bool_vertex_group,
-                    bool_selection, bool_shapekeys, bool_material_id, material_id
-                    )
-        else:
-            temp_ob = tassellate(
-                    ob0, ob1, offset, zscale, gen_modifiers, com_modifiers,
-                    mode, scale_mode, rotation_mode, random_seed, fill_mode,
-                    bool_vertex_group, bool_selection, bool_shapekeys,
-                    bool_material_id, material_id
-                    )
+        new_ob = ob0.copy()
+        new_ob.data = ob0.data.copy()
+        new_ob.location = ob.location
+        new_ob.matrix_world = ob.matrix_world
+        new_ob.modifiers.update()
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.collection.objects.link(new_ob)
+        iter_objects = [new_ob]
+        base_ob = new_ob
 
-        if temp_ob == 0:
+        for iter in range(iterations):
+            if fill_mode == 'PATCH':
+                new_ob = tassellate_patch(
+                        base_ob, ob1, offset, zscale, com_modifiers, mode, scale_mode,
+                        rotation_mode, random_seed, bool_vertex_group,
+                        bool_selection, bool_shapekeys, bool_material_id, material_id
+                        )
+            else:
+                new_ob = tassellate(
+                        base_ob, ob1, offset, zscale, gen_modifiers, com_modifiers,
+                        mode, scale_mode, rotation_mode, random_seed, fill_mode,
+                        bool_vertex_group, bool_selection, bool_shapekeys,
+                        bool_material_id, material_id, bool_face_normals
+                        )
+
+                try:
+                    bpy.context.collection.objects.link(new_ob)
+                    new_ob.select_set(True)
+                    bpy.context.view_layer.objects.active = new_ob
+                except:
+                    continue
+
+                # EDGE CREASES
+                try:
+                    if bool_crease:
+                        creases = [e.crease for e in ob1.data.edges]
+                        for e in new_ob.data.edges:
+                            e.crease = creases[e.index % len(creases)]
+                except:
+                    pass
+
+                # MATERIALS
+                if bool_materials or bool_material_id:
+                    try:
+                        # create materials list
+                        data1 = ob1.to_mesh(bpy.context.depsgraph, com_modifiers)
+                        polygon_materials = [p.material_index for p in data1.polygons] * int(
+                                len(new_ob.data.polygons) / len(data1.polygons))
+                        # assign old material
+                        component_materials = [slot.material for slot in ob1.material_slots]
+                        for i in range(len(component_materials)):
+                            bpy.ops.object.material_slot_add()
+                            bpy.context.object.material_slots[i].material = \
+                                component_materials[i]
+                        for i in range(len(new_ob.data.polygons)):
+                            new_ob.data.polygons[i].material_index = polygon_materials[i]
+                    except:
+                        pass
+
+                # SELECTION
+                if bool_selection:
+                    try:
+                        # create selection list
+                        polygon_selection = [p.select for p in ob1.data.polygons] * int(
+                                len(new_ob.data.polygons) / len(ob1.data.polygons))
+                        for i in range(len(new_ob.data.polygons)):
+                            new_ob.data.polygons[i].select = polygon_selection[i]
+                    except:
+                        pass
+
+                # SEAMS
+                if merge and bool_dissolve_seams and fill_mode != 'PATCH' and ob1.type == 'MESH':
+                    # map seams
+                    bm = bmesh.new()
+                    bm.from_mesh(ob1.data)
+                    seams = []
+                    for f in bm.faces:
+                        for e in f.edges:
+                            seams.append(e.seam)
+                    bm = bmesh.new()
+                    bm.from_mesh(new_ob.data)
+                    count = 0
+                    for f in bm.faces:
+                        for e in f.edges:
+                            new_ob.data.edges[e.index].use_seam = seams[count % len(seams)]
+                            count+=1
+                    new_ob.data.edges.update()
+            try:
+                if (bool_selection or bool_material_id) and bool_combine:
+                    bm = bmesh.new()
+                    last_mesh = iter_objects[-1].data
+                    if fill_mode == 'PATCH':
+                        last_mesh = iter_objects[-1].to_mesh(bpy.context.depsgraph, True)
+                    bm.from_mesh(last_mesh)
+                    bm.faces.ensure_lookup_table()
+                    if bool_material_id and bool_selection:
+                        m_id = material_id
+                        remove_faces = [f for f in bm.faces if f.material_index == m_id and f.select]
+                    elif bool_selection:
+                        remove_faces = [f for f in bm.faces if f.select]
+                    else:
+                        m_id = material_id
+                        remove_faces = [f for f in bm.faces if f.material_index == m_id]
+                    bmesh.ops.delete(bm, geom=remove_faces, context='FACES')
+                    bm.to_mesh(last_mesh)
+                    last_mesh.update()
+                    iter_objects[-1].data = last_mesh
+                    iter_objects[-1].data.update()
+                    base_ob = new_ob.copy()
+                    iter_objects.append(new_ob)
+                    new_ob.location = ob.location
+                    new_ob.matrix_world = ob.matrix_world
+                else:
+                    bpy.data.objects.remove(base_ob)
+                    base_ob = new_ob
+                    iter_objects = [new_ob]
+            except:
+                if iter > 0:
+                    new_ob = iter_objects[-1]
+                break
+
+        if new_ob == 0:
             for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
             message = "Zero faces selected in the Base mesh!"
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
-        if temp_ob == "modifiers_error":
+        if new_ob == "modifiers_error":
             message = "Modifiers that change the topology of the mesh \n" \
                       "after the last Subsurf (or Multires) are not allowed."
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
-        if temp_ob == "topology_error":
+        if new_ob == "topology_error":
             message = "Make sure that the topology of the mesh before \n" \
                       "the last Subsurf (or Multires) is quads only."
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
 
-        ob.data = temp_ob.data.copy()
+        ### REPEAT
+        if bool_combine:
+            for o in iter_objects:
+                o.select_set(True)
+            bpy.ops.object.join()
+            new_ob.data.update()
+
+        ob.data = new_ob.data
 
         # copy vertex group
         if bool_vertex_group:
-            for vg in temp_ob.vertex_groups:
+            for vg in new_ob.vertex_groups:
                 if not vg.name in ob.vertex_groups.keys():
                     ob.vertex_groups.new(name=vg.name)
                 new_vg = ob.vertex_groups[vg.name]
@@ -1932,73 +2226,25 @@ class update_tessellate(Operator):
                     weight = vg.weight(i)
                     new_vg.add([i], weight, 'REPLACE')
 
-        bpy.data.objects.remove(temp_ob)
-        selected_objects = [ob for ob in bpy.context.selected_objects]
+        selected_objects = [o for o in bpy.context.selected_objects]
         for o in selected_objects: o.select_set(False)
 
         ob.select_set(True)
         bpy.context.view_layer.objects.active = ob
 
         if fill_mode != 'PATCH':
-            # EDGE CREASES
-            try:
-                if bool_crease:
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    bpy.ops.mesh.select_all(action='SELECT')
-                    bpy.ops.transform.edge_crease(value=1)
-                    bpy.ops.object.mode_set(mode='OBJECT')
-
-                    bm = bmesh.new()
-                    bm.from_mesh(ob1.data)
-                    creases = []
-                    for f in bm.faces:
-                        for e in f.edges:
-                            creases.append(ob1.data.edges[e.index].crease)
-
-                    bm.from_mesh(ob.data)
-                    count = 0
-                    for f in bm.faces:
-                        for e in f.edges:
-                            ob.data.edges[e.index].crease = creases[count % len(creases)]
-                            count+=1
-                    ob.data.edges.update()
-            except:
-                pass
-
             # MATERIALS
             if bool_materials:
                 try:
-                    # create materials list
-                    polygon_materials = [p.material_index for p in ob1.data.polygons] * int(
-                            len(ob.data.polygons) / len(ob1.data.polygons))
                     # assign old material
                     component_materials = [slot.material for slot in ob1.material_slots]
                     for i in range(len(component_materials)):
                         bpy.ops.object.material_slot_add()
                         bpy.context.object.material_slots[i].material = \
                             component_materials[i]
-                    for i in range(len(ob.data.polygons)):
-                        ob.data.polygons[i].material_index = polygon_materials[i]
                 except:
                     pass
-
-        # MERGE VERTICES
-        if merge and bool_dissolve_seams and fill_mode != 'PATCH' and ob1.type == 'MESH':
-            # map seams
-            bm = bmesh.new()
-            bm.from_mesh(ob1.data)
-            seams = []
-            for f in bm.faces:
-                for e in f.edges:
-                    seams.append(e.seam)
-            bm = bmesh.new()
-            bm.from_mesh(ob.data)
-            count = 0
-            for f in bm.faces:
-                for e in f.edges:
-                    ob.data.edges[e.index].use_seam = seams[count % len(seams)]
-                    count+=1
-            ob.data.edges.update()
+        bpy.data.objects.remove(new_ob)
 
         if merge:
             bpy.ops.object.mode_set(mode='EDIT')
@@ -2039,7 +2285,9 @@ class update_tessellate(Operator):
         for mesh in bpy.data.meshes:
             if not mesh.users: bpy.data.meshes.remove(mesh)
 
-        for o in selected_objects: o.select_set(True)
+        for o in selected_objects:
+            try: o.select_set(True)
+            except: pass
 
         return {'FINISHED'}
 
@@ -2237,6 +2485,9 @@ class tessellate_object_panel(Panel):
             row = col.row(align=True)
             col2 = row.column(align=True)
             col2.prop(props, "bool_selection", text="On selected Faces", icon='RESTRICT_SELECT_OFF')
+            if props.bool_material_id or props.bool_selection:
+                #col2 = row.column(align=True)
+                col2.prop(props, "bool_combine")
             row.separator()
             if props.generator.type != 'MESH':
                 col2.enabled = False
@@ -2249,6 +2500,14 @@ class tessellate_object_panel(Panel):
             # ADVANCED #
             col = layout.column(align=True)
             col.label(text="Advanced Settings:")
+            row = col.row(align=True)
+            col2 = row.column(align=True)
+            col2.prop(props, 'iterations', text='Repeat')
+            row.separator()
+            col2 = row.column(align=True)
+            col2.prop(props, 'bool_face_normals')
+            col2.enabled = props.fill_mode != 'PATCH'
+            col.separator()
             # vertex group + shape keys
             row = col.row(align=True)
             col2 = row.column(align=True)
@@ -2309,9 +2568,11 @@ class rotate_face(Operator):
                 vs = face.verts[:]
                 vs2 = vs[1:]+vs[:1]  # put first vertex on end of list to rotate right
                 # face.verts =vs2 # fails because verts is read-only
+                material_index = face.material_index
                 bm.faces.remove(face)
                 f2 = bm.faces.new(vs2)
                 f2.select = True
+                f2.material_index = material_index
                 bm.normal_update()
 
         # trigger UI update
@@ -2330,27 +2591,3 @@ class rotate_face(Operator):
         bpy.ops.object.mode_set(mode='EDIT')
 
         return {'FINISHED'}
-
-'''
-classes = (
-    tissue_tessellate_prop,
-    tessellate,
-    update_tessellate,
-    tessellate_panel,
-    rotate_face,
-    tessellate_object_panel
-)
-
-def register():
-    from bpy.utils import register_class
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-def unregister():
-    from bpy.utils import unregister_class
-    for cls in classes:
-        bpy.utils.unregister_class(cls)
-
-if __name__ == "__main__":
-    register()
-'''
