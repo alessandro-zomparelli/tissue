@@ -36,4 +36,35 @@ Alessandro
 
 [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=ARSDJWXVFZ346)
 
+## Tissue Tools
 
+![image](http://alessandrozomparelli.com/tissue/Tissue%20Tools.jpg)
+
+## Tissue Tools - Weight Paint
+
+![image](http://alessandrozomparelli.com/tissue/Tissue%20Tools%20-%20Weight%20Paint.jpg)
+
+#### Area
+Weight from Faces area (Automatic Bounds, Manual Bounds)
+
+![image](http://alessandrozomparelli.com/tissue/Weight%20-%20Area.jpg)
+
+#### Curvature
+Weight from Curvature (Based on *Dirty Vertex Colors*)
+
+![image](http://alessandrozomparelli.com/tissue/Weight%20-%20Curvature.jpg)
+
+#### Weight Formula
+Weight based on Vertices parameters.
+Allows to use vertices coordinates and normals direction. Integer and Float sliders can be created in order to find the proper parameters more easily.
+
+![image](http://alessandrozomparelli.com/tissue/Weight%20-%20Formula.jpg)
+
+## Tissue Tools - Vertex Paint
+
+![image](http://alessandrozomparelli.com/tissue/Tissue%20Tools%20-%20Verte%20Paint.jpg)
+
+#### Convert to Weight
+Convert Vertex Color to Vertex Group (Red Channel, Green Channel, Blue Channel, Value Channel, Invert)
+
+![image](http://alessandrozomparelli.com/tissue/Convert%20to%20Weight.jpg)
