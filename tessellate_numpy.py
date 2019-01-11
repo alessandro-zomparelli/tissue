@@ -992,7 +992,8 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             center_area /= len(p.vertices)
             last_vert = len(fan_verts)
             fan_verts.append(fan_center.to_tuple())
-            verts_area.append(center_area)
+            if scale_mode == 'ADAPTIVE':
+                verts_area.append(center_area)
 
             # Vertex Group
             if bool_vertex_group:
@@ -1736,7 +1737,7 @@ class tessellate(Operator):
                     if self.fill_mode == 'PATCH':
                         col.enabled = False
                         col.label(text='Not needed in Patch mode', icon='INFO')
-                        
+
                 col.separator()
                 row = col.row(align=True)
                 row.label(text='Reiterate Tessellation:', icon='FILE_REFRESH')
