@@ -1871,10 +1871,17 @@ class tessellate(Operator):
                             bpy.ops.mesh.select_all(action='SELECT')
                             bpy.ops.transform.edge_crease(value=1)
                             bpy.ops.object.mode_set(mode='OBJECT')
+                            crease_dict = {}
+                            verts1 = len(ob1.data.vertices)
+                            for e in ob1.data.edges:
+                                if e.crease > 0:
+                                    crease_dict['{} {}'.format(e.vertices[0], e.vertices[1])] = e.crease
+                                    crease_dict['{} {}'.format(e.vertices[1], e.vertices[0])] = e.crease
                             for e in new_ob.data.edges:
-                                e.crease = creases[e.index % len(creases)]
-                        #except:
-                        #    pass
+                                try:
+                                    e.crease = crease_dict['{} {}'.format(e.vertices[0]%verts1, e.vertices[1]%verts1)]
+                                except:
+                                    e.crease = 0
 
                         # MATERIALS
                         if self.bool_materials or self.bool_material_id:
@@ -2176,10 +2183,17 @@ class update_tessellate(Operator):
                     bpy.ops.mesh.select_all(action='SELECT')
                     bpy.ops.transform.edge_crease(value=1)
                     bpy.ops.object.mode_set(mode='OBJECT')
+                    crease_dict = {}
+                    verts1 = len(ob1.data.vertices)
+                    for e in ob1.data.edges:
+                        if e.crease > 0:
+                            crease_dict['{} {}'.format(e.vertices[0], e.vertices[1])] = e.crease
+                            crease_dict['{} {}'.format(e.vertices[1], e.vertices[0])] = e.crease
                     for e in new_ob.data.edges:
-                        e.crease = creases[e.index % len(creases)]
-                #except:
-                #    pass
+                        try:
+                            e.crease = crease_dict['{} {}'.format(e.vertices[0]%verts1, e.vertices[1]%verts1)]
+                        except:
+                            e.crease = 0
 
                 # MATERIALS
                 if bool_materials or bool_material_id:
