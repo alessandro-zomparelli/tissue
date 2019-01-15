@@ -2655,6 +2655,7 @@ class rotate_face(Operator):
         #bpy.ops.object.mode_set(mode='OBJECT')
 
         bm = bmesh.from_edit_mesh(me)
+        select_mode = context.tool_settings.mesh_select_mode
 
         for face in bm.faces:
             if (face.select):
@@ -2682,5 +2683,6 @@ class rotate_face(Operator):
         ob.select_set(True)
         bpy.context.view_layer.objects.active = ob
         bpy.ops.object.mode_set(mode='EDIT')
+        context.tool_settings.mesh_select_mode = select_mode
 
         return {'FINISHED'}
