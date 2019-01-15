@@ -2137,8 +2137,8 @@ class update_tessellate(Operator):
 
         new_ob = ob0.copy()
         new_ob.data = ob0.data.copy()
-        new_ob.location = ob.location
-        new_ob.matrix_world = ob.matrix_world
+        #new_ob.location = ob.location
+        #new_ob.matrix_world = ob.matrix_world
         new_ob.modifiers.update()
         bpy.ops.object.select_all(action='DESELECT')
         bpy.context.collection.objects.link(new_ob)
