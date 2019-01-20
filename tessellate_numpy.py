@@ -1045,6 +1045,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             rand = random.randint(0, n_poly_verts)
             for i in range(n_poly_verts):
                 shifted_vertices.append(p.vertices[(i + rand) % n_poly_verts])
+            verts_area0 = np.array([verts_area[i] for i in shifted_vertices])
             vs0 = np.array([verts0[i].co for i in shifted_vertices])
             nvs0 = np.array([verts0[i].normal for i in shifted_vertices])
             # vertex weight
@@ -1152,7 +1153,8 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
         # vertex z to normal
         if scale_mode == "ADAPTIVE":
             poly_faces = (p.vertices[0], p.vertices[1], p.vertices[2], p.vertices[-1])
-            sz = np.array([verts_area[i] for i in poly_faces])
+            if rotation_mode == 'RANDOM': sz = verts_area0
+            else: sz = np.array([verts_area[i] for i in poly_faces])
             # Interpolate vertex height
             sz0 = sz[0] + (sz[1] - sz[0]) * vx
             sz1 = sz[3] + (sz[2] - sz[3]) * vx
@@ -2296,9 +2298,13 @@ class update_tessellate(Operator):
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
 
+        new_ob.location = ob.location
+        new_ob.matrix_world = ob.matrix_world
+
         ### REPEAT
         if bool_combine:
             for o in iter_objects:
+                o.location = ob.location
                 o.select_set(True)
             bpy.ops.object.join()
             new_ob.data.update()
@@ -2312,7 +2318,10 @@ class update_tessellate(Operator):
                     ob.vertex_groups.new(name=vg.name)
                 new_vg = ob.vertex_groups[vg.name]
                 for i in range(len(ob.data.vertices)):
-                    weight = vg.weight(i)
+                    try:
+                        weight = vg.weight(i)
+                    except:
+                        weight = 0
                     new_vg.add([i], weight, 'REPLACE')
 
         selected_objects = [o for o in bpy.context.selected_objects]
