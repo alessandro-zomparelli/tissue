@@ -1764,6 +1764,13 @@ class tessellate(Operator):
         for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
         bpy.app.handlers.frame_change_post.append(anim_tessellate)
 
+        old_handlers = []
+        for h in bpy.app.handlers.render_init:
+            if "anim_tessellate" in str(h):
+                old_handlers.append(h)
+        for h in old_handlers: bpy.app.handlers.render_init.remove(h)
+        bpy.app.handlers.render_init.append(anim_tessellate)
+
         # component object
         sel = bpy.context.selected_objects
         no_component = True
@@ -1926,31 +1933,31 @@ class update_tessellate(Operator):
         #new_ob = ob0.copy()
         #new_ob.data = ob0.data.copy()
 
-        data0 = ob0.to_mesh(bpy.context.depsgraph, gen_modifiers)
-        new_ob = bpy.data.objects.new("_temp_tessellation_", data0)
-        #new_ob = ob.copy()
-        #new_ob.data = data0
-        #bpy.context.collection.objects.link(new_ob)
+        if fill_mode == 'PATCH':
+            new_ob = ob0.copy()
+            new_ob.data = ob0.data.copy()
+        else:
+            data0 = ob0.to_mesh(bpy.context.depsgraph, gen_modifiers)
+            new_ob = bpy.data.objects.new("_temp_tessellation_", data0)
+            bpy.context.collection.objects.link(new_ob)
         bpy.context.view_layer.objects.active = new_ob
 
         #new_ob.location = ob.location
         #new_ob.matrix_world = ob.matrix_world
         new_ob.modifiers.update()
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.context.collection.objects.link(new_ob)
         iter_objects = [new_ob]
         base_ob = new_ob
 
         # EDGES CREASE for QUAD and FAN
         do_crease = bool_crease
         data1 = ob1.to_mesh(bpy.context.depsgraph, com_modifiers)
-        #data1.edges.update()
         verts1 = len(data1.vertices)
         n_edges1 = len(data1.edges)
+
         if bool_crease:
             creases1 = [0]*n_edges1
             data1.edges.foreach_get("crease", creases1)
-            #creases = [e.crease for e in ob1.data.edges]
             do_crease = sum(creases1) > 0
 
         for iter in range(iterations):
@@ -1968,7 +1975,6 @@ class update_tessellate(Operator):
                         bool_vertex_group, bool_selection, bool_shapekeys,
                         bool_material_id, material_id, normals_mode
                         )
-
                 try:
                     bpy.context.collection.objects.link(new_ob)
                     new_ob.select_set(True)
@@ -2225,6 +2231,13 @@ class tessellate_object_panel(Panel):
     def draw(self, context):
 
         # managing handlers for realtime update
+        old_handlers = []
+        for h in bpy.app.handlers.render_init:
+            if "anim_tessellate" in str(h):
+                old_handlers.append(h)
+        for h in old_handlers: bpy.app.handlers.render_init.remove(h)
+        bpy.app.handlers.render_init.append(anim_tessellate)
+
         old_handlers = []
         for h in bpy.app.handlers.frame_change_post:
             if "anim_tessellate" in str(h):
