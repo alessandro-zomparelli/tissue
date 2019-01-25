@@ -32,8 +32,8 @@
 bl_info = {
     "name": "Dual Mesh",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3),
-    "blender": (2, 7, 8),
+    "version": (0, 4),
+    "blender": (2, 8, 0),
     "location": "",
     "description": "Convert a generic mesh to its dual",
     "warning": "",
@@ -49,10 +49,71 @@ from bpy.props import (
 import bmesh
 
 
+class dual_mesh_tessellated(Operator):
+    bl_idname = "object.dual_mesh_tessellated"
+    bl_label = "Dual Mesh"
+    bl_description = ("Generate a polygonal mesh using Tessellate. (Non-destructive)")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    apply_modifiers : BoolProperty(
+        name="Apply Modifiers",
+        default=True,
+        description="Apply object's modifiers"
+        )
+
+    source_faces : EnumProperty(
+            items=[
+                ('QUAD', 'Quad Faces', ''),
+                ('TRI', 'Triangles', '')],
+            name="Source Faces",
+            description="Source polygons",
+            default="QUAD",
+            options={'LIBRARY_EDITABLE'}
+            )
+
+    def execute(self, context):
+        ob0 = context.object
+        # Generate component
+        if self.source_faces == 'QUAD':
+            verts = [(0, 0, 0), (0, 0.5, 0),
+                    (0, 1, 0), (0.5, 1, 0),
+                    (1, 1, 0), (1, 0.5, 0),
+                    (1, 0, 0), (0.5, 0, 0),
+                    (1/3, 1/3, 0), (2/3, 2/3, 0)]
+            edges = [(0,1), (1,2), (2,3), (3,4), (4,5), (5,6), (6,7),
+                        (7,0), (1,8), (8,7), (3,9), (9,5), (8,9)]
+            faces = [(0,1,8,7), (1,2,3,9,8), (3,4,5,9), (5,6,7,8,9)]
+        else:
+            verts = [(0,0,0), (0.5,0,0), (1,0,0), (0,1,0), (0.5,1,0), (1,1,0)]
+            edges = [(0,1), (1,2), (2,5), (5,4), (4,3), (3,0), (1,4)]
+            faces = [(0,1,4,3), (1,2,5,4)]
+
+        me = bpy.data.meshes.new("Dual-Mesh")  # add a new mesh
+        me.from_pydata(verts, edges, faces)
+        me.update(calc_edges=True, calc_edges_loose=True, calc_loop_triangles=True)
+        if self.source_faces == 'QUAD': n_seams = 8
+        else: n_seams = 6
+        for i in range(n_seams): me.edges[i].use_seam = True
+        ob1 = bpy.data.objects.new("DualMesh_Component", me)  # add a new object using the mesh
+        bpy.context.collection.objects.link(ob1)
+
+        ob = bpy.data.objects.new("DualMesh", me)
+        bpy.context.collection.objects.link(ob)
+        bpy.context.view_layer.objects.active = ob
+        ob.select_set(True)
+        ob.tissue_tessellate.component = ob1
+        ob.tissue_tessellate.generator = ob0
+        ob.tissue_tessellate.gen_modifiers = self.apply_modifiers
+        ob.tissue_tessellate.merge = True
+        ob.tissue_tessellate.bool_dissolve_seams = True
+        if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'FAN'
+        bpy.ops.object.update_tessellate()
+        return {'FINISHED'}
+
 class dual_mesh(Operator):
     bl_idname = "object.dual_mesh"
-    bl_label = "Dual Mesh"
-    bl_description = ("Convert a generic mesh into a polygonal mesh")
+    bl_label = "Convert to Dual Mesh"
+    bl_description = ("Convert a generic mesh into a polygonal mesh. (Destructive)")
     bl_options = {'REGISTER', 'UNDO'}
 
     quad_method : EnumProperty(

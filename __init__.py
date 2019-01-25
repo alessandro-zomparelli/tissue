@@ -33,7 +33,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 11),
+    "version": (0, 3, 12),
     "blender": (2, 80, 0),
     "location": "",
     "description": "Tools for Computational Design",
@@ -92,6 +92,7 @@ classes = (
     colors_groups_exchanger.curvature_to_vertex_groups,
 
     dual_mesh.dual_mesh,
+    dual_mesh.dual_mesh_tessellated,
 
     lattice.lattice_along_surface,
 
@@ -114,6 +115,7 @@ def register():
                         )
     # colors_groups_exchanger
     bpy.app.handlers.frame_change_post.append(colors_groups_exchanger.reaction_diffusion_def)
+    #bpy.app.handlers.frame_change_post.append(tessellate_numpy.anim_tessellate)
 
 def unregister():
     from bpy.utils import unregister_class
