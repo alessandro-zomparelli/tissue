@@ -419,12 +419,14 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                     'DECIMATE', 'EDGE_SPLIT', 'MASK', 'MIRROR', 'REMESH',
                     'SCREW', 'SOLIDIFY', 'TRIANGULATE', 'WIREFRAME', 'SKIN',
                     'EXPLODE', 'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SMOKE']
-    modifiers0 = [m for m in ob0.modifiers]
+    modifiers0 = list(ob0.modifiers)#[m for m in ob0.modifiers]
     show_modifiers = [m.show_viewport for m in ob0.modifiers]
     show_modifiers.reverse()
     modifiers0.reverse()
     for m in modifiers0:
-        if m.type in ('SUBSURF', 'MULTIRES') and m.show_viewport:
+        visible = m.show_viewport
+        #m.show_viewport = False
+        if m.type in ('SUBSURF', 'MULTIRES') and visible:
             levels = m.levels
             multires_name = m.name
             if m.type == 'MULTIRES':
@@ -436,7 +438,26 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
             break
         elif m.type in not_allowed:
             ob0.data = old_me0
+            bpy.data.meshes.remove(me0)
             return "modifiers_error"
+
+    before = ob0.copy()
+    if ob0.type == 'MESH': before.data = old_me0
+    before_mod = list(before.modifiers)
+    before_mod.reverse()
+    for m in before_mod:
+        if m.type in ('SUBSURF', 'MULTIRES') and m.show_viewport:
+            before.modifiers.remove(m)
+            break
+        else: before.modifiers.remove(m)
+    before.modifiers.update()
+
+    before_subsurf = before.to_mesh(bpy.context.depsgraph, True)
+    if len(before_subsurf.polygons)*(4**levels) != len(me0.polygons):
+        if ob0.type == 'MESH': ob0.data = old_me0
+        bpy.data.objects.remove(before)
+        bpy.data.meshes.remove(me0)
+        return "topology_error"
 
     # set Shape Keys to zero
     if bool_shapekeys:
@@ -1880,7 +1901,11 @@ class tessellate(Operator):
             #new_ob.name = self.object_name
             new_ob.select_set(True)
             new_ob = store_parameters(self, new_ob)
-            bpy.ops.object.update_tessellate()
+            try: bpy.ops.object.update_tessellate()
+            except RuntimeError as e:
+                bpy.data.objects.remove(new_ob)
+                self.report({'ERROR'}, str(e))
+                return {'CANCELLED'}
             self.object_name = new_ob.name
             self.working_on = self.object_name
             new_ob.location = ob0.location
@@ -2074,11 +2099,15 @@ class update_tessellate(Operator):
                         seams = seams*n_components
                         new_ob.data.edges.foreach_set("use_seam",seams)
 
-                if bool_multi_components and type(new_ob) != int:
+                if type(new_ob) == str: break
+
+                if bool_multi_components and type(new_ob) not in (int,str):
                     same_iteration.append(new_ob)
                     new_ob.select_set(True)
                     bpy.context.view_layer.objects.active = new_ob
                 #if not bool_multi_components: break
+
+            if type(new_ob) == str: break
 
             #bpy.data.objects.remove(base_ob)
             if bool_multi_components:
@@ -2159,15 +2188,18 @@ class update_tessellate(Operator):
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
         if new_ob == "modifiers_error":
+            for o in iter_objects: bpy.data.objects.remove(o)
             message = "Modifiers that change the topology of the mesh \n" \
                       "after the last Subsurf (or Multires) are not allowed."
             bpy.ops.object.mode_set(mode=starting_mode)
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
         if new_ob == "topology_error":
+            for o in iter_objects: bpy.data.objects.remove(o)
             message = "Make sure that the topology of the mesh before \n" \
                       "the last Subsurf (or Multires) is quads only."
-            bpy.ops.object.mode_set(mode=starting_mode)
+            try: bpy.ops.object.mode_set(mode=starting_mode)
+            except: pass
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
 
