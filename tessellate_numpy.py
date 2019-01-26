@@ -1107,7 +1107,8 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             rand = random.randint(0, n_poly_verts)
             for i in range(n_poly_verts):
                 shifted_vertices.append(p.vertices[(i + rand) % n_poly_verts])
-            verts_area0 = np.array([verts_area[i] for i in shifted_vertices])
+            if scale_mode == 'ADAPTIVE':
+                verts_area0 = np.array([verts_area[i] for i in shifted_vertices])
             vs0 = np.array([verts0[i].co for i in shifted_vertices])
             nvs0 = np.array([verts0[i].normal for i in shifted_vertices])
             # vertex weight
