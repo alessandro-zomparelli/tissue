@@ -2074,11 +2074,17 @@ class update_tessellate(Operator):
                         # create materials list
                         n_poly1 = len(data1.polygons)
                         polygon_materials = [0]*n_poly1
-                        data1.polygons.foreach_get("material_index", polygon_materials)
+                        try:
+                            data1.polygons.foreach_get("material_index", polygon_materials)
+                        except:
+                            pass
                         polygon_materials *= n_components
                         # assign old material
                         for m in ob1.material_slots: new_ob.data.materials.append(m.material)
-                        new_ob.data.polygons.foreach_set("material_index", polygon_materials)
+                        try:
+                            new_ob.data.polygons.foreach_set("material_index", polygon_materials)
+                        except:
+                            pass
                         new_ob.data.update() ###
                         #except:
                         #    pass
