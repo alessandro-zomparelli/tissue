@@ -73,31 +73,52 @@ class dual_mesh_tessellated(Operator):
 
     def execute(self, context):
         ob0 = context.object
+        name1 = "DualMesh_{}_Component".format(self.source_faces)
         # Generate component
         if self.source_faces == 'QUAD':
-            verts = [(0, 0, 0), (0, 0.5, 0),
-                    (0, 1, 0), (0.5, 1, 0),
-                    (1, 1, 0), (1, 0.5, 0),
-                    (1, 0, 0), (0.5, 0, 0),
-                    (1/3, 1/3, 0), (2/3, 2/3, 0)]
+            verts = [(0.0, 0.0, 0.0), (0.0, 0.5, 0.0),
+                    (0.0, 1.0, 0.0), (0.5, 1.0, 0.0),
+                    (1.0, 1.0, 0.0), (1.0, 0.5, 0.0),
+                    (1.0, 0.0, 0.0), (0.5, 0.0, 0.0),
+                    (1/3, 1/3, 0.0), (2/3, 2/3, 0.0)]
             edges = [(0,1), (1,2), (2,3), (3,4), (4,5), (5,6), (6,7),
                         (7,0), (1,8), (8,7), (3,9), (9,5), (8,9)]
             faces = [(0,1,8,7), (1,2,3,9,8), (3,4,5,9), (5,6,7,8,9)]
         else:
-            verts = [(0,0,0), (0.5,0,0), (1,0,0), (0,1,0), (0.5,1,0), (1,1,0)]
+            verts = [(0.0,0.0,0.0), (0.5,0.0,0.0), (1.0,0.0,0.0), (0.0,1.0,0.0), (0.5,1.0,0.0), (1.0,1.0,0.0)]
             edges = [(0,1), (1,2), (2,5), (5,4), (4,3), (3,0), (1,4)]
             faces = [(0,1,4,3), (1,2,5,4)]
 
-        me = bpy.data.meshes.new("Dual-Mesh")  # add a new mesh
-        me.from_pydata(verts, edges, faces)
-        me.update(calc_edges=True, calc_edges_loose=True, calc_loop_triangles=True)
-        if self.source_faces == 'QUAD': n_seams = 8
-        else: n_seams = 6
-        for i in range(n_seams): me.edges[i].use_seam = True
-        ob1 = bpy.data.objects.new("DualMesh_Component", me)  # add a new object using the mesh
-        bpy.context.collection.objects.link(ob1)
+        # check pre-existing component
+        try:
+            _verts = [0]*len(verts)*3
+            __verts = [c for co in verts for c in co]
+            ob1 = bpy.data.objects[name1]
+            ob1.data.vertices.foreach_get("co",_verts)
+            for a, b in zip(_verts, __verts):
+                if abs(a-b) > 0.0001:
+                    raise ValueError
+        except:
+            me = bpy.data.meshes.new("Dual-Mesh")  # add a new mesh
+            me.from_pydata(verts, edges, faces)
+            me.update(calc_edges=True, calc_edges_loose=True, calc_loop_triangles=True)
+            if self.source_faces == 'QUAD': n_seams = 8
+            else: n_seams = 6
+            for i in range(n_seams): me.edges[i].use_seam = True
+            ob1 = bpy.data.objects.new(name1, me)
+            bpy.context.collection.objects.link(ob1)
+            # fix visualization issue
+            bpy.context.view_layer.objects.active = ob1
+            ob1.select_set(True)
+            bpy.ops.object.editmode_toggle()
+            bpy.ops.object.editmode_toggle()
+            ob1.select_set(False)
+            # hide component
+            ob1.hide_select = True
+            ob1.hide_render = True
+            ob1.hide_viewport = True
 
-        ob = bpy.data.objects.new("DualMesh", me)
+        ob = bpy.data.objects.new("DualMesh", ob0.data)
         bpy.context.collection.objects.link(ob)
         bpy.context.view_layer.objects.active = ob
         ob.select_set(True)
