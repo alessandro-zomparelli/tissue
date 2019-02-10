@@ -1999,6 +1999,7 @@ class tessellate(Operator):
                 #self.working_on = self.object_name
                 new_ob.location = ob0.location
                 new_ob.matrix_world = ob0.matrix_world
+
             return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -2389,6 +2390,12 @@ class update_tessellate(Operator):
             except: pass
 
         bpy.ops.object.mode_set(mode=starting_mode)
+
+        # clean objects
+        for o in bpy.data.objects:
+            if o.name not in context.view_layer.objects and "temp" in o.name:
+                bpy.data.objects.remove(o)
+                
         return {'FINISHED'}
 
     def check(self, context):
