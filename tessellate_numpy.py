@@ -1312,9 +1312,12 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             v2 = v0 + (v1 - v0) * vy
 
             # remapped vertex normal
-            nv0 = _nvs0_0 + (_nvs0_1 - _nvs0_0) * vx
-            nv1 = _nvs0_3 + (_nvs0_2 - _nvs0_3) * vx
-            nv2 = nv0 + (nv1 - nv0) * vy
+            if normals_mode == 'VERTS':
+                nv0 = _nvs0_0 + (_nvs0_1 - _nvs0_0) * vx
+                nv1 = _nvs0_3 + (_nvs0_2 - _nvs0_3) * vx
+                nv2 = nv0 + (nv1 - nv0) * vy
+            else:
+                nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
 
             if scale_mode == "ADAPTIVE":
                 # remapped z scale
