@@ -478,6 +478,7 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
         for m in ob1.modifiers:
             mod_visibility.append(m.show_viewport)
             m.show_viewport = False
+        # needed in order to prevent wrong shapekeys
         me1 = ob1.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
     else:
         #me1 = ob1.data
@@ -853,6 +854,8 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     base_polygons = []
     base_face_normals = []
 
+    n_faces0 = len(me0.polygons)
+
     # Check if zero faces are selected
     if (bool_selection and ob0.type == 'MESH') or bool_material_id:
         for p in ob0.data.polygons:
@@ -868,6 +871,12 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     else:
         base_polygons = me0.polygons
         base_face_normals = [p.normal for p in me0.polygons]
+
+        # numpy test: slower
+        #base_face_normals = np.zeros(n_faces0*3)
+        #me0.polygons.foreach_get("normal", base_face_normals)
+        #base_face_normals = base_face_normals.reshape((n_faces0,3))
+
     if len(base_polygons) == 0:
         return 0
 
@@ -886,6 +895,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
 
     # Component statistics
     n_verts = len(me1.vertices)
+    n_faces1 = len(me1.polygons)
 
     # Create empty lists
     new_verts = []
@@ -893,49 +903,29 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     new_faces = []
     new_verts_np = np.array(())
 
-    # Component bounding box
-    min_c = Vector((0, 0, 0))
-    max_c = Vector((0, 0, 0))
-    first = True
-    for v in me1.vertices:
-        vert = v.co
-        if vert[0] < min_c[0] or first:
-            min_c[0] = vert[0]
-        if vert[1] < min_c[1] or first:
-            min_c[1] = vert[1]
-        if vert[2] < min_c[2] or first:
-            min_c[2] = vert[2]
-        if vert[0] > max_c[0] or first:
-            max_c[0] = vert[0]
-        if vert[1] > max_c[1] or first:
-            max_c[1] = vert[1]
-        if vert[2] > max_c[2] or first:
-            max_c[2] = vert[2]
-        first = False
-    bb = max_c - min_c
+    # Component Coordinates
+    co1 = [0]*n_verts*3
 
-    # adaptive XY
-    verts1 = []
-    for v in me1.vertices:
-        if mode == 'BOUNDS':
-            vert = v.co - min_c  # (ob1.matrix_world * v.co) - min_c
-            vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
-            vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
-            vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-        elif mode == 'LOCAL':
-            vert = v.co.xyz
-            #vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-            vert[2] *= zscale
-        elif mode == 'GLOBAL':
-            vert = ob1.matrix_world @ v.co
-            vert[2] *= zscale
-        verts1.append(vert)
+    if mode == 'GLOBAL':
+        for v in me1.vertices:
+            v.co = ob1.matrix_world @ v.co
 
-    # component vertices
-    vs1 = np.array([v for v in verts1]).reshape(len(verts1), 3, 1)
-    vx = vs1[:, 0]
-    vy = vs1[:, 1]
-    vz = vs1[:, 2]
+    me1.vertices.foreach_get("co", co1)
+    co1 = np.array(co1)
+    vx = co1[0::3].reshape((n_verts,1))
+    vy = co1[1::3].reshape((n_verts,1))
+    vz = co1[2::3].reshape((n_verts,1))
+    min_c = Vector((vx.min(), vy.min(), vz.min()))          # Min BB Corner
+    max_c = Vector((vx.max(), vy.max(), vz.max()))          # Max BB Corner
+    bb = max_c - min_c                                      # Bounding Box
+
+    # Component Coordinates
+    if mode == 'BOUNDS':
+        vx = (vx - min_c[0]) / bb[0] if bb[0] != 0 else 0.5
+        vy = (vy - min_c[1]) / bb[1] if bb[1] != 0 else 0.5
+        vz = ((vz - min_c[2]) + (-0.5 + offset * 0.5) * bb[2]) * zscale
+    else:
+        vz *= zscale
 
     # Component polygons
     fs1 = [[i for i in p.vertices] for p in me1.polygons]
@@ -992,7 +982,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             vx_key.append(key1[:, 0])
             vy_key.append(key1[:, 1])
             vz_key.append(key1[:, 2])
-            sk_np.append([])
+            #sk_np.append([])
 
     # All vertex group
     if bool_vertex_group:
@@ -1010,7 +1000,6 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
                 weight.append(_weight)
         except:
             bool_vertex_group = False
-
 
     # Adaptive Z
     if scale_mode == 'ADAPTIVE':
@@ -1043,7 +1032,14 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
         fan_normals = []
         # selected_faces = []
         for p in base_polygons:
-            # if bool_selection and not p.select: continue
+            # numpy test: slower
+            '''
+            n_sides = len(p.vertices)
+            p_verts = np.array([me0.vertices[v].co for v in p.vertices])
+            fan_center = p_verts.mean(axis=0)
+            p_verts_area = np.array([verts_area[v] for v in p.vertices])
+            center_area = p_verts_area.mean()
+            '''
             fan_center = Vector((0, 0, 0))
             center_area = 0
             for v in p.vertices:
@@ -1052,8 +1048,10 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
                     center_area += verts_area[v]
             fan_center /= len(p.vertices)
             center_area /= len(p.vertices)
+
             last_vert = len(fan_verts)
             fan_verts.append(fan_center.to_tuple())
+            #fan_verts.append(fan_center)
             if scale_mode == 'ADAPTIVE':
                 verts_area.append(center_area)
 
@@ -1087,14 +1085,18 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     j = 0
     jj = -1
     bool_correct = False
+
+    # optimization test
+    n_faces = len(base_polygons)
+    _vs0 = [0]*n_faces
+    _nvs0 = [0]*n_faces
+    _sz = [0]*n_faces
+    _w0 = [[0]*n_faces]*len(ob0.vertex_groups)
+    np_faces = [np.array(p) for p in fs1]
+    new_faces = [0]*n_faces*n_faces1
+    face1_count = 0
+
     for p in base_polygons:
-        #if fill_mode == 'FAN':
-        #    jj += 1
-        #    if bool_selection and not fan_select[jj]: continue
-        #    if bool_material_id and not fan_material[jj] == material_id: continue
-        #else:
-        #    if bool_selection and not p.select: continue
-        #    if bool_material_id and not p.material_index == material_id: continue
 
         bool_correct = True
         if rotation_mode == 'UV' and ob0.type != 'MESH':
@@ -1111,6 +1113,8 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
                 verts_area0 = np.array([verts_area[i] for i in shifted_vertices])
             vs0 = np.array([verts0[i].co for i in shifted_vertices])
             nvs0 = np.array([verts0[i].normal for i in shifted_vertices])
+            if normals_mode == 'VERTS':
+                nvs0 = np.array([verts0[i].normal for i in shifted_vertices])
             # vertex weight
             if bool_vertex_group:
                 ws0 = []
@@ -1196,92 +1200,132 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
                             _ws0.append(0)
                     ws0.append(np.array(_ws0))
 
-        # considering only 4 vertices
-        vs0 = np.array((vs0[0], vs0[1], vs0[2], vs0[-1]))
-        nvs0 = np.array((nvs0[0], nvs0[1], nvs0[2], nvs0[-1]))
-        if normals_mode == 'FACES':
-            fn = np.array(base_face_normals[j].to_tuple())
-            nvs0 = [fn]*4
+        # optimization test
+        _vs0[j] = (vs0[0], vs0[1], vs0[2], vs0[-1])
+        if normals_mode == 'VERTS':
+            _nvs0[j] = (nvs0[0], nvs0[1], nvs0[2], nvs0[-1])
+        #else:
+        #    _nvs0[j] = base_face_normals[j]
 
-        # remapped vertex coordinates
-        v0 = vs0[0] + (vs0[1] - vs0[0]) * vx
-        v1 = vs0[3] + (vs0[2] - vs0[3]) * vx
-        v2 = v0 + (v1 - v0) * vy
-
-        # remapped vertex normal
-        nv0 = nvs0[0] + (nvs0[1] - nvs0[0]) * vx
-        nv1 = nvs0[3] + (nvs0[2] - nvs0[3]) * vx
-        nv2 = nv0 + (nv1 - nv0) * vy
 
         # vertex z to normal
         if scale_mode == "ADAPTIVE":
             poly_faces = (p.vertices[0], p.vertices[1], p.vertices[2], p.vertices[-1])
             if rotation_mode == 'RANDOM': sz = verts_area0
             else: sz = np.array([verts_area[i] for i in poly_faces])
-            # Interpolate vertex height
-            sz0 = sz[0] + (sz[1] - sz[0]) * vx
-            sz1 = sz[3] + (sz[2] - sz[3]) * vx
-            sz2 = sz0 + (sz1 - sz0) * vy
-            v3 = v2 + nv2 * vz * sz2
-        else:
-            v3 = v2 + nv2 * vz
+
+            _sz[j] = sz
 
         if bool_vertex_group:
-            w2 = []
+            vg_count = 0
             for _ws0 in ws0:
-                _ws0 = np.array((_ws0[0], _ws0[1], _ws0[2], _ws0[-1]))
-                # Interpolate vertex weight
-                w0 = _ws0[0] + (_ws0[1] - _ws0[0]) * vx
-                w1 = _ws0[3] + (_ws0[2] - _ws0[3]) * vx
-                w2.append(w0 + (w1 - w0) * vy)
+                _w0[vg_count][j] = (_ws0[0], _ws0[1], _ws0[2], _ws0[-1])
+                vg_count += 1
 
-        # Shapekeys
-        if bool_shapekeys:
-            sk_count = 0
-            for vxk, vyk, vzk in zip(vx_key, vy_key, vz_key):
-                # remapped vertex coordinates
-                v0 = vs0[0] + (vs0[1] - vs0[0]) * vxk
-                v1 = vs0[3] + (vs0[2] - vs0[3]) * vxk
-                v2 = v0 + (v1 - v0) * vyk
-                # remapped vertex normal
-                nv0 = nvs0[0] + (nvs0[1] - nvs0[0]) * vxk
-                nv1 = nvs0[3] + (nvs0[2] - nvs0[3]) * vxk
-                nv2 = nv0 + (nv1 - nv0) * vyk
-                # vertex z to normal
-                if scale_mode == 'ADAPTIVE':
-                    precise_height = True
-                    if precise_height:
-                        sz0 = sz[0] + (sz[1] - sz[0]) * vxk
-                        sz1 = sz[3] + (sz[2] - sz[3]) * vxk
-                        sz2 = sz0 + (sz1 - sz0) * vyk
-                    v3_key = v2 + nv2 * vzk * sz2
-                else: v3_key = v2 + nv2 * vzk
-                if j == 0:
-                    sk_np[sk_count] = v3_key
-                else:
-                    sk_np[sk_count] = np.concatenate((sk_np[sk_count], v3_key), axis=0)
-                #v3 = v3 + (v3_key - v3) * w2
-                sk_count += 1
-
-        if j == 0:
-            new_verts_np = v3
-            if bool_vertex_group:
-                vg_np = [np.array(_w2) for _w2 in w2]
-        else:
-            # Appending vertices
-            new_verts_np = np.concatenate((new_verts_np, v3), axis=0)
-            # Appending vertex group
-            if bool_vertex_group:
-                for id in range(len(w2)):
-                    vg_np[id] = np.concatenate((vg_np[id], w2[id]), axis=0)
-            # Appending faces
-            for p in fs1:
-                new_faces.append([i + n_verts * j for i in p])
-            # Appending edges
-            add_edges = es1 + (n_verts * j)
-            new_edges = np.concatenate((new_edges, add_edges), axis=0)
+        for p in fs1:
+            new_faces[face1_count] = [i + n_verts * j for i in p]
+            face1_count += 1
 
         j += 1
+
+    # build edges list
+    n_edges1 = new_edges.shape[0]
+    new_edges = new_edges.reshape((1, n_edges1, 2))
+    new_edges = new_edges.repeat(n_faces,axis=0)
+    new_edges = new_edges.reshape((n_edges1*n_faces, 2))
+    increment = np.arange(n_faces)*n_verts
+    increment = increment.repeat(n_edges1, axis=0)
+    increment = increment.reshape((n_faces*n_edges1,1))
+    new_edges = new_edges + increment
+
+    # optimization test
+    _vs0 = np.array(_vs0)
+    _sz = np.array(_sz)
+
+    _vs0_0 = _vs0[:,0].reshape((n_faces,1,3))
+    _vs0_1 = _vs0[:,1].reshape((n_faces,1,3))
+    _vs0_2 = _vs0[:,2].reshape((n_faces,1,3))
+    _vs0_3 = _vs0[:,3].reshape((n_faces,1,3))
+
+    # remapped vertex coordinates
+    v0 = _vs0_0 + (_vs0_1 - _vs0_0) * vx
+    v1 = _vs0_3 + (_vs0_2 - _vs0_3) * vx
+    v2 = v0 + (v1 - v0) * vy
+
+    # remapped vertex normal
+    if normals_mode == 'VERTS':
+        _nvs0 = np.array(_nvs0)
+        _nvs0_0 = _nvs0[:,0].reshape((n_faces,1,3))
+        _nvs0_1 = _nvs0[:,1].reshape((n_faces,1,3))
+        _nvs0_2 = _nvs0[:,2].reshape((n_faces,1,3))
+        _nvs0_3 = _nvs0[:,3].reshape((n_faces,1,3))
+        nv0 = _nvs0_0 + (_nvs0_1 - _nvs0_0) * vx
+        nv1 = _nvs0_3 + (_nvs0_2 - _nvs0_3) * vx
+        nv2 = nv0 + (nv1 - nv0) * vy
+    else:
+        nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
+
+    if bool_vertex_group:
+        n_vg = len(_w0)
+        w = np.array(_w0)
+        #for w in _w0:
+        #w = np.array(w)
+        w_0 = w[:,:,0].reshape((n_vg, n_faces,1,1))
+        w_1 = w[:,:,1].reshape((n_vg, n_faces,1,1))
+        w_2 = w[:,:,2].reshape((n_vg, n_faces,1,1))
+        w_3 = w[:,:,3].reshape((n_vg, n_faces,1,1))
+        print(w_3.shape)
+        # remapped weight
+        w0 = w_0 + (w_1 - w_0) * vx
+        w1 = w_3 + (w_2 - w_3) * vx
+        w = w0 + (w1 - w0) * vy
+        w = w.reshape((n_vg, n_faces*n_verts))
+        print(w.shape)
+        #w = w2.tolist()
+
+    if scale_mode == "ADAPTIVE":
+        _sz_0 = _sz[:,0].reshape((n_faces,1,1))
+        _sz_1 = _sz[:,1].reshape((n_faces,1,1))
+        _sz_2 = _sz[:,2].reshape((n_faces,1,1))
+        _sz_3 = _sz[:,3].reshape((n_faces,1,1))
+        # remapped z scale
+        sz0 = _sz_0 + (_sz_1 - _sz_0) * vx
+        sz1 = _sz_3 + (_sz_2 - _sz_3) * vx
+        sz2 = sz0 + (sz1 - sz0) * vy
+        v3 = v2 + nv2 * vz * sz2
+    else:
+        v3 = v2 + nv2 * vz
+
+    new_verts_np = v3.reshape((n_faces*n_verts,3))
+
+    if bool_shapekeys:
+        n_sk = len(vx_key)
+        sk_np = [0]*n_sk
+        for i in range(n_sk):
+            vx = np.array(vx_key)
+            vy = np.array(vy_key)
+            vz = np.array(vz_key)
+
+            # remapped vertex coordinates
+            v0 = _vs0_0 + (_vs0_1 - _vs0_0) * vx
+            v1 = _vs0_3 + (_vs0_2 - _vs0_3) * vx
+            v2 = v0 + (v1 - v0) * vy
+
+            # remapped vertex normal
+            nv0 = _nvs0_0 + (_nvs0_1 - _nvs0_0) * vx
+            nv1 = _nvs0_3 + (_nvs0_2 - _nvs0_3) * vx
+            nv2 = nv0 + (nv1 - nv0) * vy
+
+            if scale_mode == "ADAPTIVE":
+                # remapped z scale
+                sz0 = _sz_0 + (_sz_1 - _sz_0) * vx
+                sz1 = _sz_3 + (_sz_2 - _sz_3) * vx
+                sz2 = sz0 + (sz1 - sz0) * vy
+                v3 = v2 + nv2 * vz * sz2
+            else:
+                v3 = v2 + nv2 * vz
+
+            sk_np[i] = v3.reshape((n_faces*n_verts,3))
 
     if ob0.type == 'MESH': ob0.data = old_me0
 
@@ -1295,11 +1339,17 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     new_ob = bpy.data.objects.new("tessellate_temp", new_me)
 
     # vertex group
-    if bool_vertex_group:
+    if bool_vertex_group and False:
         for vg in ob0.vertex_groups:
             new_ob.vertex_groups.new(name=vg.name)
             for i in range(len(vg_np[vg.index])):
                 new_ob.vertex_groups[vg.name].add([i], vg_np[vg.index][i],"ADD")
+    # vertex group
+    if bool_vertex_group:
+        for vg in ob0.vertex_groups:
+            new_ob.vertex_groups.new(name=vg.name)
+            for i in range(len(w[vg.index])):
+                new_ob.vertex_groups[vg.name].add([i], w[vg.index,i],"ADD")
 
     if bool_shapekeys:
         basis = com_modifiers
@@ -1521,15 +1571,31 @@ class tessellate(Operator):
 
     def draw(self, context):
         allowed_obj = ('MESH', 'CURVE', 'SURFACE', 'FONT')
+        '''
         try:
             bool_working = self.working_on == self.object_name and \
             self.working_on != ""
         except:
             bool_working = False
+        '''
+
+        bool_working = False
+        bool_allowed = False
+        ob0 = None
+        ob1 = None
 
         sel = bpy.context.selected_objects
+        if len(sel) == 1:
+            try:
+                ob0 = sel[0].tissue_tessellate.generator
+                ob1 = sel[0].tissue_tessellate.component
+                self.generator = ob0.name
+                self.component = ob1.name
+                bool_working = True
+                bool_allowed = True
+            except:
+                pass
 
-        bool_allowed = False
         if len(sel) == 2:
             bool_allowed = True
             for o in sel:
@@ -1547,30 +1613,42 @@ class tessellate(Operator):
             layout.label(icon='INFO')
             layout.label(text="Only Mesh, Curve, Surface or Text objects are allowed")
         else:
-            try:
-                ob0 = bpy.data.objects[self.generator]
-            except:
+            if ob0 == ob1 == None:
                 ob0 = bpy.context.active_object
                 self.generator = ob0.name
+                for o in sel:
+                    if o != ob0:
+                        ob1 = o
+                        self.component = o.name
+                        self.no_component = False
+                        break
 
-            for o in sel:
-                if (o.name == ob0.name or o.type not in allowed_obj):
-                    continue
-                else:
-                    ob1 = o
-                    self.component = o.name
+                '''
+                try:
+                    ob0 = bpy.data.objects[self.generator]
+                except:
+                    ob0 = bpy.context.active_object
+                    self.generator = ob0.name
+
+                for o in sel:
+                    if (o.name == ob0.name or o.type not in allowed_obj):
+                        continue
+                    else:
+                        ob1 = o
+                        self.component = o.name
+                        self.no_component = False
+                        break
+
+                # Checks for Tool Shelf panel, it lost the original Selection
+                if bpy.context.active_object.name == self.object_name and False:
+                    # checks if the objects were deleted
+                    ob1 = bpy.context.active_object.tissue_tessellate.component
+                    self.component = ob1.name
+
+                    ob0 = bpy.context.active_object.tissue_tessellate.generator
+                    self.generator = ob0.name
                     self.no_component = False
-                    break
-
-            # Checks for Tool Shelf panel, it lost the original Selection
-            if bpy.context.active_object.name == self.object_name:
-                # checks if the objects were deleted
-                ob1 = bpy.context.active_object.tissue_tessellate.component
-                self.component = ob1.name
-
-                ob0 = bpy.context.active_object.tissue_tessellate.generator
-                self.generator = ob0.name
-                self.no_component = False
+                '''
 
             # new object name
             if self.object_name == "":
@@ -1827,6 +1905,8 @@ class tessellate(Operator):
                     full_event=False, emboss=True, index=-1)
 
     def execute(self, context):
+        allowed_obj = ('MESH', 'CURVE', 'META', 'SURFACE', 'FONT')
+        '''
         try:
             ob0 = bpy.context.active_object
             self.generator = ob0.name
@@ -1837,7 +1917,6 @@ class tessellate(Operator):
         # component object
         sel = bpy.context.selected_objects
         no_component = True
-        allowed_obj = ('MESH', 'CURVE', 'META', 'SURFACE', 'FONT')
         for o in sel:
             if (o.name == ob0.name or o.type not in allowed_obj):
                 continue
@@ -1858,13 +1937,13 @@ class tessellate(Operator):
         if no_component:
             self.report({'ERROR'}, "A component object (Mesh, Curve, Surface, Text) must be selected")
             return {'CANCELLED'}
+        '''
+        try:
+            ob0 = bpy.data.objects[self.generator]
+            ob1 = bpy.data.objects[self.component]
+        except:
+            return {'CANCELLED'}
 
-        # new object name
-        if self.object_name == None:
-            if self.generator == "":
-                self.object_name = "Tessellation"
-            else:
-                self.object_name = self.generator.name + "_Tessellation"
         self.object_name = "Tessellation"
         # Check if existing object with same name
         try:
@@ -1889,28 +1968,34 @@ class tessellate(Operator):
             self.report({'ERROR'}, message)
             self.generator = ""
 
-        if self.component not in ("",None) and self.generator not in ("",None):
+        if True:#self.component not in ("",None) and self.generator not in ("",None):
             if bpy.ops.object.select_all.poll():
                 bpy.ops.object.select_all(action='TOGGLE')
             bpy.ops.object.mode_set(mode='OBJECT')
 
             data0 = ob0.to_mesh(bpy.context.depsgraph, False)
-            new_ob = bpy.data.objects.new(self.object_name, data0)
-            new_ob.data.name = self.object_name
-            bpy.context.collection.objects.link(new_ob)
-            bpy.context.view_layer.objects.active = new_ob
-            #new_ob.name = self.object_name
-            new_ob.select_set(True)
+            bool_update = False
+            if bpy.context.object == ob0:
+                new_ob = bpy.data.objects.new(self.object_name, data0)
+                new_ob.data.name = self.object_name
+                bpy.context.collection.objects.link(new_ob)
+                bpy.context.view_layer.objects.active = new_ob
+                #new_ob.name = self.object_name
+                new_ob.select_set(True)
+            else:
+                new_ob = bpy.context.object
+                bool_update = True
             new_ob = store_parameters(self, new_ob)
             try: bpy.ops.object.update_tessellate()
             except RuntimeError as e:
                 bpy.data.objects.remove(new_ob)
                 self.report({'ERROR'}, str(e))
                 return {'CANCELLED'}
-            self.object_name = new_ob.name
-            self.working_on = self.object_name
-            new_ob.location = ob0.location
-            new_ob.matrix_world = ob0.matrix_world
+            if not bool_update:
+                self.object_name = new_ob.name
+                #self.working_on = self.object_name
+                new_ob.location = ob0.location
+                new_ob.matrix_world = ob0.matrix_world
             return {'FINISHED'}
 
     def invoke(self, context, event):
