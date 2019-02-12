@@ -76,7 +76,7 @@ class uv_to_mesh(Operator):
 
     def execute(self, context):
         bpy.ops.object.mode_set(mode='OBJECT')
-        for o in bpy.data.objects:
+        for o in bpy.data.objects and bpy.context.view_layer.objects:
             o.select_set(False)
         bpy.context.object.select_set(True)
 

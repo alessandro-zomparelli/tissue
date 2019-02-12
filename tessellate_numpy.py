@@ -894,7 +894,8 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     verts0 = me0.vertices   # Collect generator vertices
 
     # Component statistics
-    n_verts = len(me1.vertices)
+    n_verts1 = len(me1.vertices)
+    n_edges1 = len(me1.edges)
     n_faces1 = len(me1.polygons)
 
     # Create empty lists
@@ -904,7 +905,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     new_verts_np = np.array(())
 
     # Component Coordinates
-    co1 = [0]*n_verts*3
+    co1 = [0]*n_verts1*3
 
     if mode == 'GLOBAL':
         for v in me1.vertices:
@@ -912,9 +913,9 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
 
     me1.vertices.foreach_get("co", co1)
     co1 = np.array(co1)
-    vx = co1[0::3].reshape((n_verts,1))
-    vy = co1[1::3].reshape((n_verts,1))
-    vz = co1[2::3].reshape((n_verts,1))
+    vx = co1[0::3].reshape((n_verts1,1))
+    vy = co1[1::3].reshape((n_verts1,1))
+    vz = co1[2::3].reshape((n_verts1,1))
     min_c = Vector((vx.min(), vy.min(), vz.min()))          # Min BB Corner
     max_c = Vector((vx.max(), vy.max(), vz.max()))          # Max BB Corner
     bb = max_c - min_c                                      # Bounding Box
@@ -1223,7 +1224,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
                 vg_count += 1
 
         for p in fs1:
-            new_faces[face1_count] = [i + n_verts * j for i in p]
+            new_faces[face1_count] = [i + n_verts1 * j for i in p]
             face1_count += 1
 
         j += 1
@@ -1233,7 +1234,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     new_edges = new_edges.reshape((1, n_edges1, 2))
     new_edges = new_edges.repeat(n_faces,axis=0)
     new_edges = new_edges.reshape((n_edges1*n_faces, 2))
-    increment = np.arange(n_faces)*n_verts
+    increment = np.arange(n_faces)*n_verts1
     increment = increment.repeat(n_edges1, axis=0)
     increment = increment.reshape((n_faces*n_edges1,1))
     new_edges = new_edges + increment
@@ -1279,7 +1280,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
         w0 = w_0 + (w_1 - w_0) * vx
         w1 = w_3 + (w_2 - w_3) * vx
         w = w0 + (w1 - w0) * vy
-        w = w.reshape((n_vg, n_faces*n_verts))
+        w = w.reshape((n_vg, n_faces*n_verts1))
         print(w.shape)
         #w = w2.tolist()
 
@@ -1296,7 +1297,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
     else:
         v3 = v2 + nv2 * vz
 
-    new_verts_np = v3.reshape((n_faces*n_verts,3))
+    new_verts_np = v3.reshape((n_faces*n_verts1,3))
 
     if bool_shapekeys:
         n_sk = len(vx_key)
@@ -1328,7 +1329,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             else:
                 v3 = v2 + nv2 * vz
 
-            sk_np[i] = v3.reshape((n_faces*n_verts,3))
+            sk_np[i] = v3.reshape((n_faces*n_verts1,3))
 
     if ob0.type == 'MESH': ob0.data = old_me0
 
@@ -1374,6 +1375,18 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
                 for vg in new_ob.vertex_groups:
                     if sk.name == vg.name:
                         sk.vertex_group = vg.name
+
+    # SEAMS
+    edge_data = [0]*n_edges1
+    me1.edges.foreach_get("use_seam",edge_data)
+    edge_data = edge_data*n_faces
+    new_ob.data.edges.foreach_set("use_seam",edge_data)
+
+    # SHARP
+    edge_data = [0]*n_edges1
+    me1.edges.foreach_get("use_edge_sharp",edge_data)
+    edge_data = edge_data*n_faces
+    new_ob.data.edges.foreach_set("use_edge_sharp",edge_data)
 
     return new_ob
 
@@ -2395,7 +2408,7 @@ class update_tessellate(Operator):
         for o in bpy.data.objects:
             if o.name not in context.view_layer.objects and "temp" in o.name:
                 bpy.data.objects.remove(o)
-                
+
         return {'FINISHED'}
 
     def check(self, context):
