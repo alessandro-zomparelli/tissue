@@ -1370,28 +1370,40 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
                     if sk.name == vg.name:
                         sk.vertex_group = vg.name
 
-    # SEAMS
+    # EDGES SEAMS
     edge_data = [0]*n_edges1
     me1.edges.foreach_get("use_seam",edge_data)
-    if edge_data.count(True) > 0:
+    if any(edge_data):
         edge_data = edge_data*n_faces
         new_ob.data.edges.foreach_set("use_seam",edge_data)
 
-    # SHARP
+    # EDGES SHARP
     edge_data = [0]*n_edges1
     me1.edges.foreach_get("use_edge_sharp",edge_data)
-    if edge_data.count(True) > 0:
+    if any(edge_data):
         edge_data = edge_data*n_faces
         new_ob.data.edges.foreach_set("use_edge_sharp",edge_data)
+
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.collection.objects.link(new_ob)
+    new_ob.select_set(True)
+    bpy.context.view_layer.objects.active = new_ob
+
+    # EDGES BEVEL
+    edge_data = [0]*n_edges1
+    me1.edges.foreach_get("bevel_weight",edge_data)
+    if any(edge_data):
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.transform.edge_bevelweight(value=1)
+        bpy.ops.object.mode_set(mode='OBJECT')
+        edge_data = edge_data*n_faces
+        new_ob.data.edges.foreach_set("bevel_weight",edge_data)
 
     # EDGE CREASES
     edge_data = [0]*n_edges1
     me1.edges.foreach_get("crease",edge_data)
-    if sum(edge_data) > 0:
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.context.collection.objects.link(new_ob)
-        new_ob.select_set(True)
-        bpy.context.view_layer.objects.active = new_ob
+    if any(edge_data):
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.transform.edge_crease(value=1)
