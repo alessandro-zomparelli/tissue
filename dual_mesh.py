@@ -47,6 +47,7 @@ from bpy.props import (
         EnumProperty,
         )
 import bmesh
+from . import tessellate_numpy
 
 
 class dual_mesh_tessellated(Operator):
@@ -72,6 +73,7 @@ class dual_mesh_tessellated(Operator):
             )
 
     def execute(self, context):
+        tessellate_numpy.auto_layer_collection()
         ob0 = context.object
         name1 = "DualMesh_{}_Component".format(self.source_faces)
         # Generate component

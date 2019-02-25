@@ -50,6 +50,28 @@ from math import sqrt
 import random, time
 import bmesh
 
+#Recursivly transverse layer_collection for a particular name
+def recurLayerCollection(layerColl, collName):
+    found = None
+    if (layerColl.name == collName):
+        return layerColl
+    for layer in layerColl.children:
+        found = recurLayerCollection(layer, collName)
+        if found:
+            return found
+
+def auto_layer_collection():
+    # automatically change active layer collection
+    layer = bpy.context.view_layer.active_layer_collection
+    layer_collection = bpy.context.view_layer.layer_collection
+    if layer.hide_viewport or layer.collection.hide_viewport:
+        collections = bpy.context.object.users_collection
+        print(collections)
+        for c in collections:
+            print(c.name)
+            lc = recurLayerCollection(layer_collection, c.name)
+            if not c.hide_viewport and not lc.hide_viewport:
+                bpy.context.view_layer.active_layer_collection = lc
 
 def lerp(a, b, t):
     return a + (b - a) * t
@@ -348,6 +370,14 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Combine different components according to materials name",
         update = anim_tessellate_active
         )
+    error_message : StringProperty(
+        name="Error Message",
+        default=""
+        )
+    warning_message : StringProperty(
+        name="Warning Message",
+        default=""
+        )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -447,11 +477,24 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
     before.modifiers.update()
 
     before_subsurf = before.to_mesh(bpy.context.depsgraph, True)
-    if len(before_subsurf.polygons)*(4**levels) != len(me0.polygons):
-        if ob0.type == 'MESH': ob0.data = old_me0
-        bpy.data.objects.remove(before)
-        bpy.data.meshes.remove(me0)
-        return "topology_error"
+    #if len(before_subsurf.polygons)*(4**levels) != len(me0.polygons):
+    #    if ob0.type == 'MESH': ob0.data = old_me0
+    #    bpy.data.objects.remove(before)
+    #    bpy.data.meshes.remove(me0)
+    #    return "topology_error"
+
+    before_bm = bmesh.new()
+    before_bm.from_mesh(before_subsurf)
+    before_bm.faces.ensure_lookup_table()
+    for f in before_bm.faces:
+        if len(f.loops) != 4: return "topology_error"
+    before_bm.edges.ensure_lookup_table()
+    for e in before_bm.edges:
+        if len(e.link_faces) == 0: return "wires_error"
+    before_bm.verts.ensure_lookup_table()
+    for v in before_bm.verts:
+        if len(v.link_faces) == 0: return "verts_error"
+
 
     # set Shape Keys to zero
     if bool_shapekeys:
@@ -1959,6 +2002,7 @@ class tessellate(Operator):
             data0 = ob0.to_mesh(bpy.context.depsgraph, False)
             bool_update = False
             if bpy.context.object == ob0:
+                auto_layer_collection()
                 new_ob = bpy.data.objects.new(self.object_name, data0)
                 new_ob.data.name = self.object_name
                 bpy.context.collection.objects.link(new_ob)
@@ -2060,6 +2104,8 @@ class update_tessellate(Operator):
 
         ob0 = generator
         ob1 = component
+
+        auto_layer_collection()
 
         if fill_mode == 'PATCH':
             new_ob = ob0.copy()
@@ -2207,19 +2253,20 @@ class update_tessellate(Operator):
             bpy.ops.object.mode_set(mode=starting_mode)
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
-        if new_ob == "modifiers_error":
+        errors = {}
+        errors["modifiers_error"] = "Modifiers that change the topology of the mesh \n" \
+                                    "after the last Subsurf (or Multires) are not allowed."
+        errors["topology_error"] = "Make sure that the topology of the mesh before \n" \
+                                    "the last Subsurf (or Multires) is quads only."
+        errors["wires_error"] = "Please remove all wire edges in the base object."
+        errors["verts_error"] = "Please remove all floating vertices in the base object"
+        if new_ob in errors:
             for o in iter_objects: bpy.data.objects.remove(o)
-            message = "Modifiers that change the topology of the mesh \n" \
-                      "after the last Subsurf (or Multires) are not allowed."
+            bpy.context.view_layer.objects.active = ob
+            ob.select_set(True)
+            message = errors[new_ob]
+            ob.tissue_tessellate.error_message = message
             bpy.ops.object.mode_set(mode=starting_mode)
-            self.report({'ERROR'}, message)
-            return {'CANCELLED'}
-        if new_ob == "topology_error":
-            for o in iter_objects: bpy.data.objects.remove(o)
-            message = "Make sure that the topology of the mesh before \n" \
-                      "the last Subsurf (or Multires) is quads only."
-            try: bpy.ops.object.mode_set(mode=starting_mode)
-            except: pass
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
 
@@ -2303,6 +2350,8 @@ class update_tessellate(Operator):
             if o.name not in context.view_layer.objects and "temp" in o.name:
                 bpy.data.objects.remove(o)
 
+
+        ob.tissue_tessellate.error_message = ""
         return {'FINISHED'}
 
     def check(self, context):
@@ -2372,6 +2421,9 @@ class tessellate_object_panel(Panel):
             layout.label(text="The selected object is not a Tessellated object",
                         icon='INFO')
         else:
+            if props.error_message != "":
+                layout.label(text=props.error_message,
+                            icon='ERROR')
             col = layout.column(align=True)
             row = col.row(align=True)
             row.prop(props, "bool_run", text="Animatable")
