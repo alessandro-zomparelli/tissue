@@ -378,6 +378,24 @@ class tissue_tessellate_prop(PropertyGroup):
         name="Warning Message",
         default=""
         )
+    bounds_x : EnumProperty(
+            items=(
+                ('NONE', 'None', 'Default X coordinates'),
+                ('CLIP', 'Clip', 'Trim out of bounds in X direction'),
+                ('CYCLIC', 'Cyclic', 'Cyclic components in X direction')),
+            default='NONE',
+            name="Bounds X",
+            update = anim_tessellate_active
+            )
+    bounds_y : EnumProperty(
+            items=(
+                ('NONE', 'None', 'Default Y coordinates'),
+                ('CLIP', 'Clip', 'Trim out of bounds in Y direction'),
+                ('CYCLIC', 'Cyclic', 'Cyclic components in Y direction')),
+            default='NONE',
+            name="Bounds Y",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -1652,6 +1670,22 @@ class tessellate(Operator):
             default=False,
             description="Combine different components according to materials name"
             )
+    bounds_x : EnumProperty(
+            items=(
+                ('NONE', 'None', 'Default X coordinates'),
+                ('CLIP', 'Clip', 'Trim out of bounds in X direction'),
+                ('CYCLIC', 'Cyclic', 'Cyclic components in X direction')),
+            default='NONE',
+            name="Bounds X",
+            )
+    bounds_y : EnumProperty(
+            items=(
+                ('NONE', 'None', 'Default Y coordinates'),
+                ('CLIP', 'Clip', 'Trim out of bounds in Y direction'),
+                ('CYCLIC', 'Cyclic', 'Cyclic components in Y direction')),
+            default='NONE',
+            name="Bounds Y",
+            )
     working_on : ""
 
     def draw(self, context):
@@ -1841,6 +1875,22 @@ class tessellate(Operator):
                 self, "mode", text="Component XY", icon='NONE', expand=True,
                 slider=False, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
+
+            if self.mode == 'GLOBAL':
+                col.separator()
+                row = col.row(align=True)
+                row.label(text="Bounds X:")
+                row.prop(
+                    self, "bounds_x", text="Bounds X", icon='NONE', expand=True,
+                    slider=False, toggle=False, icon_only=False, event=False,
+                    full_event=False, emboss=True, index=-1)
+
+                row = col.row(align=True)
+                row.label(text="Bounds Y:")
+                row.prop(
+                    self, "bounds_y", text="Bounds X", icon='NONE', expand=True,
+                    slider=False, toggle=False, icon_only=False, event=False,
+                    full_event=False, emboss=True, index=-1)
 
             # Component Z
             col.label(text="Thickness:")
@@ -2086,6 +2136,8 @@ class update_tessellate(Operator):
             bool_advanced = ob.tissue_tessellate.bool_advanced
             bool_multi_components = ob.tissue_tessellate.bool_multi_components
             combine_mode = ob.tissue_tessellate.combine_mode
+            bounds_x = ob.tissue_tessellate.bounds_x
+            bounds_y = ob.tissue_tessellate.bounds_y
 
         try:
             generator.name
@@ -2106,6 +2158,105 @@ class update_tessellate(Operator):
         ob1 = component
 
         auto_layer_collection()
+
+        if mode == 'GLOBAL':
+            new_ob1 = ob1.copy()
+            if com_modifiers:
+                new_ob1.data = ob1.to_mesh(bpy.context.depsgraph, True)
+            else:
+                new_ob1.data = ob1.data.copy()
+            bpy.context.collection.objects.link(new_ob1)
+            bpy.ops.object.select_all(action='DESELECT')
+            for o in bpy.data.objects:
+                try: select_set(False)
+                except: pass
+            bpy.context.view_layer.objects.active = new_ob1
+            new_ob1.select_set(True)
+            bpy.context.object.active_shape_key_index = 0
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            planes_co = ((0,0,0),(1,1,1))
+            # Bound X
+            bpy.ops.object.mode_set(mode='EDIT')
+            for co in planes_co:
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.bisect(plane_co=co, plane_no=(1,0,0))
+                bpy.ops.mesh.mark_seam()
+            bpy.ops.object.mode_set(mode='OBJECT')
+            _faces = new_ob1.data.polygons
+            for f in [f for f in _faces if f.center.x > 1]:
+                f.select = True
+            for f in [f for f in _faces if f.center.x < 0]:
+                f.select = True
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_mode(type='FACE')
+            if bounds_x == 'CLIP':
+                bpy.ops.mesh.delete(type='FACE')
+                bpy.ops.object.mode_set(mode='OBJECT')
+            if bounds_x == 'CYCLIC':
+                bpy.ops.mesh.split()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                move_verts = []
+                for f in [f for f in _faces if f.center.x > 1]:
+                    for v in f.vertices:
+                        if v not in move_verts: move_verts.append(v)
+                for v in move_verts:
+                    new_ob1.data.vertices[v].co.x -= 1
+                    try:
+                        for sk in new_ob1.data.shape_keys.key_blocks:
+                            sk.data[v].co.x -= 1
+                    except: pass
+                move_verts = []
+                for f in [f for f in _faces if f.center.x < 0]:
+                    for v in f.vertices:
+                        if v not in move_verts: move_verts.append(v)
+                for v in move_verts:
+                    new_ob1.data.vertices[v].co.x += 1
+                    try:
+                        for sk in new_ob1.data.shape_keys.key_blocks:
+                            sk.data[v].co.x += 1
+                    except: pass
+            # Bound Y
+            bpy.ops.object.mode_set(mode='EDIT')
+            for co in planes_co:
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.bisect(plane_co=co, plane_no=(0,1,0))
+                bpy.ops.mesh.mark_seam()
+            bpy.ops.object.mode_set(mode='OBJECT')
+            _faces = new_ob1.data.polygons
+            for f in [f for f in _faces if f.center.y > 1]:
+                f.select = True
+            for f in [f for f in _faces if f.center.y < 0]:
+                f.select = True
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_mode(type='FACE')
+            if bounds_y == 'CLIP':
+                bpy.ops.mesh.delete(type='FACE')
+                bpy.ops.object.mode_set(mode='OBJECT')
+            if bounds_y == 'CYCLIC':
+                bpy.ops.mesh.split()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                move_verts = []
+                for f in [f for f in _faces if f.center.y > 1]:
+                    for v in f.vertices:
+                        if v not in move_verts: move_verts.append(v)
+                for v in move_verts:
+                    new_ob1.data.vertices[v].co.y -= 1
+                    try:
+                        for sk in new_ob1.data.shape_keys.key_blocks:
+                            sk.data[v].co.y -= 1
+                    except: pass
+                move_verts = []
+                for f in [f for f in _faces if f.center.y < 0]:
+                    for v in f.vertices:
+                        if v not in move_verts: move_verts.append(v)
+                for v in move_verts:
+                    new_ob1.data.vertices[v].co.y += 1
+                    try:
+                        for sk in new_ob1.data.shape_keys.key_blocks:
+                            sk.data[v].co.y += 1
+                    except: pass
+
+            ob1 = new_ob1
 
         if fill_mode == 'PATCH':
             new_ob = ob0.copy()
@@ -2185,6 +2336,10 @@ class update_tessellate(Operator):
                     bpy.context.view_layer.objects.active = new_ob
 
             if type(new_ob) == str: break
+
+            try:
+                bpy.data.objects.remove(new_ob1)
+            except: pass
 
             #bpy.data.objects.remove(base_ob)
             if bool_multi_components:
@@ -2504,6 +2659,22 @@ class tessellate_object_panel(Panel):
             row.label(text="Component Coordinates:")
             row = col.row(align=True)
             row.prop(props, "mode", expand=True)
+
+            if props.mode == 'GLOBAL':
+                col.separator()
+                row = col.row(align=True)
+                row.label(text="Bounds X:")
+                row.prop(
+                    props, "bounds_x", text="Bounds X", icon='NONE', expand=True,
+                    slider=False, toggle=False, icon_only=False, event=False,
+                    full_event=False, emboss=True, index=-1)
+
+                row = col.row(align=True)
+                row.label(text="Bounds Y:")
+                row.prop(
+                    props, "bounds_y", text="Bounds X", icon='NONE', expand=True,
+                    slider=False, toggle=False, icon_only=False, event=False,
+                    full_event=False, emboss=True, index=-1)
 
             # component Z
             col.label(text="Thickness:")
