@@ -1045,9 +1045,10 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                 m.sculpt_levels = sculpt_levels
                 m.render_levels = render_levels
     # restore original modifiers visibility for component object
-    if not com_modifiers:
+    try:
         for m, vis in zip(ob1.modifiers, mod_visibility):
             m.show_viewport = vis
+    except: pass
 
     try: bpy.data.objects.remove(new_ob1)
     except: pass
@@ -1268,7 +1269,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             for v in move_verts:
                 me1.vertices[v].co.y -= 1
                 try:
-                    _ob1.active_shape_key_index = 0
+                    #new_ob1.active_shape_key_index = 0
                     for sk in me1.shape_keys.key_blocks:
                         sk.data[v].co.y -= 1
                 except: pass
