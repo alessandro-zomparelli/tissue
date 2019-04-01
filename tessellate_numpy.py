@@ -518,7 +518,6 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
     for v in before_bm.verts:
         if len(v.link_faces) == 0: return "verts_error"
 
-
     # set Shape Keys to zero
     if bool_shapekeys:
         try:
@@ -1046,7 +1045,7 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                 m.render_levels = render_levels
     # restore original modifiers visibility for component object
     try:
-        for m, vis in zip(ob1.modifiers, mod_visibility):
+        for m, vis in zip(_ob1.modifiers, mod_visibility):
             m.show_viewport = vis
     except: pass
 
