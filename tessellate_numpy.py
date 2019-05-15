@@ -396,6 +396,20 @@ class tissue_tessellate_prop(PropertyGroup):
             name="Bounds Y",
             update = anim_tessellate_active
             )
+    cap_faces : BoolProperty(
+            name="Cap Holes",
+            default=False,
+            description="Cap open edges loops",
+            update = anim_tessellate_active
+            )
+    open_edges_crease : FloatProperty(
+            name="Open Edges Crease",
+            default=0,
+            min=0,
+            max=1,
+            description="Automatically set crease for open edges",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -429,6 +443,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.combine_mode = operator.combine_mode
     ob.tissue_tessellate.bounds_x = operator.bounds_x
     ob.tissue_tessellate.bounds_y = operator.bounds_y
+    ob.tissue_tessellate.cap_faces = operator.cap_faces
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -972,12 +987,12 @@ def tessellate_patch(ob0, ob1, offset, zscale, com_modifiers, mode,
                         sk_vert[2] = (sk_vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
                     elif mode == 'LOCAL':
                         sk_vert = sk_v.co#.xyzco
-                        sk_vert[2] *= zscale
+                        #sk_vert[2] *= zscale
                         #sk_vert[2] = (sk_vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
                     elif mode == 'GLOBAL':
                         #sk_vert = ob1.matrix_world @ sk_v.co
                         sk_vert = sk_v.co
-                        sk_vert[2] *= zscale
+                        #sk_vert[2] *= zscale
 
                     # grid coordinates
                     u = int(sk_vert[0]//step)
@@ -2009,6 +2024,18 @@ class tessellate(Operator):
             default='EXTEND',
             name="Bounds Y",
             )
+    cap_faces : BoolProperty(
+            name="Cap Holes",
+            default=False,
+            description="Cap open edges loops"
+            )
+    open_edges_crease : FloatProperty(
+            name="Open Edges Crease",
+            default=0,
+            min=0,
+            max=1,
+            description="Automatically set crease for open edges"
+            )
     working_on : ""
 
     def draw(self, context):
@@ -2257,6 +2284,12 @@ class tessellate(Operator):
                 col2.prop(self, "bool_dissolve_seams")
                 #if ob1.type != 'MESH': col2.enabled = False
 
+            row = col.row(align=True)
+            row.prop(self, "cap_faces")
+            if self.cap_faces:
+                col2 = row.column(align=True)
+                col2.prop(self, "open_edges_crease", text="Crease")
+
             # Advanced Settings
             col = layout.column(align=True)
             col.separator()
@@ -2461,6 +2494,8 @@ class update_tessellate(Operator):
             combine_mode = ob.tissue_tessellate.combine_mode
             bounds_x = ob.tissue_tessellate.bounds_x
             bounds_y = ob.tissue_tessellate.bounds_y
+            cap_faces = ob.tissue_tessellate.cap_faces
+            open_edges_crease = ob.tissue_tessellate.open_edges_crease
 
         try:
             generator.name
@@ -2713,6 +2748,16 @@ class update_tessellate(Operator):
                     e.select = e.use_seam
                 bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.dissolve_edges()
+        if cap_faces:
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_mode(
+                use_extend=False, use_expand=False, type='EDGE')
+            bpy.ops.mesh.select_non_manifold(
+                extend=False, use_wire=False, use_boundary=True,
+                use_multi_face=False, use_non_contiguous=False, use_verts=False)
+            bpy.ops.mesh.edge_face_add()
+            if open_edges_crease != 0:
+                bpy.ops.transform.edge_crease(value=open_edges_crease)
 
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -2745,7 +2790,7 @@ class update_tessellate(Operator):
     def check(self, context):
         return True
 
-class tessellate_panel(Panel):
+class TISSUE_PT_tessellate(Panel):
     bl_label = "Tissue Tools"
     bl_category = "Tissue"
     bl_space_type = "VIEW_3D"
@@ -2782,7 +2827,7 @@ class tessellate_panel(Panel):
             col.operator("object.uv_to_mesh", icon="GROUP_UVS")
 
 
-class tessellate_object_panel(Panel):
+class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"
@@ -2943,6 +2988,12 @@ class tessellate_object_panel(Panel):
                 col2 = row.column(align=True)
                 col2.prop(props, "bool_dissolve_seams")
                 #if props.component.type != 'MESH': col2.enabled = False
+
+            row = col.row(align=True)
+            row.prop(props, "cap_faces")
+            if props.cap_faces:
+                col2 = row.column(align=True)
+                col2.prop(props, "open_edges_crease", text="Crease")
 
             # Advanced Settings
             col = layout.column(align=True)

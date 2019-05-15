@@ -2037,7 +2037,7 @@ class harmonic_weight(bpy.types.Operator):
 
 
 
-class color_panel(bpy.types.Panel):
+class TISSUE_PT_color(bpy.types.Panel):
     bl_label = "Tissue Tools"
     bl_category = "Tissue"
     bl_space_type = "VIEW_3D"
@@ -2051,7 +2051,7 @@ class color_panel(bpy.types.Panel):
         col.operator("object.vertex_colors_to_vertex_groups",
             icon="GROUP_VERTEX", text="Convert to Weight")
 
-class weight_panel(bpy.types.Panel):
+class TISSUE_PT_weight(bpy.types.Panel):
     bl_label = "Tissue Tools"
     bl_category = "Tissue"
     bl_space_type = "VIEW_3D"
@@ -2431,7 +2431,7 @@ def reaction_diffusion_def(scene):
             #except:
             #    pass
 
-class reaction_diffusion_panel(Panel):
+class TISSUE_PT_reaction_diffusion(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"

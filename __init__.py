@@ -33,14 +33,13 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 17),
+    "version": (0, 3, 18),
     "blender": (2, 80, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
-    "wiki_url": "https://wiki.blender.org/index.php/Extensions:2.6/"
-                "Py/Scripts/Mesh/Tissue",
-    "tracker_url": "https://plus.google.com/u/0/+AlessandroZomparelli/",
+    "wiki_url": "https://github.com/alessandro-zomparelli/tissue/wiki",
+    "tracker_url": "https://github.com/alessandro-zomparelli/tissue/issues",
     "category": "Mesh"}
 
 
@@ -66,15 +65,15 @@ classes = (
     tessellate_numpy.tissue_tessellate_prop,
     tessellate_numpy.tessellate,
     tessellate_numpy.update_tessellate,
-    tessellate_numpy.tessellate_panel,
+    tessellate_numpy.TISSUE_PT_tessellate,
     tessellate_numpy.rotate_face,
-    tessellate_numpy.tessellate_object_panel,
+    tessellate_numpy.TISSUE_PT_tessellate_object,
 
     colors_groups_exchanger.face_area_to_vertex_groups,
     colors_groups_exchanger.vertex_colors_to_vertex_groups,
     colors_groups_exchanger.vertex_group_to_vertex_colors,
-    colors_groups_exchanger.weight_panel,
-    colors_groups_exchanger.color_panel,
+    colors_groups_exchanger.TISSUE_PT_weight,
+    colors_groups_exchanger.TISSUE_PT_color,
     colors_groups_exchanger.weight_contour_curves,
     colors_groups_exchanger.weight_contour_mask,
     colors_groups_exchanger.weight_contour_displace,
@@ -84,7 +83,7 @@ classes = (
     colors_groups_exchanger.weight_laplacian,
     colors_groups_exchanger.reaction_diffusion,
     colors_groups_exchanger.start_reaction_diffusion,
-    colors_groups_exchanger.reaction_diffusion_panel,
+    colors_groups_exchanger.TISSUE_PT_reaction_diffusion,
     colors_groups_exchanger.reset_reaction_diffusion_weight,
     colors_groups_exchanger.formula_prop,
     colors_groups_exchanger.reaction_diffusion_prop,
@@ -121,11 +120,11 @@ def unregister():
     from bpy.utils import unregister_class
     for cls in classes:
         bpy.utils.unregister_class(cls)
-    tessellate_numpy.unregister()
-    colors_groups_exchanger.unregister()
-    dual_mesh.unregister()
-    lattice.unregister()
-    uv_to_mesh.unregister()
+    #tessellate_numpy.unregister()
+    #colors_groups_exchanger.unregister()
+    #dual_mesh.unregister()
+    #lattice.unregister()
+    #uv_to_mesh.unregister()
 
     del bpy.types.Object.tissue_tessellate
 
