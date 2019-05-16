@@ -66,9 +66,7 @@ def auto_layer_collection():
     layer_collection = bpy.context.view_layer.layer_collection
     if layer.hide_viewport or layer.collection.hide_viewport:
         collections = bpy.context.object.users_collection
-        print(collections)
         for c in collections:
-            print(c.name)
             lc = recurLayerCollection(layer_collection, c.name)
             if not c.hide_viewport and not lc.hide_viewport:
                 bpy.context.view_layer.active_layer_collection = lc
@@ -126,13 +124,15 @@ def anim_tessellate(scene):
         if old_mode == 'PAINT_WEIGHT': old_mode = 'WEIGHT_PAINT'
         for ob in scene.objects:
             if ob.tissue_tessellate.bool_run:
+                print(ob.name)
                 hidden = ob.hide_viewport
                 ob.hide_viewport = False
                 for o in scene.objects:
                     if not o.hide_viewport: ob.select_set(False)
                 bpy.context.view_layer.objects.active = ob
                 ob.select_set(True)
-                try: bpy.ops.object.update_tessellate()
+                try:
+                    bpy.ops.object.update_tessellate()
                 except: pass
                 ob.hide_viewport = hidden
         # restore selected objects
@@ -147,13 +147,14 @@ def anim_tessellate(scene):
 
 def set_tessellate_handler(self, context):
     old_handlers = []
-    for h in bpy.app.handlers.frame_change_post:
+    blender_handlers = bpy.app.handlers.frame_change_post
+    for h in blender_handlers:
         if "anim_tessellate" in str(h):
             old_handlers.append(h)
-    for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
+    for h in old_handlers: blender_handlers.remove(h)
     for o in context.scene.objects:
         if o.tissue_tessellate.bool_run:
-            bpy.app.handlers.frame_change_post.append(anim_tessellate)
+            blender_handlers.append(anim_tessellate)
             break
     return
 
@@ -1522,6 +1523,9 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
         elif rotation_mode == 'UV':
             if len(ob0.data.uv_layers) > 0 and fill_mode != 'FAN':
                 i = p.index
+                if bool_material_id:
+                    count = sum([len(p.vertices) for p in me0.polygons[:i]])
+                    #if i == 0: count = 0
                 v01 = (me0.uv_layers.active.data[count].uv +
                        me0.uv_layers.active.data[count + 1].uv)
                 if len(p.vertices) > 3:
@@ -1600,7 +1604,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
 
 
         # vertex z to normal
-        if scale_mode == "ADAPTIVE":
+        if scale_mode == 'ADAPTIVE':
             poly_faces = (p.vertices[0], p.vertices[1], p.vertices[2], p.vertices[-1])
             if rotation_mode == 'RANDOM': sz = verts_area0
             else: sz = np.array([verts_area[i] for i in poly_faces])
@@ -1665,16 +1669,14 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
         w_1 = w[:,:,1].reshape((n_vg, n_faces,1,1))
         w_2 = w[:,:,2].reshape((n_vg, n_faces,1,1))
         w_3 = w[:,:,3].reshape((n_vg, n_faces,1,1))
-        print(w_3.shape)
         # remapped weight
         w0 = w_0 + (w_1 - w_0) * vx
         w1 = w_3 + (w_2 - w_3) * vx
         w = w0 + (w1 - w0) * vy
         w = w.reshape((n_vg, n_faces*n_verts1))
-        print(w.shape)
         #w = w2.tolist()
 
-    if scale_mode == "ADAPTIVE":
+    if scale_mode == 'ADAPTIVE':
         _sz_0 = _sz[:,0].reshape((n_faces,1,1))
         _sz_1 = _sz[:,1].reshape((n_faces,1,1))
         _sz_2 = _sz[:,2].reshape((n_faces,1,1))
@@ -1710,7 +1712,7 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
             else:
                 nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
 
-            if scale_mode == "ADAPTIVE":
+            if scale_mode == 'ADAPTIVE':
                 # remapped z scale
                 sz0 = _sz_0 + (_sz_1 - _sz_0) * vx
                 sz1 = _sz_3 + (_sz_2 - _sz_3) * vx
@@ -1809,6 +1811,8 @@ def tessellate_original(ob0, ob1, offset, zscale, gen_modifiers, com_modifiers, 
 
     # MATERIALS
     for slot in ob1.material_slots: new_ob.data.materials.append(slot.material)
+
+
     polygon_materials = [0]*n_faces1
     me1.polygons.foreach_get("material_index", polygon_materials)
     polygon_materials *= n_faces
@@ -2448,11 +2452,11 @@ class update_tessellate(Operator):
     @classmethod
     def poll(cls, context):
         #try:
-        if context.object == None: return False
-        return context.object.tissue_tessellate.generator != None and \
-            context.object.tissue_tessellate.component != None
-        #except:
-        #    return False
+        try: #context.object == None: return False
+            return context.object.tissue_tessellate.generator != None and \
+                context.object.tissue_tessellate.component != None
+        except:
+            return False
 
     @staticmethod
     def check_gen_comp(checking):
@@ -2763,6 +2767,8 @@ class update_tessellate(Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
 
         if bool_smooth: bpy.ops.object.shade_smooth()
+        ####values = [True] * len(ob.data.polygons)
+        ####ob.data.polygons.foreach_set("use_smooth", values)
 
         for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
 
@@ -3119,7 +3125,7 @@ class rotate_face(Operator):
         # update tessellated meshes
         bpy.ops.object.mode_set(mode='OBJECT')
         for o in [obj for obj in bpy.data.objects if
-                  obj.tissue_tessellate.generator == ob]:
+                  obj.tissue_tessellate.generator == ob and obj.visible_get()]:
             bpy.context.view_layer.objects.active = o
             bpy.ops.object.update_tessellate()
             o.select_set(False)
