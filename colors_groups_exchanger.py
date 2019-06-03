@@ -57,6 +57,8 @@ from bpy.props import (
     IntVectorProperty
 )
 
+from .utils import *
+
 bl_info = {
     "name": "Colors/Groups Exchanger",
     "author": "Alessandro Zomparelli (Co-de-iT)",
@@ -776,7 +778,8 @@ class edges_deformation(bpy.types.Operator):
         elif self.mode == 'MAX': group_name = "Max Deformation"
         ob.vertex_groups.new(name=group_name)
         me0 = ob.data
-        me = ob.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+
+        me = simple_to_mesh(ob) #ob.to_mesh(preserve_all_data_layers=True, depsgraph=bpy.context.evaluated_depsgraph_get()).copy()
         if len(me.vertices) != len(me0.vertices) or len(me.edges) != len(me0.edges):
             self.report({'ERROR'}, "The topology of the object should be" +
                 "unaltered")
@@ -846,6 +849,7 @@ class edges_deformation(bpy.types.Operator):
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        bpy.data.meshes.remove(me)
         return {'FINISHED'}
 
 class edges_bending(bpy.types.Operator):
@@ -908,7 +912,7 @@ class edges_bending(bpy.types.Operator):
         #ob.data.update()
         #context.scene.update()
         me0 = ob.data
-        me = ob.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+        me = simple_to_mesh(ob) #ob.to_mesh(preserve_all_data_layers=True, depsgraph=bpy.context.evaluated_depsgraph_get()).copy()
         if len(me.vertices) != len(me0.vertices) or len(me.edges) != len(me0.edges):
             self.report({'ERROR'}, "The topology of the object should be" +
                 "unaltered")
@@ -973,6 +977,7 @@ class edges_bending(bpy.types.Operator):
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        bpy.data.meshes.remove(me)
         return {'FINISHED'}
 
 class weight_contour_displace(bpy.types.Operator):
@@ -999,10 +1004,11 @@ class weight_contour_displace(bpy.types.Operator):
         name="Flip", default=False, description="Flip Output Weight")
 
     weight_mode : bpy.props.EnumProperty(
-        items=[('Alternate', 'Alternate', 'Alternate 0 and 1'),
+        items=[('Remapped', 'Remapped', 'Remap values'),
+               ('Alternate', 'Alternate', 'Alternate 0 and 1'),
                ('Original', 'Original', 'Keep original Vertex Group')],
         name="Weight", description="Choose how to convert vertex group",
-        default="Alternate", options={'LIBRARY_EDITABLE'})
+        default="Remapped", options={'LIBRARY_EDITABLE'})
 
     @classmethod
     def poll(cls, context):
@@ -1028,9 +1034,10 @@ class weight_contour_displace(bpy.types.Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         if self.use_modifiers:
-            me0 = ob0.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+            #me0 = ob0.to_mesh(preserve_all_data_layers=True, depsgraph=bpy.context.evaluated_depsgraph_get()).copy()
+            me0 = simple_to_mesh(ob0)
         else:
-            me0 = ob0.data
+            me0 = ob0.data.copy()
 
         # generate new bmesh
         bm = bmesh.new()
@@ -1055,10 +1062,11 @@ class weight_contour_displace(bpy.types.Operator):
         for i_cut in range(self.n_cuts):
             delta_iso = abs(self.max_iso - self.min_iso)
             min_iso = min(self.min_iso, self.max_iso)
+            max_iso = max(self.min_iso, self.max_iso)
             if delta_iso == 0: iso_val = min_iso
-            else: iso_val = i_cut/(self.n_cuts-1)*delta_iso + min_iso
+            elif self.n_cuts > 1: iso_val = i_cut/(self.n_cuts-1)*delta_iso + min_iso
+            else: iso_val = (self.max_iso + self.min_iso)/2
             iso_values.append(iso_val)
-        if self.n_cuts < 2: iso_values = [(self.max_iso + self.min_iso)/2]
 
         # Start Cuts Iterations
         filtered_edges = bm.edges
@@ -1103,7 +1111,9 @@ class weight_contour_displace(bpy.types.Operator):
                     _filtered_edges.append(e)
                     continue
                 elif w0 < iso_val and w1 < iso_val: continue
-                elif w0 == iso_val or w1 == iso_val: continue
+                elif w0 == iso_val or w1 == iso_val:
+                    _filtered_edges.append(e)
+                    continue
                 else:
                     v0 = bm.verts[id0].co
                     v1 = bm.verts[id1].co
@@ -1224,6 +1234,10 @@ class weight_contour_displace(bpy.types.Operator):
                     direction = not direction
                 if w < iso_values[0]: w1 = not self.bool_flip
                 if w > iso_values[-1]: w1 = not direction
+            elif self.weight_mode == 'Remapped':
+                if w < min_iso: w1 = 0
+                elif w > max_iso: w1 = 1
+                else: w1 = (w - min_iso)/delta_iso
             else:
                 if self.bool_flip: w1 = 1-w
                 else: w1 = w
@@ -1242,13 +1256,14 @@ class weight_contour_displace(bpy.types.Operator):
         if self.bool_displace:
             ob.modifiers.new(type='DISPLACE', name='Displace')
             ob.modifiers["Displace"].mid_level = 0
-            ob.modifiers["Displace"].strength = 1
+            ob.modifiers["Displace"].strength = 0.1
             ob.modifiers['Displace'].vertex_group = vertex_group_name
 
-        bpy.ops.paint.weight_paint_toggle()
-        #bpy.context.space_data.viewport_shade = 'WIREFRAME'
-        ob.data.update()
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         print("Contour Displace time: " + str(timeit.default_timer() - start_time) + " sec")
+
+        bpy.data.meshes.remove(me0)
 
         return {'FINISHED'}
 
@@ -1292,9 +1307,9 @@ class weight_contour_mask(bpy.types.Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         if self.use_modifiers:
-            me0 = ob0.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+            me0 = simple_to_mesh(ob0)#ob0.to_mesh(preserve_all_data_layers=True, depsgraph=bpy.context.evaluated_depsgraph_get()).copy()
         else:
-            me0 = ob0.data
+            me0 = ob0.data.copy()
 
         # generate new bmesh
         bm = bmesh.new()
@@ -1451,7 +1466,8 @@ class weight_contour_mask(bpy.types.Operator):
         for g in ob0.vertex_groups:
             ob.vertex_groups.new(name=g.name)
 
-        mult = 1/(1-iso_val)
+        if iso_val != 1: mult = 1/(1-iso_val)
+        else: mult = 1
         for id in range(len(weight)):
             if self.normalize_weight: w = (weight[id]-iso_val)*mult
             else: w = weight[id]
@@ -1468,10 +1484,11 @@ class weight_contour_mask(bpy.types.Operator):
             ob.modifiers['Solidify'].offset = 0
             ob.modifiers['Solidify'].vertex_group = vertex_group_name
 
-        bpy.ops.paint.weight_paint_toggle()
-        #bpy.context.space_data.viewport_shade = 'WIREFRAME'
-        ob.data.update()
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         print("Contour Mask time: " + str(timeit.default_timer() - start_time) + " sec")
+
+        bpy.data.meshes.remove(me0)
 
         return {'FINISHED'}
 
@@ -1526,9 +1543,9 @@ class weight_contour_curves(bpy.types.Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         if self.use_modifiers:
-            me0 = ob0.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+            me0 = simple_to_mesh(ob0) #ob0.to_mesh(preserve_all_data_layers=True, depsgraph=bpy.context.evaluated_depsgraph_get()).copy()
         else:
-            me0 = ob0.data
+            me0 = ob0.data.copy()
 
         # generate new bmesh
         bm = bmesh.new()
@@ -1681,6 +1698,9 @@ class weight_contour_curves(bpy.types.Operator):
         # align new object
         ob.matrix_world = ob0.matrix_world
         print("Contour Curves time: " + str(timeit.default_timer() - start_time) + " sec")
+
+        bpy.data.meshes.remove(me0)
+        bpy.data.meshes.remove(me)
 
         return {'FINISHED'}
 

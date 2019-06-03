@@ -33,7 +33,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 19),
+    "version": (0, 3, 20),
     "blender": (2, 80, 0),
     "location": "",
     "description": "Tools for Computational Design",
@@ -50,6 +50,7 @@ if "bpy" in locals():
     importlib.reload(dual_mesh)
     importlib.reload(lattice)
     importlib.reload(uv_to_mesh)
+    importlib.reload(utils)
 
 else:
     from . import tessellate_numpy
@@ -57,6 +58,7 @@ else:
     from . import dual_mesh
     from . import lattice
     from . import uv_to_mesh
+    from . import utils
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty

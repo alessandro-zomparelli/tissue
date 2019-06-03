@@ -47,7 +47,7 @@ from bpy.props import (
         EnumProperty,
         )
 import bmesh
-from . import tessellate_numpy
+from .utils import *
 
 
 class dual_mesh_tessellated(Operator):
@@ -73,7 +73,7 @@ class dual_mesh_tessellated(Operator):
             )
 
     def execute(self, context):
-        tessellate_numpy.auto_layer_collection()
+        auto_layer_collection()
         ob0 = context.object
         name1 = "DualMesh_{}_Component".format(self.source_faces)
         # Generate component
@@ -130,6 +130,7 @@ class dual_mesh_tessellated(Operator):
         ob.tissue_tessellate.merge = True
         ob.tissue_tessellate.bool_dissolve_seams = True
         if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'FAN'
+        print(bpy.context.object)
         bpy.ops.object.update_tessellate()
         ob.location = ob0.location
         ob.matrix_world = ob0.matrix_world
