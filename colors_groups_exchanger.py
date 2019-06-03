@@ -2266,8 +2266,8 @@ def reaction_diffusion_def_blur(scene):
             diff_b = props.diff_b * props.diff_mult
 
             n_verts = len(bm.verts)
-            bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-            ob.data.use_paint_mask_vertex = True
+            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+            #ob.data.use_paint_mask_vertex = True
 
             for i in range(time_steps):
                 ab2 = a*b**2
@@ -2297,8 +2297,8 @@ def reaction_diffusion_def_blur(scene):
             ob.data.update()
             #bpy.ops.object.mode_set(mode='EDIT')
             #bpy.ops.object.mode_set(mode='WEIGHT_PAINT
-            bpy.ops.paint.weight_paint_toggle()
-            bpy.ops.paint.weight_paint_toggle()
+            #bpy.ops.paint.weight_paint_toggle()
+            #bpy.ops.paint.weight_paint_toggle()
 
             #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
             #except:
@@ -2436,20 +2436,11 @@ def reaction_diffusion_def(scene):
             for i in range(n_verts):
                 ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
                 ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
-            ob.vertex_groups.update()
-            ob.data.update()
-            #bpy.ops.object.mode_set(mode='EDIT')
-            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+
             for ps in ob.particle_systems:
                 if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
-            bpy.ops.paint.weight_paint_toggle()
-            bpy.ops.paint.weight_paint_toggle()
-
-            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-            #except:
-            #    pass
 
 class TISSUE_PT_reaction_diffusion(Panel):
     bl_space_type = 'PROPERTIES'
