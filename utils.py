@@ -72,13 +72,23 @@ def _convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
 
 def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     if not ob.name: return None
-    new_ob = ob.copy()
-    if apply_modifiers:
-        dg = bpy.context.evaluated_depsgraph_get()
-        ob_eval = ob.evaluated_get(dg)
+    dg = bpy.context.evaluated_depsgraph_get()
+    ob_eval = ob.evaluated_get(dg)
+    if ob.type != 'MESH':
+        if not apply_modifiers:
+            mod_visibility = [m.show_viewport for m in ob.modifiers]
+            for m in ob.modifiers:
+                m.show_viewport = False
+        me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
+        print(me.polygons[0])
+        new_ob = bpy.data.objects.new(ob.data.name, me)
+        new_ob.location, new_ob.matrix_world = ob.location, ob.matrix_world
+    elif apply_modifiers:
+        new_ob = ob.copy()
         new_ob.data = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
         new_ob.modifiers.clear()
     else:
+        new_ob = ob.copy()
         new_ob.data = ob.data.copy()
     bpy.context.collection.objects.link(new_ob)
     if preserve_status: new_ob.select_set(False)
@@ -86,10 +96,12 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         for o in bpy.context.view_layer.objects: o.select_set(False)
         new_ob.select_set(True)
         bpy.context.view_layer.objects.active = new_ob
+    if ob.type != 'MESH' and not apply_modifiers:
+        for m,vis in zip(ob.modifiers,mod_visibility):
+            m.show_viewport = vis
     return new_ob
 
 def simple_to_mesh(ob):
     dg = bpy.context.evaluated_depsgraph_get()
     ob_eval = ob.evaluated_get(dg)
     return bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-    

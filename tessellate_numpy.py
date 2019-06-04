@@ -1936,7 +1936,7 @@ class tessellate(Operator):
     working_on : ""
 
     def draw(self, context):
-        allowed_obj = ('MESH', 'CURVE', 'SURFACE', 'FONT')
+        allowed_obj = ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META')
         '''
         try:
             bool_working = self.working_on == self.object_name and \
@@ -2009,7 +2009,11 @@ class tessellate(Operator):
             col2 = row.column(align=True)
             col2.prop(self, "gen_modifiers", text="Use Modifiers", icon='MODIFIER')
             base = bpy.data.objects[self.generator]
-            if not (base.modifiers or base.data.shape_keys):
+            try:
+                if not (base.modifiers or base.data.shape_keys):
+                    col2.enabled = False
+                    self.gen_modifiers = False
+            except:
                 col2.enabled = False
                 self.gen_modifiers = False
 
@@ -2018,7 +2022,11 @@ class tessellate(Operator):
             col3 = row.column(align=True)
             col3.prop(self, "com_modifiers", text="Use Modifiers", icon='MODIFIER')
             component = bpy.data.objects[self.component]
-            if not (component.modifiers or component.data.shape_keys):
+            try:
+                if not (component.modifiers or component.data.shape_keys):
+                    col3.enabled = False
+                    self.com_modifiers = False
+            except:
                 col3.enabled = False
                 self.com_modifiers = False
             col.separator()
@@ -2243,12 +2251,12 @@ class tessellate(Operator):
         except: pass
 
         if ob1.type not in allowed_obj:
-            message = "Component must be Mesh, Curve, Surface or Text object!"
+            message = "Component must be Mesh, Curve, Surface, Text or Meta object!"
             self.report({'ERROR'}, message)
             self.component = None
 
         if ob0.type not in allowed_obj:
-            message = "Generator must be Mesh, Curve, Surface or Text object!"
+            message = "Generator must be Mesh, Curve, Surface, Text or Meta object!"
             self.report({'ERROR'}, message)
             self.generator = ""
 
@@ -2258,14 +2266,15 @@ class tessellate(Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
 
             #data0 = ob0.to_mesh(False)
-            data0 = ob0.data.copy()
+            #data0 = ob0.data.copy()
             bool_update = False
             if bpy.context.object == ob0:
                 auto_layer_collection()
-                new_ob = bpy.data.objects.new(self.object_name, data0)
+                #new_ob = bpy.data.objects.new(self.object_name, data0)
+                new_ob = convert_object_to_mesh(ob0,False,False)
                 new_ob.data.name = self.object_name
-                bpy.context.collection.objects.link(new_ob)
-                bpy.context.view_layer.objects.active = new_ob
+                #bpy.context.collection.objects.link(new_ob)
+                #bpy.context.view_layer.objects.active = new_ob
                 #new_ob.name = self.object_name
                 new_ob.select_set(True)
             else:
@@ -2555,6 +2564,10 @@ class update_tessellate(Operator):
             new_ob.data.update()
 
         # update data and preserve name
+        if ob.type != 'MESH':
+            loc, matr = ob.location, ob.matrix_world
+            ob = convert_object_to_mesh(ob,False,True)
+            ob.location, ob.matrix_world = loc, matr
         data_name = ob.data.name
         old_data = ob.data
         ob.data = new_ob.data
@@ -2697,7 +2710,7 @@ class TISSUE_PT_tessellate_object(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT')
+        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
 
         try:
             bool_tessellated = props.generator or props.component != None
@@ -2732,12 +2745,18 @@ class TISSUE_PT_tessellate_object(Panel):
             col2 = row.column(align=True)
             col2.prop(props, "gen_modifiers", text="Use Modifiers", icon='MODIFIER')
             row.separator()
-            if not (ob0.modifiers or ob0.data.shape_keys) or props.fill_mode == 'PATCH':
+            try:
+                if not (ob0.modifiers or ob0.data.shape_keys) or props.fill_mode == 'PATCH':
+                    col2.enabled = False
+            except:
                 col2.enabled = False
             col2 = row.column(align=True)
             col2.prop(props, "com_modifiers", text="Use Modifiers", icon='MODIFIER')
-            if not (props.component.modifiers or props.component.data.shape_keys):
-                col2.enabled = False
+            try:
+                if not (props.component.modifiers or props.component.data.shape_keys):
+                    col2.enabled = False
+            except:
+                    col2.enabled = False
             col.separator()
 
             # Fill and Rotation
