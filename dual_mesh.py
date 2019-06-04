@@ -120,7 +120,7 @@ class dual_mesh_tessellated(Operator):
             ob1.hide_render = True
             ob1.hide_viewport = True
 
-        ob = bpy.data.objects.new("DualMesh", ob0.data)
+        ob = bpy.data.objects.new("DualMesh", ob0.data.copy())
         bpy.context.collection.objects.link(ob)
         bpy.context.view_layer.objects.active = ob
         ob.select_set(True)
@@ -130,6 +130,8 @@ class dual_mesh_tessellated(Operator):
         ob.tissue_tessellate.merge = True
         ob.tissue_tessellate.bool_dissolve_seams = True
         if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'FAN'
+        print(ob1)
+        print(ob0)
         print(bpy.context.object)
         bpy.ops.object.update_tessellate()
         ob.location = ob0.location
