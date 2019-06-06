@@ -413,25 +413,28 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                bounds_x, bounds_y):
     random.seed(rand_seed)
 
-    ob0 = convert_object_to_mesh(_ob0, True, True)
+    ob0 = convert_object_to_mesh(_ob0)#, True, True)
+    for m in _ob0.modifiers:
+        print(m.show_viewport)
+    print("___" + str(len(ob0.data.polygons)))
     me0 = _ob0.data
 
     # Check if zero faces are selected
-    bool_cancel = True
-    for p in me0.polygons:
-        check_sel = check_mat = False
-        if not bool_selection or p.select: check_sel = True
-        if not bool_material_id or p.material_index == material_id: check_mat = True
-        if check_sel and check_mat:
-                bool_cancel = False
-                break
-    if bool_cancel:
-        return 0
+    if _ob0.type == 'MESH':
+        bool_cancel = True
+        for p in me0.polygons:
+            check_sel = check_mat = False
+            if not bool_selection or p.select: check_sel = True
+            if not bool_material_id or p.material_index == material_id: check_mat = True
+            if check_sel and check_mat:
+                    bool_cancel = False
+                    break
+        if bool_cancel:
+            return 0
 
-    if ob0.type == 'MESH' and False:
-        ob0.data = me0.copy()
-        me0 = ob0.data
-
+    #if ob0.type == 'MESH' and False:
+#        ob0.data = me0.copy()
+#        me0 = ob0.data
 
     levels = 0
     sculpt_levels = 0
@@ -465,7 +468,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             return "modifiers_error"
 
     before = _ob0.copy()
-    if ob0.type == 'MESH': before.data = me0
+    #if ob0.type == 'MESH': before.data = me0
     before_mod = list(before.modifiers)
     before_mod.reverse()
     for m in before_mod:
@@ -474,9 +477,10 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             break
         else: before.modifiers.remove(m)
 
-    dg = bpy.context.evaluated_depsgraph_get()
-    ob_eval = before.evaluated_get(dg)
-    before_subsurf = bpy.data.meshes.new_from_object(before, preserve_all_data_layers=True, depsgraph=dg)
+    #dg = bpy.context.evaluated_depsgraph_get()
+    #ob_eval = before.evaluated_get(dg)
+    #before_subsurf = bpy.data.meshes.new_from_object(before, preserve_all_data_layers=True, depsgraph=dg)
+    before_subsurf = simple_to_mesh(before)
 
     before_bm = bmesh.new()
     before_bm.from_mesh(before_subsurf)
@@ -697,12 +701,14 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     verts1 = [v.co for v in me1.vertices]
 
     patch_faces = 4**levels
+    print(patch_faces)
+    print(len(me0.polygons))
     sides = int(sqrt(patch_faces))
     sides0 = sides-2
     patch_faces0 = int((sides-2)**2)
     n_patches = int(len(me0.polygons)/patch_faces)
     if len(me0.polygons)%patch_faces != 0:
-        ob0.data = old_me0
+        #ob0.data = old_me0
         return "topology_error"
 
     new_verts = []
@@ -2276,7 +2282,7 @@ class tessellate(Operator):
                 #bpy.context.collection.objects.link(new_ob)
                 #bpy.context.view_layer.objects.active = new_ob
                 #new_ob.name = self.object_name
-                new_ob.select_set(True)
+                #new_ob.select_set(True)
             else:
                 new_ob = bpy.context.object
                 bool_update = True
@@ -2367,18 +2373,24 @@ class update_tessellate(Operator):
                         "Active object must be Tessellate before Update")
             return {'CANCELLED'}
 
-        starting_mode = bpy.context.mode
-        if starting_mode == 'PAINT_WEIGHT': starting_mode = 'WEIGHT_PAINT'
+        starting_mode = bpy.context.object.mode
+        #if starting_mode == 'PAINT_WEIGHT': starting_mode = 'WEIGHT_PAINT'
         bpy.ops.object.mode_set(mode='OBJECT')
 
         ob0 = generator
         ob1 = component
         auto_layer_collection()
-        new_ob = convert_object_to_mesh(ob0, False, True)
+
+        if ob0.type == 'META':
+            base_ob = convert_object_to_mesh(ob0, False, True)
+        else:
+            base_ob = ob0.copy()
+            base_ob.data = ob0.data.copy()
+            bpy.context.collection.objects.link(base_ob)
 
         # In Blender 2.80 cache of copied objects is lost, must be re-baked
         bool_update_cloth = False
-        for m in new_ob.modifiers:
+        for m in base_ob.modifiers:
             if m.type == 'CLOTH':
                 m.point_cache.frame_end = bpy.context.scene.frame_current
                 bool_update_cloth = True
@@ -2386,14 +2398,12 @@ class update_tessellate(Operator):
             bpy.ops.ptcache.free_bake_all()
             bpy.ops.ptcache.bake_all()
 
-
         #new_ob.location = ob.location
         #new_ob.matrix_world = ob.matrix_world
-        new_ob.modifiers.update()
+        base_ob.modifiers.update()
         bpy.ops.object.select_all(action='DESELECT')
-        iter_objects = [new_ob]
-        base_ob = new_ob#.copy()
-
+        iter_objects = [base_ob]
+        #base_ob = new_ob#.copy()
 
         for iter in range(iterations):
             same_iteration = []
@@ -2410,13 +2420,9 @@ class update_tessellate(Operator):
                         bool_material_id = True
                     except:
                         continue
-
                 if com_modifiers:
-                    depsgraph = bpy.context.evaluated_depsgraph_get()
-                    ob1_eval = ob1.evaluated_get(depsgraph)
-                    data1 = ob1_eval.to_mesh()
+                    data1 = simple_to_mesh(ob1)
                 else: data1 = ob1.data.copy()
-                verts1 = len(data1.vertices)
                 n_edges1 = len(data1.edges)
 
                 if iter != 0: gen_modifiers = True
@@ -2507,7 +2513,7 @@ class update_tessellate(Operator):
                     iter_objects = iter_objects[:-1]
 
                 base_ob = convert_object_to_mesh(new_ob,True,True)
-                bpy.context.collection.objects.unlink(base_ob)
+                #bpy.context.collection.objects.unlink(base_ob)
                 if iter < iterations-1: new_ob.data = base_ob.data
 
                 iter_objects.append(new_ob)
@@ -2529,7 +2535,7 @@ class update_tessellate(Operator):
                 iter_objects = [new_ob]
 
         if new_ob == 0:
-            for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
+            #for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
             message = "Zero faces selected in the Base mesh!"
             bpy.ops.object.mode_set(mode=starting_mode)
             self.report({'ERROR'}, message)

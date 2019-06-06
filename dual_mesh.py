@@ -119,11 +119,12 @@ class dual_mesh_tessellated(Operator):
             ob1.hide_select = True
             ob1.hide_render = True
             ob1.hide_viewport = True
-
-        ob = bpy.data.objects.new("DualMesh", ob0.data.copy())
-        bpy.context.collection.objects.link(ob)
-        bpy.context.view_layer.objects.active = ob
-        ob.select_set(True)
+        ob = convert_object_to_mesh(ob0,False,False)
+        ob.name = 'DualMesh'
+        #ob = bpy.data.objects.new("DualMesh", convert_object_to_mesh(ob0,False,False))
+        #bpy.context.collection.objects.link(ob)
+        #bpy.context.view_layer.objects.active = ob
+        #ob.select_set(True)
         ob.tissue_tessellate.component = ob1
         ob.tissue_tessellate.generator = ob0
         ob.tissue_tessellate.gen_modifiers = self.apply_modifiers
