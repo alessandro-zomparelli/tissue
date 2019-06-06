@@ -45,6 +45,8 @@ from bpy.types import Operator
 from bpy.props import (BoolProperty, StringProperty, FloatProperty)
 from mathutils import Vector
 
+from .utils import *
+
 
 def not_in(element, grid):
     output = True
@@ -253,6 +255,10 @@ class lattice_along_surface(Operator):
     grid_object = ""
     source_object = ""
 
+    @classmethod
+    def poll(cls, context):
+        return bpy.context.object.mode == 'OBJECT'
+
     def draw(self, context):
         layout = self.layout
         col = layout.column(align=True)
@@ -300,7 +306,7 @@ class lattice_along_surface(Operator):
             if len(bpy.context.selected_objects) != 2:
                 self.report({'ERROR'}, "Please, select two objects")
                 return {'CANCELLED'}
-            grid_obj = bpy.context.active_object
+            grid_obj = bpy.context.object
             if grid_obj.type not in ('MESH', 'CURVE', 'SURFACE'):
                 self.report({'ERROR'}, "The surface object is not valid. Only Mesh,"
                             "Curve and Surface objects are allowed.")
@@ -314,7 +320,7 @@ class lattice_along_surface(Operator):
                     break
             try:
                 obj_dim = obj.dimensions
-                obj_me = obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+                obj_me = simple_to_mesh(obj)#obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
             except:
                 self.report({'ERROR'}, "The object to deform is not valid. Only "
                             "Mesh, Curve, Surface and Font objects are allowed.")
@@ -324,20 +330,20 @@ class lattice_along_surface(Operator):
         else:
             grid_obj = bpy.data.objects[self.grid_object]
             obj = bpy.data.objects[self.source_object]
-            obj_me = obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+            obj_me = simple_to_mesh(obj)# obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
             for o in bpy.context.selected_objects: o.select_set(False)
             grid_obj.select_set(True)
             bpy.context.view_layer.objects.active = grid_obj
 
-        grid_obj = grid_obj.copy()#bpy.ops.object.duplicate_move()
-        grid_obj.data = grid_obj.data.copy()
-        #grid_obj = bpy.context.object
-        bpy.ops.object.convert(target='MESH')
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        grid_mesh = grid_obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+        temp_grid_obj = grid_obj.copy()
+        temp_grid_obj.data = simple_to_mesh(grid_obj)
+        grid_mesh = temp_grid_obj.data
+        for v in grid_mesh.vertices:
+            v.co = grid_obj.matrix_world @ v.co
+        grid_mesh.calc_normals()
 
         if len(grid_mesh.polygons) > 64 * 64:
-            bpy.ops.object.delete(use_global=False)
+            bpy.data.objects.remove(temp_grid_obj)
             bpy.context.view_layer.objects.active = obj
             obj.select_set(True)
             self.report({'ERROR'}, "Maximum resolution allowed for Lattice is 64")
@@ -367,8 +373,7 @@ class lattice_along_surface(Operator):
         bb = max - min
         print(bb)
         lattice_loc = (max + min) / 2
-        bpy.ops.object.add(type='LATTICE', view_align=False,
-                           enter_editmode=False)
+        bpy.ops.object.add(type='LATTICE')
         lattice = bpy.context.active_object
         lattice.location = lattice_loc
         lattice.scale = Vector((bb.x / self.scale_x, bb.y / self.scale_y,
@@ -411,10 +416,10 @@ class lattice_along_surface(Operator):
                     for w in range(nw):
                         if self.use_groups:
                             try:
-                                displace = grid_obj.vertex_groups.active.weight(
+                                displace = temp_grid_obj.vertex_groups.active.weight(
                                                     verts_grid[i][j]) * scale_normal * bb.z
                             except:
-                                displace = scale_normal * bb.z
+                                displace = 0#scale_normal * bb.z
                         else:
                             displace = scale_normal * bb.z
                         target_point = (grid_mesh.vertices[verts_grid[i][j]].co +
@@ -436,7 +441,7 @@ class lattice_along_surface(Operator):
 
         except:
             bpy.ops.object.mode_set(mode='OBJECT')
-            grid_obj.select_set(True)
+            temp_grid_obj.select_set(True)
             lattice.select_set(True)
             obj.select_set(False)
             bpy.ops.object.delete(use_global=False)
@@ -478,5 +483,7 @@ class lattice_along_surface(Operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
             except:
                 pass
+        bpy.data.meshes.remove(grid_mesh)
+        bpy.data.meshes.remove(obj_me)
 
         return {'FINISHED'}

@@ -120,4 +120,5 @@ def simple_to_mesh(ob):
     dg = bpy.context.evaluated_depsgraph_get()
     ob_eval = ob.evaluated_get(dg)
     me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
+    me.calc_normals()
     return me
