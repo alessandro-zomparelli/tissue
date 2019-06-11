@@ -106,7 +106,7 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         else:
             new_ob = ob.copy()
             new_ob.data = ob.data.copy()
-            #new_ob.modifiers.clear()
+            new_ob.modifiers.clear()
     bpy.context.collection.objects.link(new_ob)
     if preserve_status:
         new_ob.select_set(False)
