@@ -257,7 +257,8 @@ class lattice_along_surface(Operator):
 
     @classmethod
     def poll(cls, context):
-        return bpy.context.object.mode == 'OBJECT'
+        try: return bpy.context.object.mode == 'OBJECT'
+        except: return False
 
     def draw(self, context):
         layout = self.layout

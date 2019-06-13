@@ -180,7 +180,13 @@ def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0
     except:
         return "There is something wrong"
     print("Weight Formula: " + str(timeit.default_timer() - start_time))
-
+'''
+class open_link_math(bpy.types.Operator):
+    bl_idname = "object.weight_formula"
+    bl_label = "Weight Formula"
+    bl_options = {'REGISTER', 'UNDO'}
+    bpy.ops.wm.url_open(url="")
+'''
 class weight_formula(bpy.types.Operator):
     bl_idname = "object.weight_formula"
     bl_label = "Weight Formula"
@@ -277,18 +283,18 @@ class weight_formula(bpy.types.Operator):
         if "i4" in formula: layout.prop(self, "slider_i04")
         if "i5" in formula: layout.prop(self, "slider_i05")
 
-        layout.separator()
-        layout.label(text="Variables (for each vertex):")#, icon='INFO')
-        layout.label(text="lx, ly, lz: Local Coordinates", icon='OBJECT_DATA')#'MANIPUL')
+        layout.label(text="Variables (for each vertex):")
+        layout.label(text="lx, ly, lz: Local Coordinates", icon='ORIENTATION_LOCAL')
         layout.label(text="gx, gy, gz: Global Coordinates", icon='WORLD')
-        layout.label(text="rx, ry, rz: Local Coordinates (0 to 1)")#, icon='BBOX')
+        layout.label(text="rx, ry, rz: Local Coordinates (0 to 1)", icon='NORMALIZE_FCURVES')
         layout.label(text="nx, ny, nz: Normal Coordinates", icon='SNAP_NORMAL')
         layout.label(text="w[0], w[1], w[2], ... : Vertex Groups", icon="GROUP_VERTEX")
-        layout.label(text="f1, f2, f3, f4, f5: Float Sliders")#, icon="UI")
-        layout.label(text="i1, i2, i3, i4, i5: Integer Sliders")#, icon="UI")
+        layout.separator()
+        layout.label(text="f1, f2, f3, f4, f5: Float Sliders", icon='PROPERTIES')
+        layout.label(text="i1, i2, i3, i4, i5: Integer Sliders", icon='PROPERTIES')
         layout.separator()
         layout.label(text="All mathematical functions are based on Numpy", icon='INFO')
-        #layout.label(text="https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html", icon='INFO')
+        layout.label(text="https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html", icon='INFO')
         #layout.label(text="w[i]: Existing Vertex Groups", icon="GROUP_VERTEX")
         #layout.label(text="(where 'i' is the index of the Vertex Group)")
 
@@ -2091,7 +2097,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         #    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
         col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
         col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
-        col.operator("object.weight_formula", icon="OUTLINER_DATA_FONT")
+        col.operator("object.weight_formula", icon="CON_TRANSFORM")
         #col.label(text="Weight Processing:")
         col.separator()
 

@@ -83,7 +83,6 @@ def anim_tessellate(scene):
         if old_mode == 'PAINT_WEIGHT': old_mode = 'WEIGHT_PAINT'
         for ob in scene.objects:
             if ob.tissue_tessellate.bool_run:
-                print(ob.name)
                 hidden = ob.hide_viewport
                 ob.hide_viewport = False
                 for o in scene.objects:
@@ -413,10 +412,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                bounds_x, bounds_y):
     random.seed(rand_seed)
 
-    ob0 = convert_object_to_mesh(_ob0)#, True, True)
-    for m in _ob0.modifiers:
-        print(m.show_viewport)
-    print("___" + str(len(ob0.data.polygons)))
+    ob0 = convert_object_to_mesh(_ob0)
     me0 = _ob0.data
 
     # Check if zero faces are selected
@@ -431,10 +427,6 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                     break
         if bool_cancel:
             return 0
-
-    #if ob0.type == 'MESH' and False:
-#        ob0.data = me0.copy()
-#        me0 = ob0.data
 
     levels = 0
     sculpt_levels = 0
@@ -477,9 +469,6 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             break
         else: before.modifiers.remove(m)
 
-    #dg = bpy.context.evaluated_depsgraph_get()
-    #ob_eval = before.evaluated_get(dg)
-    #before_subsurf = bpy.data.meshes.new_from_object(before, preserve_all_data_layers=True, depsgraph=dg)
     before_subsurf = simple_to_mesh(before)
 
     before_bm = bmesh.new()
@@ -497,7 +486,6 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
         if len(v.link_faces) == 0:
             return "verts_error"
 
-    #ob0 = convert_object_to_mesh(_ob0, True, True)
     me0 = ob0.data
     verts0 = me0.vertices   # Collect generator vertices
 
@@ -593,10 +581,6 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 bpy.ops.mesh.split()
                 bpy.ops.object.mode_set(mode='OBJECT')
             bpy.ops.object.mode_set(mode='OBJECT')
-        #ob1 = new_ob1
-        #me1 = new_ob1.data
-
-
 
     # Component statistics
     n_verts = len(me1.vertices)
@@ -701,8 +685,6 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     verts1 = [v.co for v in me1.vertices]
 
     patch_faces = 4**levels
-    print(patch_faces)
-    print(len(me0.polygons))
     sides = int(sqrt(patch_faces))
     sides0 = sides-2
     patch_faces0 = int((sides-2)**2)
@@ -715,9 +697,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     new_edges = []
     new_faces = []
 
-    #bpy.ops.object.mode_set(mode='OBJECT')
     for o in bpy.context.view_layer.objects: o.select_set(False)
-    #bpy.ops.object.select_all(action='DESELECT')
     new_patch = None
 
     # All vertex group
@@ -767,8 +747,14 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
         bool_correct = True
         new_patch = bpy.data.objects.new("patch", me1.copy())
         bpy.context.collection.objects.link(new_patch)
+
         new_patch.select_set(True)
         bpy.context.view_layer.objects.active = new_patch
+
+        for area in bpy.context.screen.areas:
+            for space in area.spaces:
+                try: new_patch.local_view_set(space, True)
+                except: pass
 
         # Vertex Group
         if bool_vertex_group:
@@ -1287,10 +1273,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                         _weight.append(vg.weight(v.index))
                         #print(vg.weight(v.index))
                         #_weight.append(v.groups[0])
-                        print(vg.weight(v.index))
                     except:
                         _weight.append(0)
-                        print("#")
                 weight.append(_weight)
         except:
             bool_vertex_group = False
@@ -2244,17 +2228,15 @@ class tessellate(Operator):
 
         self.object_name = "Tessellation"
         # Check if existing object with same name
-        try:
-            names = [o.name for o in bpy.data.objects]
-            if self.object_name in names:
-                count_name = 1
-                while True:
-                    test_name = self.object_name + '.{:03d}'.format(count_name)
-                    if not test_name in names:
-                        self.object_name = test_name
-                        break
-                    count_name += 1
-        except: pass
+        names = [o.name for o in bpy.data.objects]
+        if self.object_name in names:
+            count_name = 1
+            while True:
+                test_name = self.object_name + '.{:03d}'.format(count_name)
+                if not (test_name in names):
+                    self.object_name = test_name
+                    break
+                count_name += 1
 
         if ob1.type not in allowed_obj:
             message = "Component must be Mesh, Curve, Surface, Text or Meta object!"
@@ -2281,7 +2263,7 @@ class tessellate(Operator):
                 new_ob.data.name = self.object_name
                 #bpy.context.collection.objects.link(new_ob)
                 #bpy.context.view_layer.objects.active = new_ob
-                #new_ob.name = self.object_name
+                new_ob.name = self.object_name
                 #new_ob.select_set(True)
             else:
                 new_ob = bpy.context.object
@@ -2373,6 +2355,23 @@ class update_tessellate(Operator):
                         "Active object must be Tessellate before Update")
             return {'CANCELLED'}
 
+        # Solve Local View issues
+        local_spaces = []
+        local_ob0 = []
+        local_ob1 = []
+        for area in bpy.context.screen.areas:
+            for space in area.spaces:
+                print(space)
+                try:
+                    if ob.local_view_get(space):
+                        local_spaces.append(space)
+                        local_ob0 = ob0.local_view_get(space)
+                        ob0.local_view_set(space, True)
+                        local_ob1 = ob1.local_view_get(space)
+                        ob1.local_view_set(space, True)
+                except:
+                    pass
+
         starting_mode = bpy.context.object.mode
         #if starting_mode == 'PAINT_WEIGHT': starting_mode = 'WEIGHT_PAINT'
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -2380,6 +2379,19 @@ class update_tessellate(Operator):
         ob0 = generator
         ob1 = component
         auto_layer_collection()
+
+        ob0_hide = ob0.hide_get()
+        ob0_hidev = ob0.hide_viewport
+        ob0_hider = ob0.hide_render
+        ob1_hide = ob1.hide_get()
+        ob1_hidev = ob1.hide_viewport
+        ob1_hider = ob1.hide_render
+        ob0.hide_set(False)
+        ob0.hide_viewport = False
+        ob0.hide_render = False
+        ob1.hide_set(False)
+        ob1.hide_viewport = False
+        ob1.hide_render = False
 
         if ob0.type == 'META':
             base_ob = convert_object_to_mesh(ob0, False, True)
@@ -2642,7 +2654,7 @@ class update_tessellate(Operator):
         #for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
 
         end_time = time.time()
-        print("Tessellation time: {:.4f} sec".format(end_time-start_time))
+        print('Tissue: object "{}" tessellated in {:.4f} sec'.format(ob.name, end_time-start_time))
 
         for mesh in bpy.data.meshes:
             if not mesh.users: bpy.data.meshes.remove(mesh)
@@ -2659,6 +2671,22 @@ class update_tessellate(Operator):
                 bpy.data.objects.remove(o)
 
         ob.tissue_tessellate.error_message = ""
+
+        # Restore Base visibility
+        ob0.hide_set(ob0_hide)
+        ob0.hide_viewport = ob0_hidev
+        ob0.hide_render = ob0_hider
+        # Restore Component visibility
+        ob1.hide_set(ob1_hide)
+        ob1.hide_viewport = ob1_hidev
+        ob1.hide_render = ob1_hider
+        # Restore Local visibility
+        for space, local0, local1 in zip(local_spaces, local_ob0, local_ob1):
+            ob0.local_view_set(space, local0)
+            ob1.local_view_set(space, local1)
+        print(local_ob0)
+        print(local_ob1)
+
         return {'FINISHED'}
 
     def check(self, context):

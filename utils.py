@@ -87,22 +87,8 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
             for m,vis in zip(ob.modifiers,mod_visibility): m.show_viewport = vis
     else:
         if apply_modifiers:
-            for m in ob.modifiers:
-                print(m)
-                print(m.show_viewport)
-                print(m.levels)
             new_ob = ob.copy()
-            for m in new_ob.modifiers:
-                print(m)
-                print(m.show_viewport)
-                print(m.levels)
-            new_ob.data = simple_to_mesh(ob) #bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-            #new_ob = ob.copy()
-            #dg = bpy.context.evaluated_depsgraph_get()
-            #ob_eval = ob.evaluated_get(dg)
-            #new_ob.data = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-            #new_ob.modifiers.clear()
-            print(len(new_ob.data.polygons))
+            new_ob.data = simple_to_mesh(ob)
         else:
             new_ob = ob.copy()
             new_ob.data = ob.data.copy()
