@@ -40,6 +40,8 @@ from math import *#pi, sin
 from statistics import mean, stdev
 from mathutils import Vector
 from numpy import *
+try: from .numba_functions import numba_reaction_diffusion
+except: pass
 
 from bpy.types import (
         Operator,
@@ -2100,7 +2102,8 @@ class TISSUE_PT_weight(bpy.types.Panel):
         #    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
         col.operator("object.face_area_to_vertex_groups", icon="FACESEL")
         col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
-        col.operator("object.weight_formula", icon="CON_TRANSFORM")
+        try: col.operator("object.weight_formula", icon="CON_TRANSFORM")
+        except: col.operator("object.weight_formula")#, icon="CON_TRANSFORM")
         #col.label(text="Weight Processing:")
         col.separator()
 
@@ -2423,25 +2426,30 @@ def reaction_diffusion_def(scene):
             id0 = edge_verts[arr]     # first vertex indices for each edge
             id1 = edge_verts[arr+1]   # second vertex indices for each edge
 
-            for i in range(time_steps):
-                lap_a = np.zeros(n_verts)
-                lap_b = np.zeros(n_verts)
-                lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
-                lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
-
-                for i, j, la0, lb0 in np.nditer([id0,id1,lap_a0,lap_b0]):
-                    lap_a[i] += la0
-                    lap_b[i] += lb0
-                    lap_a[j] -= la0
-                    lap_b[j] -= lb0
-                ab2 = a*b**2
-                a += eval("(diff_a*lap_a - ab2 + f*(1-a))*dt")
-                b += eval("(diff_b*lap_b + ab2 - (k+f)*b)*dt")
-                #a += (diff_a*lap_a - ab2 + f*(1-a))*dt
-                #b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
-
+            try:
+                a, b = numba_reaction_diffusion(n_verts, a, b, diff_a, diff_b, f, k, dt, id0, id1, time_steps)
                 a = nan_to_num(a)
                 b = nan_to_num(b)
+            except:
+                for i in range(time_steps):
+                    lap_a = np.zeros(n_verts)
+                    lap_b = np.zeros(n_verts)
+                    lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
+                    lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
+
+                    for i, j, la0, lb0 in np.nditer([id0,id1,lap_a0,lap_b0]):
+                        lap_a[i] += la0
+                        lap_b[i] += lb0
+                        lap_a[j] -= la0
+                        lap_b[j] -= lb0
+                    ab2 = a*b**2
+                    a += eval("(diff_a*lap_a - ab2 + f*(1-a))*dt")
+                    b += eval("(diff_b*lap_b + ab2 - (k+f)*b)*dt")
+                    #a += (diff_a*lap_a - ab2 + f*(1-a))*dt
+                    #b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
+
+                    a = nan_to_num(a)
+                    b = nan_to_num(b)
 
             for i in range(n_verts):
                 ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
