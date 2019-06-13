@@ -2717,7 +2717,7 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.update_tessellate", icon='FILE_REFRESH')
 
         #col = layout.column(align=True)
-        col.operator("mesh.rotate_face", icon='FACESEL')
+        col.operator("mesh.rotate_face", icon='NDOF_TURN')
 
         col.separator()
         col.label(text="Other:")
@@ -2726,7 +2726,7 @@ class TISSUE_PT_tessellate(Panel):
 
         act = context.active_object
         if act and act.type == 'MESH':
-            col.operator("object.uv_to_mesh", icon="GROUP_UVS")
+            col.operator("object.uv_to_mesh", icon="UV")
 
 
 class TISSUE_PT_tessellate_object(Panel):

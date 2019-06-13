@@ -180,13 +180,16 @@ def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0
     except:
         return "There is something wrong"
     print("Weight Formula: " + str(timeit.default_timer() - start_time))
-'''
-class open_link_math(bpy.types.Operator):
-    bl_idname = "object.weight_formula"
-    bl_label = "Weight Formula"
+
+class weight_formula_wiki(bpy.types.Operator):
+    bl_idname = "scene.weight_formula_wiki"
+    bl_label = "Online Documentation"
     bl_options = {'REGISTER', 'UNDO'}
-    bpy.ops.wm.url_open(url="")
-'''
+
+    def execute(self, context):
+        bpy.ops.wm.url_open(url="https://github.com/alessandro-zomparelli/tissue/wiki/Weight-Tools#weight-formula")
+        return {'FINISHED'}
+
 class weight_formula(bpy.types.Operator):
     bl_idname = "object.weight_formula"
     bl_label = "Weight Formula"
@@ -290,12 +293,12 @@ class weight_formula(bpy.types.Operator):
         layout.label(text="nx, ny, nz: Normal Coordinates", icon='SNAP_NORMAL')
         layout.label(text="w[0], w[1], w[2], ... : Vertex Groups", icon="GROUP_VERTEX")
         layout.separator()
-        layout.label(text="f1, f2, f3, f4, f5: Float Sliders", icon='PROPERTIES')
-        layout.label(text="i1, i2, i3, i4, i5: Integer Sliders", icon='PROPERTIES')
+        layout.label(text="f1, f2, f3, f4, f5: Float Sliders", icon='MOD_HUE_SATURATION')#PROPERTIES
+        layout.label(text="i1, i2, i3, i4, i5: Integer Sliders", icon='MOD_HUE_SATURATION')
         layout.separator()
-        layout.label(text="All mathematical functions are based on Numpy", icon='INFO')
-        layout.label(text="https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html", icon='INFO')
-        #layout.label(text="w[i]: Existing Vertex Groups", icon="GROUP_VERTEX")
+        #layout.label(text="All mathematical functions are based on Numpy", icon='INFO')
+        #layout.label(text="https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.math.html", icon='INFO')
+        layout.operator("scene.weight_formula_wiki", icon="HELP")
         #layout.label(text="(where 'i' is the index of the Vertex Group)")
 
     def execute(self, context):
@@ -2095,7 +2098,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         col.label(text="Weight Generate:")
         #col.operator(
         #    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
-        col.operator("object.face_area_to_vertex_groups", icon="SNAP_FACE")
+        col.operator("object.face_area_to_vertex_groups", icon="FACESEL")
         col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
         col.operator("object.weight_formula", icon="CON_TRANSFORM")
         #col.label(text="Weight Processing:")
@@ -2109,8 +2112,8 @@ class TISSUE_PT_weight(bpy.types.Panel):
             text="Convert to Colors")
         col.separator()
         col.label(text="Deformation Analysis:")
-        col.operator("object.edges_deformation", icon="FULLSCREEN_ENTER")
-        col.operator("object.edges_bending", icon="MOD_SIMPLEDEFORM")
+        col.operator("object.edges_deformation", icon="DRIVER_DISTANCE")#FULLSCREEN_ENTER")
+        col.operator("object.edges_bending", icon="DRIVER_ROTATIONAL_DIFFERENCE")#"MOD_SIMPLEDEFORM")
         col.separator()
         col.label(text="Weight Contour:")
         col.operator("object.weight_contour_curves", icon="MOD_CURVE")
@@ -2120,7 +2123,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         col.label(text="Simulations:")
         #col.operator("object.reaction_diffusion", icon="MOD_OCEAN")
         col.operator("object.start_reaction_diffusion",
-                    icon="MOD_OCEAN",
+                    icon="EXPERIMENTAL",
                     text="Reaction-Diffusion")
 
         #col.prop(context.object, "reaction_diffusion_run", icon="PLAY", text="Run Simulation")
@@ -2391,27 +2394,19 @@ def reaction_diffusion_def_(scene):
 def reaction_diffusion_def(scene):
     for ob in scene.objects:
         if ob.reaction_diffusion_settings.run:
-            #try:
             me = ob.data
-            bm = bmesh.new()
-            bm.from_mesh(me)
-            bm.edges.ensure_lookup_table()
+            n_edges = len(me.edges)
+            n_verts = len(me.vertices)
 
             # store weight values
-            a = []
-            b = []
-            for v in me.vertices:
-                try:
-                    a.append(ob.vertex_groups["A"].weight(v.index))
-                except:
-                    a.append(0)
-                try:
-                    b.append(ob.vertex_groups["B"].weight(v.index))
-                except:
-                    b.append(0)
+            a = np.zeros(n_verts)
+            b = np.zeros(n_verts)
+            for i in range(n_verts):
+                try: a[i] = ob.vertex_groups["A"].weight(i)
+                except: pass
+                try: b[i] = ob.vertex_groups["B"].weight(i)
+                except: pass
 
-            a = array(a)
-            b = array(b)
             props = ob.reaction_diffusion_settings
             dt = props.dt
             time_steps = props.time_steps
@@ -2420,21 +2415,30 @@ def reaction_diffusion_def(scene):
             diff_a = props.diff_a * props.diff_mult
             diff_b = props.diff_b * props.diff_mult
 
-            n_verts = len(bm.verts)
-            for i in range(time_steps):
-                lap_a = zeros((n_verts))
-                lap_b = zeros((n_verts))
-                for e in bm.edges:
-                    id0 = e.verts[0].index
-                    id1 = e.verts[1].index
-                    lap_a[id0] += a[id1] - a[id0]
-                    lap_a[id1] += a[id0] - a[id1]
-                    lap_b[id0] += b[id1] - b[id0]
-                    lap_b[id1] += b[id0] - b[id1]
-                ab2 = a*b**2
+            edge_verts = [0]*n_edges*2
+            me.edges.foreach_get("vertices", edge_verts)
 
-                a += (diff_a*lap_a - ab2 + f*(1-a))*dt
-                b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
+            edge_verts = np.array(edge_verts)
+            arr = np.arange(n_edges)*2
+            id0 = edge_verts[arr]     # first vertex indices for each edge
+            id1 = edge_verts[arr+1]   # second vertex indices for each edge
+
+            for i in range(time_steps):
+                lap_a = np.zeros(n_verts)
+                lap_b = np.zeros(n_verts)
+                lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
+                lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
+
+                for i, j, la0, lb0 in np.nditer([id0,id1,lap_a0,lap_b0]):
+                    lap_a[i] += la0
+                    lap_b[i] += lb0
+                    lap_a[j] -= la0
+                    lap_b[j] -= lb0
+                ab2 = a*b**2
+                a += eval("(diff_a*lap_a - ab2 + f*(1-a))*dt")
+                b += eval("(diff_b*lap_b + ab2 - (k+f)*b)*dt")
+                #a += (diff_a*lap_a - ab2 + f*(1-a))*dt
+                #b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
 
                 a = nan_to_num(a)
                 b = nan_to_num(b)
@@ -2469,11 +2473,11 @@ class TISSUE_PT_reaction_diffusion(Panel):
         row = col.row(align=True)
         if not ("A" and "B" in ob.vertex_groups):
             row.operator("object.start_reaction_diffusion",
-                        icon="MOD_OCEAN",
+                        icon="EXPERIMENTAL",
                         text="Reaction-Diffusion")
         else:
             row.operator("object.start_reaction_diffusion",
-                        icon="MOD_OCEAN",
+                        icon="EXPERIMENTAL",
                         text="Reset Reaction-Diffusion")
             row = col.row(align=True)
             row.prop(props, "run", text="Run Reaction-Diffusion")
