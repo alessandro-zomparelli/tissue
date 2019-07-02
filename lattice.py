@@ -27,18 +27,6 @@
 #                                                                              #
 # ############################################################################ #
 
-bl_info = {
-    "name": "Lattice",
-    "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3),
-    "blender": (2, 7, 8),
-    "location": "",
-    "description": "Generate a Lattice based on a grid mesh",
-    "warning": "",
-    "wiki_url": "",
-    "category": "Mesh"}
-
-
 import bpy
 import bmesh
 from bpy.types import Operator

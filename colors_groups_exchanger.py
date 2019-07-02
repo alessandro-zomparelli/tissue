@@ -61,19 +61,6 @@ from bpy.props import (
 
 from .utils import *
 
-bl_info = {
-    "name": "Colors/Groups Exchanger",
-    "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 4),
-    "blender": (2, 8, 0),
-    "location": "",
-    "description": ("Convert vertex colors channels to vertex groups and vertex"
-                    " groups to colors"),
-    "warning": "",
-    "wiki_url": "",
-    "tracker_url": "",
-    "category": "Mesh"}
-
 def reaction_diffusion_add_handler(self, context):
     # remove existing handlers
     old_handlers = []

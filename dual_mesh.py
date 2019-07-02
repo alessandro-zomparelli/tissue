@@ -29,16 +29,6 @@
 #                                                                              #
 # ############################################################################ #
 
-bl_info = {
-    "name": "Dual Mesh",
-    "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 4),
-    "blender": (2, 8, 0),
-    "location": "",
-    "description": "Convert a generic mesh to its dual",
-    "warning": "",
-    "wiki_url": "",
-    "category": "Mesh"}
 
 import bpy
 from bpy.types import Operator
