@@ -372,7 +372,6 @@ class lattice_along_surface(Operator):
             first = False
 
         bb = max - min
-        print(bb)
         lattice_loc = (max + min) / 2
         bpy.ops.object.add(type='LATTICE')
         lattice = bpy.context.active_object

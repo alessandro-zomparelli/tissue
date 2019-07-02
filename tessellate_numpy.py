@@ -1271,8 +1271,6 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                 for v in me0.vertices:
                     try:
                         _weight.append(vg.weight(v.index))
-                        #print(vg.weight(v.index))
-                        #_weight.append(v.groups[0])
                     except:
                         _weight.append(0)
                 weight.append(_weight)
@@ -2361,7 +2359,6 @@ class update_tessellate(Operator):
         local_ob1 = []
         for area in bpy.context.screen.areas:
             for space in area.spaces:
-                print(space)
                 try:
                     if ob.local_view_get(space):
                         local_spaces.append(space)
@@ -2684,8 +2681,6 @@ class update_tessellate(Operator):
         for space, local0, local1 in zip(local_spaces, local_ob0, local_ob1):
             ob0.local_view_set(space, local0)
             ob1.local_view_set(space, local1)
-        print(local_ob0)
-        print(local_ob1)
 
         return {'FINISHED'}
 

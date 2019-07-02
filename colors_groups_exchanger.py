@@ -334,8 +334,6 @@ class weight_formula(bpy.types.Operator):
             self.report({'ERROR'}, weight)
             return {'CANCELLED'}
 
-        #print("time: " + str(timeit.default_timer() - start_time))
-
         #start_time = timeit.default_timer()
         weight = nan_to_num(weight)
         if type(weight) == int or type(weight) == float:
@@ -414,7 +412,6 @@ class _weight_laplacian(bpy.types.Operator):
 
         group_id = ob.vertex_groups.active_index
         input_group = ob.vertex_groups[group_id].name
-        print(input_group)
 
         group_name = "Laplacian"
         ob.vertex_groups.new(name=group_name)
@@ -433,8 +430,6 @@ class _weight_laplacian(bpy.types.Operator):
 
         n_verts = len(bm.verts)
         lap = [0]*n_verts
-        #print(len(lap))
-        #print(len(weight))
         for e in bm.edges:
             if self.mode == 'LENGTH':
                 length = e.calc_length()
@@ -597,8 +592,6 @@ class weight_laplacian(bpy.types.Operator):
 
             lap_a = zeros((n_verts))#[0]*n_verts
             lap_b = zeros((n_verts))#[0]*n_verts
-            #print(len(lap))
-            #print(len(weight))
             for e in bm.edges:
                 id0 = e.verts[0].index
                 id1 = e.verts[1].index
@@ -698,8 +691,6 @@ class reaction_diffusion(bpy.types.Operator):
 
             lap_a = zeros((n_verts))#[0]*n_verts
             lap_b = zeros((n_verts))#[0]*n_verts
-            #print(len(lap))
-            #print(len(weight))
             for e in bm.edges:
                 id0 = e.verts[0].index
                 id1 = e.verts[1].index
@@ -949,7 +940,6 @@ class edges_bending(bpy.types.Operator):
             for e in v.link_edges:
                 vdef.append(deformations[e.index])
             v_deformations.append(mean(vdef))
-        print(v_deformations)
         if self.bounds == 'MANUAL':
             min_def = radians(self.min_def)
             max_def = radians(self.max_def)
@@ -1099,7 +1089,6 @@ class weight_contour_displace(bpy.types.Operator):
                     if w_min < iso_val and w_max > iso_val:
                         faces_mask.append(f)
                         break
-            #print("selected faces:" + str(len(faces_mask)))
 
             #link_faces = [[f for f in e.link_faces] for e in bm.edges]
 
@@ -1139,7 +1128,6 @@ class weight_contour_displace(bpy.types.Operator):
                     count += 1
                     _filtered_edges.append(e)
             filtered_edges = _filtered_edges
-            #print("creating faces")
             splitted_faces = []
 
             switch = False
@@ -1182,7 +1170,6 @@ class weight_contour_displace(bpy.types.Operator):
                 splitted_faces.append(build_faces[switch])
                 #del_faces.append(f.index)
 
-            #print("generate new bmesh")
             # adding new vertices
             for v in verts: new_vert = bm.verts.new(v)
             bm.verts.index_update()
@@ -1199,7 +1186,6 @@ class weight_contour_displace(bpy.types.Operator):
                 except:
                     missed_faces.append(f)
 
-            #print("missed " + str(len(missed_faces)) + " faces")
             bm.faces.ensure_lookup_table()
             # updating weight values
             weight = weight + [iso_val]*len(verts)
@@ -1213,7 +1199,6 @@ class weight_contour_displace(bpy.types.Operator):
                 if e not in delete_edges: _filtered_edges.append(e)
             filtered_edges = _filtered_edges
 
-        #print("creating curve")
         name = ob0.name + '_ContourDisp'
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
@@ -1231,7 +1216,6 @@ class weight_contour_displace(bpy.types.Operator):
             ob.vertex_groups.new(name=g.name)
         #ob.vertex_groups.new(name=vertex_group_name)
 
-        #print("doing weight")
         all_weight = weight + [iso_val]*len(verts)
         #mult = 1/(1-iso_val)
         for id in range(len(all_weight)):
@@ -1255,10 +1239,6 @@ class weight_contour_displace(bpy.types.Operator):
                 if self.bool_flip: w1 = 1-w
                 else: w1 = w
             ob.vertex_groups[vertex_group_name].add([id], w1, 'REPLACE')
-        #print("weight done")
-        #for id in range(len(weight), len(ob.data.vertices)):
-        #    ob.vertex_groups[vertex_group_name].add([id], iso_val*0, 'ADD')
-
 
         ob.vertex_groups.active_index = group_id
 
@@ -1356,9 +1336,6 @@ class weight_contour_mask(bpy.types.Operator):
                 if w_min < iso_val and w_max > iso_val:
                     faces_mask.append(f)
                     break
-        #print("selected faces:" + str(len(faces_mask)))
-
-        #link_faces = [[f for f in e.link_faces] for e in bm.edges]
 
         filtered_edges = bm.edges# me0.edges
         faces_todo = [f.select for f in bm.faces]
@@ -1390,7 +1367,6 @@ class weight_contour_mask(bpy.types.Operator):
                 edges_id[str(id1)+"_"+str(id0)] = count
                 count += 1
 
-        #print("creating faces")
         splitted_faces = []
 
         switch = False
@@ -1432,7 +1408,6 @@ class weight_contour_mask(bpy.types.Operator):
             # add last face
             splitted_faces.append(build_faces[switch])
 
-        #print("generate new bmesh")
         # adding new vertices
         for v in verts: bm.verts.new(v)
         bm.verts.ensure_lookup_table()
@@ -1451,7 +1426,6 @@ class weight_contour_mask(bpy.types.Operator):
                 bm.faces.new(face_verts)
             except:
                 missed_faces.append(f)
-        #print("missed " + str(len(missed_faces)) + " faces")
 
         # Mask geometry
         if(True):
@@ -1462,7 +1436,6 @@ class weight_contour_mask(bpy.types.Operator):
                 else: weight.append(w)
 
         # Create mesh and object
-        #print("creating curve")
         name = ob0.name + '_ContourMask_{:.3f}'.format(iso_val)
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
@@ -1593,7 +1566,6 @@ class weight_contour_curves(bpy.types.Operator):
                 if iso_val < 0: iso_val = (min_iso + max_iso)/2
             except:
                 iso_val = (min_iso + max_iso)/2
-            #print(iso_val)
             faces_mask = []
             for f in bm.faces:
                 w_min = 2
@@ -1667,7 +1639,6 @@ class weight_contour_curves(bpy.types.Operator):
                 iso_rad = (self.min_rad + self.max_rad)/2
             radius = radius + [iso_rad]*len(verts)
 
-        #print("generate new bmesh")
         bm = bmesh.new()
         # adding new vertices
         for v in total_verts: bm.verts.new(v)
@@ -1681,7 +1652,6 @@ class weight_contour_curves(bpy.types.Operator):
             except: pass
 
         try:
-            #print("creating curve")
             name = ob0.name + '_ContourCurves'
             me = bpy.data.meshes.new(name)
             bm.to_mesh(me)
@@ -1989,7 +1959,6 @@ class face_area_to_vertex_groups(bpy.types.Operator):
 
         for i in range(len(areas)):
             areas[i] = mean(areas[i])
-        print(areas)
         if self.bounds == 'MANUAL':
             min_area = self.min_area
             max_area = self.max_area
@@ -2002,8 +1971,6 @@ class face_area_to_vertex_groups(bpy.types.Operator):
         elif self.bounds == 'TENSION':
             min_area = 1
             max_area = max(areas)
-        print(min_area)
-        print(max_area)
         delta_area = max_area - min_area
         if delta_area == 0:
             delta_area = 0.0001
@@ -2360,8 +2327,6 @@ def reaction_diffusion_def_(scene):
             for i in range(time_steps):
                 lap_a = zeros((n_verts))#[0]*n_verts
                 lap_b = zeros((n_verts))#[0]*n_verts
-                #print(len(lap))
-                #print(len(weight))
                 if i == 0:
                     lap_map = [[] for i in range(n_verts)]
                     lap_mult = []
@@ -2415,7 +2380,6 @@ def reaction_diffusion_def(scene):
             # store weight values
             a = np.zeros(n_verts)
             b = np.zeros(n_verts)
-            print(n_verts)
             #a = thread_read_weight(a, ob.vertex_groups["A"])
             #b = thread_read_weight(b, ob.vertex_groups["B"])
             #a = read_weight(a, ob.vertex_groups["A"])

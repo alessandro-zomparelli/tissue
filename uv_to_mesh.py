@@ -145,7 +145,6 @@ class uv_to_mesh(Operator):
         # VERTEX GROUPS
         if self.vertex_groups:
             for group in ob0.vertex_groups:
-                print(group)
                 index = group.index
                 ob.vertex_groups.new(name=group.name)
                 for p in me0.polygons:
