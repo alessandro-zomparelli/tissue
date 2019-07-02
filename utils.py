@@ -1,4 +1,64 @@
 import bpy
+import threading
+import numpy as np
+import multiprocessing
+from multiprocessing import Process, Pool
+
+weight = []
+n_threads = multiprocessing.cpu_count()
+
+class ThreadVertexGroup(threading.Thread):
+    def __init__ ( self, id, vertex_group, n_verts):
+        self.id = id
+        self.vertex_group = vertex_group
+        self.n_verts = n_verts
+        threading.Thread.__init__ ( self )
+
+    def run (self):
+        global weight
+        global n_threads
+        verts = np.arange(int(self.n_verts/8))*8 + self.id
+        for v in verts:
+            try:
+                weight[v] = self.vertex_group.weight(v)
+            except:
+                pass
+
+def thread_read_weight(_weight, vertex_group):
+    global weight
+    global n_threads
+    print(n_threads)
+    weight = _weight
+    n_verts = len(weight)
+    threads = [ThreadVertexGroup(i, vertex_group, n_verts) for i in range(n_threads)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    return weight
+
+def process_read_weight(id, vertex_group, n_verts):
+    global weight
+    global n_threads
+    verts = np.arange(int(self.n_verts/8))*8 + self.id
+    for v in verts:
+        try:
+            weight[v] = self.vertex_group.weight(v)
+        except:
+            pass
+
+
+def read_weight(_weight, vertex_group):
+    global weight
+    global n_threads
+    print(n_threads)
+    weight = _weight
+    n_verts = len(weight)
+    n_cores = multiprocessing.cpu_count()
+    pool = Pool(processes=n_cores)
+    multiple_results = [pool.apply_async(process_read_weight, (i, vertex_group, n_verts)) for i in range(n_cores)]
+    #processes = [Process(target=process_read_weight, args=(i, vertex_group, n_verts)) for i in range(n_threads)]
+    #for t in processes: t.start()
+    #for t in processes: t.join()
+    return weight
 
 #Recursivly transverse layer_collection for a particular name
 def recurLayerCollection(layerColl, collName):
@@ -108,3 +168,21 @@ def simple_to_mesh(ob):
     me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
     me.calc_normals()
     return me
+
+# Prevent Blender Crashes with handlers
+def set_animatable_fix_handler(self, context):
+    old_handlers = []
+    blender_handlers = bpy.app.handlers.render_init
+    for h in blender_handlers:
+        if "turn_off_animatable" in str(h):
+            old_handlers.append(h)
+    for h in old_handlers: blender_handlers.remove(h)
+    blender_handlers.append(turn_off_animatable)
+    return
+
+def turn_off_animatable(scene):
+    for o in bpy.data.objects:
+        o.tissue_tessellate.bool_run = False
+        o.reaction_diffusion_settings.run = False
+        #except: pass
+    return

@@ -19,7 +19,7 @@ Latest development version (b280-dev): https://github.com/alessandro-zomparelli/
 
 ### Installation:
 
-1. Start Blender. Open User Preferences, the addons tab 
+1. Start Blender. Open User Preferences, the addons tab
 2. Click "install from file" and point Blender at the downloaded zip
 3. Activate Tissue add-on from user preferences
 3. Save user preferences if you want to have it on at startup.
@@ -32,7 +32,3 @@ Tissue is free and open-source. I really think that this is the power of Blender
 If you like my work and you want to help to continue the development of Tissue, please consider to make a small donation. Any small contribution is really appreciated, thanks! :-D
 
 Alessandro
-
-
-[![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=ARSDJWXVFZ346)
-

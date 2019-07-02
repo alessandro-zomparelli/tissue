@@ -124,7 +124,7 @@ class tissue_tessellate_prop(PropertyGroup):
         )
     bool_run : BoolProperty(
         name="Animatable Tessellation",
-        description="Automatically recompute the tessellation when the frame is changed",
+        description="Automatically recompute the tessellation when the frame is changed. Currently is not working during  Render Animation",
         default = False,
         update = set_tessellate_handler
         )
@@ -2761,6 +2761,9 @@ class TISSUE_PT_tessellate_object(Panel):
                             icon='ERROR')
             col = layout.column(align=True)
             row = col.row(align=True)
+
+            set_tessellate_handler(self,context)
+            set_animatable_fix_handler(self,context)
             row.prop(props, "bool_run", text="Animatable")
             row.operator("object.update_tessellate", icon='FILE_REFRESH')
 

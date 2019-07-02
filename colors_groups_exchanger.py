@@ -35,7 +35,7 @@
 
 import bpy, bmesh
 import numpy as np
-import math, timeit
+import math, timeit, time
 from math import *#pi, sin
 from statistics import mean, stdev
 from mathutils import Vector
@@ -64,8 +64,8 @@ from .utils import *
 bl_info = {
     "name": "Colors/Groups Exchanger",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3),
-    "blender": (2, 7, 9),
+    "version": (0, 4),
+    "blender": (2, 8, 0),
     "location": "",
     "description": ("Convert vertex colors channels to vertex groups and vertex"
                     " groups to colors"),
@@ -91,7 +91,8 @@ class formula_prop(PropertyGroup):
     int_var : IntVectorProperty(name="", description="", default=(0, 0, 0, 0, 0), size=5)
 
 class reaction_diffusion_prop(PropertyGroup):
-    run : BoolProperty(default=False, update = reaction_diffusion_add_handler)
+    run : BoolProperty(default=False, update = reaction_diffusion_add_handler,
+        description='Compute a new iteration on frame changes. Currently is not working during  Render Animation')
 
     time_steps : bpy.props.IntProperty(
         name="Steps", default=10, min=0, soft_max=50,
@@ -660,6 +661,7 @@ class reaction_diffusion(bpy.types.Operator):
     def execute(self, context):
         #bpy.app.handlers.frame_change_post.remove(reaction_diffusion_def)
         reaction_diffusion_add_handler(self, context)
+        set_animatable_fix_handler(self, context)
         try: ob = context.object
         except:
             self.report({'ERROR'}, "Please select an Object")
@@ -2144,6 +2146,9 @@ class start_reaction_diffusion(bpy.types.Operator):
     bl_description = ("Run a Reaction-Diffusion based on existing Vertex Groups: A and B")
     bl_options = {'REGISTER', 'UNDO'}
 
+    run : bpy.props.BoolProperty(
+        name="Run Reaction-Diffusion", default=True, description="Compute a new iteration on frame changes")
+
     time_steps : bpy.props.IntProperty(
         name="Steps", default=10, min=0, soft_max=50,
         description="Number of Steps")
@@ -2174,16 +2179,18 @@ class start_reaction_diffusion(bpy.types.Operator):
 
     def execute(self, context):
         reaction_diffusion_add_handler(self, context)
+        set_animatable_fix_handler(self, context)
 
         ob = context.object
-        '''
+
+        ob.reaction_diffusion_settings.run = self.run
         ob.reaction_diffusion_settings.dt = self.dt
         ob.reaction_diffusion_settings.time_steps = self.time_steps
         ob.reaction_diffusion_settings.f = self.f
         ob.reaction_diffusion_settings.k = self.k
         ob.reaction_diffusion_settings.diff_a = self.diff_a
         ob.reaction_diffusion_settings.diff_b = self.diff_b
-        '''
+
 
         # check vertex group A
         try:
@@ -2218,6 +2225,7 @@ class reset_reaction_diffusion_weight(bpy.types.Operator):
 
     def execute(self, context):
         reaction_diffusion_add_handler(self, context)
+        set_animatable_fix_handler(self, context)
 
         ob = context.object
 
@@ -2397,6 +2405,9 @@ def reaction_diffusion_def_(scene):
 def reaction_diffusion_def(scene):
     for ob in scene.objects:
         if ob.reaction_diffusion_settings.run:
+
+            start = time.time()
+
             me = ob.data
             n_edges = len(me.edges)
             n_verts = len(me.vertices)
@@ -2404,6 +2415,12 @@ def reaction_diffusion_def(scene):
             # store weight values
             a = np.zeros(n_verts)
             b = np.zeros(n_verts)
+            print(n_verts)
+            #a = thread_read_weight(a, ob.vertex_groups["A"])
+            #b = thread_read_weight(b, ob.vertex_groups["B"])
+            #a = read_weight(a, ob.vertex_groups["A"])
+            #b = read_weight(b, ob.vertex_groups["B"])
+
             for i in range(n_verts):
                 try: a[i] = ob.vertex_groups["A"].weight(i)
                 except: pass
@@ -2421,16 +2438,20 @@ def reaction_diffusion_def(scene):
             edge_verts = [0]*n_edges*2
             me.edges.foreach_get("vertices", edge_verts)
 
-            edge_verts = np.array(edge_verts)
-            arr = np.arange(n_edges)*2
-            id0 = edge_verts[arr]     # first vertex indices for each edge
-            id1 = edge_verts[arr+1]   # second vertex indices for each edge
+            timeElapsed = time.time() - start
+            print('RD - Preparation Time:',timeElapsed)
+            start = time.time()
 
             try:
-                a, b = numba_reaction_diffusion(n_verts, a, b, diff_a, diff_b, f, k, dt, id0, id1, time_steps)
+                edge_verts = np.array(edge_verts)
+                a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps)
                 a = nan_to_num(a)
                 b = nan_to_num(b)
             except:
+                edge_verts = np.array(edge_verts)
+                arr = np.arange(n_edges)*2
+                id0 = edge_verts[arr]     # first vertex indices for each edge
+                id1 = edge_verts[arr+1]   # second vertex indices for each edge
                 for i in range(time_steps):
                     lap_a = np.zeros(n_verts)
                     lap_b = np.zeros(n_verts)
@@ -2451,6 +2472,10 @@ def reaction_diffusion_def(scene):
                     a = nan_to_num(a)
                     b = nan_to_num(b)
 
+            timeElapsed = time.time() - start
+            print('RD - Simulation Time:',timeElapsed)
+            start = time.time()
+
             for i in range(n_verts):
                 ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
                 ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
@@ -2459,6 +2484,9 @@ def reaction_diffusion_def(scene):
                 if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
+
+            timeElapsed = time.time() - start
+            print('RD - Closing Time:',timeElapsed)
 
 class TISSUE_PT_reaction_diffusion(Panel):
     bl_space_type = 'PROPERTIES'
