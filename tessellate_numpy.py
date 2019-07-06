@@ -2429,7 +2429,7 @@ class update_tessellate(Operator):
                         bool_material_id = True
                     except:
                         continue
-                if com_modifiers:
+                if com_modifiers or ob1.type!='MESH':
                     data1 = simple_to_mesh(ob1)
                 else: data1 = ob1.data.copy()
                 n_edges1 = len(data1.edges)
