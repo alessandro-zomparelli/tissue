@@ -1439,6 +1439,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                         vertUV = p.vertices[2:] + p.vertices[:2]
                 vs0 = np.array([verts0[i].co for i in vertUV])
                 nvs0 = np.array([verts0[i].normal for i in vertUV])
+                if scale_mode == 'ADAPTIVE':
+                    verts_area0 = np.array([verts_area[i] for i in vertUV])
 
                 # Vertex weight
                 if bool_vertex_group:
@@ -1482,7 +1484,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         # vertex z to normal
         if scale_mode == 'ADAPTIVE':
             poly_faces = (p.vertices[0], p.vertices[1], p.vertices[2], p.vertices[-1])
-            if rotation_mode == 'RANDOM': sz = verts_area0
+            if rotation_mode != 'DEFAULT': sz = verts_area0
             else: sz = np.array([verts_area[i] for i in poly_faces])
 
             _sz[j] = sz
