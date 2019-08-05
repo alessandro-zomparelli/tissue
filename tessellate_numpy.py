@@ -460,6 +460,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             return "modifiers_error"
 
     before = _ob0.copy()
+    bpy.context.collection.objects.link(before)
     #if ob0.type == 'MESH': before.data = me0
     before_mod = list(before.modifiers)
     before_mod.reverse()
@@ -474,17 +475,27 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     before_bm = bmesh.new()
     before_bm.from_mesh(before_subsurf)
     before_bm.faces.ensure_lookup_table()
+    before_bm.edges.ensure_lookup_table()
+    before_bm.verts.ensure_lookup_table()
+
+    error = ""
     for f in before_bm.faces:
         if len(f.loops) != 4:
-            return "topology_error"
-    before_bm.edges.ensure_lookup_table()
+            error = "topology_error"
+            break
     for e in before_bm.edges:
         if len(e.link_faces) == 0:
-            return "wires_error"
-    before_bm.verts.ensure_lookup_table()
+            error = "wires_error"
+            break
     for v in before_bm.verts:
         if len(v.link_faces) == 0:
-            return "verts_error"
+            error = "verts_error"
+            break
+    if error != "":
+        bpy.data.meshes.remove(ob0.data)
+        bpy.data.meshes.remove(me0)
+        bpy.data.meshes.remove(before_subsurf)
+        return error
 
     me0 = ob0.data
     verts0 = me0.vertices   # Collect generator vertices
@@ -2559,7 +2570,10 @@ class update_tessellate(Operator):
         errors["wires_error"] = "Please remove all wire edges in the base object."
         errors["verts_error"] = "Please remove all floating vertices in the base object"
         if new_ob in errors:
-            for o in iter_objects: bpy.data.objects.remove(o)
+            for o in iter_objects:
+                try: bpy.data.objects.remove(o)
+                except: pass
+            bpy.data.meshes.remove(data1)
             bpy.context.view_layer.objects.active = ob
             ob.select_set(True)
             message = errors[new_ob]

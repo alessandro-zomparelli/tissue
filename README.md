@@ -7,7 +7,7 @@ Tissue is already shipped with both Blender 2.79b and Blender 2.80. However both
 
 ### Blender 2.80
 
-Tissue v0.3.25 for Blender 2.80: https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-25
+Tissue v0.3.26 for Blender 2.80: https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-26
 
 Development branch (b280-dev): https://github.com/alessandro-zomparelli/tissue/tree/b280-dev
 
