@@ -2504,6 +2504,28 @@ class update_tessellate(Operator):
                 new_ob.select_set(True)
                 new_ob.data.update()
 
+            if merge:
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(
+                    use_extend=False, use_expand=False, type='VERT')
+                bpy.ops.mesh.select_non_manifold(
+                    extend=False, use_wire=False, use_boundary=True,
+                    use_multi_face=False, use_non_contiguous=False, use_verts=False)
+
+                bpy.ops.mesh.remove_doubles(
+                    threshold=merge_thres, use_unselected=False)
+
+                bpy.ops.object.mode_set(mode='OBJECT')
+                if bool_dissolve_seams:
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.select_mode(type='EDGE')
+                    bpy.ops.mesh.select_all(action='DESELECT')
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    for e in ob.data.edges:
+                        e.select = e.use_seam
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.dissolve_edges()
+
             #try:
             # combine object
             if (bool_selection or bool_material_id) and combine_mode == 'UNUSED':
