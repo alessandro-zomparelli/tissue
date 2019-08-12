@@ -1276,12 +1276,11 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     if bool_vertex_group:
         try:
             weight = []
-            vertex_groups = ob0.vertex_groups
-            for vg in vertex_groups:
+            for vg in ob0.vertex_groups:
                 _weight = []
-                for v in me0.vertices:
+                for i,v in enumerate(me0.vertices):
                     try:
-                        _weight.append(vg.weight(v.index))
+                        _weight.append(vg.weight(i))
                     except:
                         _weight.append(0)
                 weight.append(_weight)
@@ -1370,12 +1369,13 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     _vs0 = [0]*n_faces
     _nvs0 = [0]*n_faces
     _sz = [0]*n_faces
-    _w0 = [[0]*n_faces]*len(ob0.vertex_groups)
+    n_vg = len(ob0.vertex_groups)
+    _w0 = [[0]*n_faces for i in range(n_vg)]
     np_faces = [np.array(p) for p in fs1]
     new_faces = [0]*n_faces*n_faces1
     face1_count = 0
 
-    for p in base_polygons:
+    for j, p in enumerate(base_polygons):
 
         bool_correct = True
         if rotation_mode == 'UV' and ob0.type != 'MESH':
@@ -1475,11 +1475,11 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
             # Vertex weight
             if bool_vertex_group:
                 ws0 = []
-                for w in weight:
+                for vg in weight:
                     _ws0 = []
                     for i in p.vertices:
                         try:
-                            _ws0.append(w[i])
+                            _ws0.append(vg[i])
                         except:
                             _ws0.append(0)
                     ws0.append(np.array(_ws0))
@@ -1501,16 +1501,12 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
             _sz[j] = sz
 
         if bool_vertex_group:
-            vg_count = 0
-            for _ws0 in ws0:
-                _w0[vg_count][j] = (_ws0[0], _ws0[1], _ws0[2], _ws0[-1])
-                vg_count += 1
+            for i_vg, ws0_face in enumerate(ws0):
+                _w0[i_vg][j] = (ws0_face[0], ws0_face[1], ws0_face[2], ws0_face[-1])
 
         for p in fs1:
             new_faces[face1_count] = [i + n_verts1 * j for i in p]
             face1_count += 1
-
-        j += 1
 
     # build edges list
     n_edges1 = new_edges.shape[0]
@@ -1549,11 +1545,9 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     else:
         nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
 
+    # interpolate vertex groups
     if bool_vertex_group:
-        n_vg = len(_w0)
         w = np.array(_w0)
-        #for w in _w0:
-        #w = np.array(w)
         w_0 = w[:,:,0].reshape((n_vg, n_faces,1,1))
         w_1 = w[:,:,1].reshape((n_vg, n_faces,1,1))
         w_2 = w[:,:,2].reshape((n_vg, n_faces,1,1))
@@ -1563,7 +1557,6 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         w1 = w_3 + (w_2 - w_3) * vx
         w = w0 + (w1 - w0) * vy
         w = w.reshape((n_vg, n_faces*n_verts1))
-        #w = w2.tolist()
 
     if scale_mode == 'ADAPTIVE':
         _sz_0 = _sz[:,0].reshape((n_faces,1,1))
@@ -1584,9 +1577,9 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         n_sk = len(vx_key)
         sk_np = [0]*n_sk
         for i in range(n_sk):
-            vx = np.array(vx_key)
-            vy = np.array(vy_key)
-            vz = np.array(vz_key)
+            vx = np.array(vx_key[i])
+            vy = np.array(vy_key[i])
+            vz = np.array(vz_key[i])
 
             # remapped vertex coordinates
             v0 = _vs0_0 + (_vs0_1 - _vs0_0) * vx
@@ -1633,8 +1626,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     if bool_vertex_group:
         for vg in ob0.vertex_groups:
             new_ob.vertex_groups.new(name=vg.name)
-            for i in range(len(w[vg.index])):
-                new_ob.vertex_groups[vg.name].add([i], w[vg.index,i],"ADD")
+            for i, vertex_weight in enumerate(w[vg.index]):
+                new_ob.vertex_groups[vg.name].add([i], vertex_weight,"ADD")
 
     if bool_shapekeys:
         basis = com_modifiers
