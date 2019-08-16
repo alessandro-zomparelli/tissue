@@ -21,7 +21,8 @@ import threading
 import numpy as np
 import multiprocessing
 from multiprocessing import Process, Pool
-from .numba_functions import numba_lerp2
+try: from .numba_functions import numba_lerp2
+except: pass
 
 weight = []
 n_threads = multiprocessing.cpu_count()
