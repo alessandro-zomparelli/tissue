@@ -21,6 +21,7 @@ import threading
 import numpy as np
 import multiprocessing
 from multiprocessing import Process, Pool
+from .numba_functions import numba_lerp2
 
 weight = []
 n_threads = multiprocessing.cpu_count()
@@ -118,6 +119,15 @@ def lerp3(v1, v2, v3, v4, v):
     nor.normalize()
     return loc + nor * v.z
 
+def np_lerp2(v00, v10, v01, v11, vx, vy):
+    #try:
+    #    co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
+    #except:
+    co0 = v00 + (v10 - v00) * vx
+    co1 = v01 + (v11 - v01) * vx
+    co2 = co0 + (co1 - co0) * vy
+    return co2
+
 def _convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     if not apply_modifiers:
         mod_visibility = [m.show_viewport for m in ob.modifiers]
@@ -166,7 +176,9 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     else:
         if apply_modifiers:
             new_ob = ob.copy()
-            new_ob.data = simple_to_mesh(ob)
+            new_me = simple_to_mesh(ob)
+            new_ob.modifiers.clear()
+            new_ob.data = new_me
         else:
             new_ob = ob.copy()
             new_ob.data = ob.data.copy()
