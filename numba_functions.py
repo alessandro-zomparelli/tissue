@@ -19,7 +19,7 @@
 import numpy as np
 try:
     from numba import jit
-
+    print("Tissue: Numba module loaded succesfully")
     @jit
     def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps):
         arr = np.arange(n_edges)*2
@@ -42,5 +42,13 @@ try:
             a += (diff_a*lap_a - ab2 + f*(1-a))*dt
             b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
         return a, b
+
+    @jit
+    def numba_lerp2(v00, v10, v01, v11, vx, vy):
+        co0 = v00 + (v10 - v00) * vx
+        co1 = v01 + (v11 - v01) * vx
+        co2 = co0 + (co1 - co0) * vy
+        return co2
 except:
+    print("Tissue: Numba not installed")
     pass

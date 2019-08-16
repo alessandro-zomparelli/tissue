@@ -355,6 +355,15 @@ class tissue_tessellate_prop(PropertyGroup):
             name="Bounds Y",
             update = anim_tessellate_active
             )
+    close_mesh : EnumProperty(
+            items=(
+                ('NONE', 'None', 'Keep the mesh open'),
+                ('CAP', 'Cap Holes', 'Automatically cap open loops'),
+                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs')),
+            default='NONE',
+            name="Close Mesh",
+            update = anim_tessellate_active
+            )
     cap_faces : BoolProperty(
             name="Cap Holes",
             default=False,
@@ -367,6 +376,22 @@ class tissue_tessellate_prop(PropertyGroup):
             min=0,
             max=1,
             description="Automatically set crease for open edges",
+            update = anim_tessellate_active
+            )
+    bridge_smoothness : FloatProperty(
+            name="Smoothness",
+            default=1,
+            min=0,
+            max=1,
+            description="Bridge Smoothness",
+            update = anim_tessellate_active
+            )
+    bridge_cuts : IntProperty(
+            name="Cuts",
+            default=0,
+            min=0,
+            max=20,
+            description="Bridge Cuts",
             update = anim_tessellate_active
             )
 
@@ -403,6 +428,9 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bounds_x = operator.bounds_x
     ob.tissue_tessellate.bounds_y = operator.bounds_y
     ob.tissue_tessellate.cap_faces = operator.cap_faces
+    ob.tissue_tessellate.close_mesh = operator.close_mesh
+    ob.tissue_tessellate.bridge_cuts = operator.bridge_cuts
+    ob.tissue_tessellate.bridge_smoothness = operator.bridge_smoothness
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -413,6 +441,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     random.seed(rand_seed)
 
     ob0 = convert_object_to_mesh(_ob0)
+    ob0.name = _ob0.name + "_apply_mod"
     me0 = _ob0.data
 
     # Check if zero faces are selected
@@ -443,6 +472,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     modifiers0.reverse()
     for m in modifiers0:
         visible = m.show_viewport
+        if not visible: continue
         #m.show_viewport = False
         if m.type in ('SUBSURF', 'MULTIRES') and visible:
             levels = m.levels
@@ -455,11 +485,12 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             else: bool_multires = False
             break
         elif m.type in not_allowed:
-            #ob0.data = old_me0
-            #bpy.data.meshes.remove(me0)
+            bpy.data.meshes.remove(ob0.data)
+            bpy.data.meshes.remove(me0)
             return "modifiers_error"
 
     before = _ob0.copy()
+    before.name = _ob0.name + "_before_subs"
     bpy.context.collection.objects.link(before)
     #if ob0.type == 'MESH': before.data = me0
     before_mod = list(before.modifiers)
@@ -503,7 +534,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
 
     # set Shape Keys to zero
-    if bool_shapekeys:
+    if bool_shapekeys or not com_modifiers:
         try:
             original_key_values = []
             for sk in _ob1.data.shape_keys.key_blocks:
@@ -523,7 +554,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     me1 = ob1.data
 
     if mode != 'BOUNDS':
-        bpy.context.object.active_shape_key_index = 0
+        ob1.active_shape_key_index = 0
         # Bound X
         if bounds_x != 'EXTEND':
             if mode == 'GLOBAL':
@@ -694,9 +725,11 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                         sk.data[v].co.y += 1
                 except: pass
     verts1 = [v.co for v in me1.vertices]
+    n_verts1 = len(verts1)
 
     patch_faces = 4**levels
     sides = int(sqrt(patch_faces))
+    step = 1/sides
     sides0 = sides-2
     patch_faces0 = int((sides-2)**2)
     n_patches = int(len(me0.polygons)/patch_faces)
@@ -749,6 +782,81 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
 
     _faces = [[[0] for ii in range(sides)] for jj in range(sides)]
     _verts = [[[0] for ii in range(sides+1)] for jj in range(sides+1)]
+
+    # find relative UV component's vertices
+    verts1_uv_quads = [0]*len(verts1)
+    verts1_uv = [0]*len(verts1)
+    for i, vert in enumerate(verts1):
+        # grid coordinates
+        u = int(vert[0]//step)
+        v = int(vert[1]//step)
+        u1 = min(u+1, sides)
+        v1 = min(v+1, sides)
+        if mode != 'BOUNDS':
+            if u > sides-1:
+                u = sides-1
+                u1 = sides
+            if u < 0:
+                u = 0
+                u1 = 1
+            if v > sides-1:
+                v = sides-1
+                v1 = sides
+            if v < 0:
+                v = 0
+                v1 = 1
+        verts1_uv_quads[i] = (u,v,u1,v1)
+        # factor coordinates
+        fu = (vert[0]-u*step)/step
+        fv = (vert[1]-v*step)/step
+        fw = vert.z
+        # interpolate Z scaling factor
+        verts1_uv[i] = Vector((fu,fv,fw))
+
+    sk_uv_quads = []
+    sk_uv = []
+    if bool_shapekeys:
+        for sk in ob1.data.shape_keys.key_blocks:
+            source = sk.data
+            _sk_uv_quads = [0]*len(verts1)
+            _sk_uv = [0]*len(verts1)
+            for i, sk_v in enumerate(source):
+                if mode == 'BOUNDS':
+                    sk_vert = sk_v.co - min_c
+                    sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
+                    sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
+                    sk_vert[2] = (sk_vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+                elif mode == 'LOCAL':
+                    sk_vert = sk_v.co
+                elif mode == 'GLOBAL':
+                    sk_vert = sk_v.co
+
+                # grid coordinates
+                u = int(sk_vert[0]//step)
+                v = int(sk_vert[1]//step)
+                u1 = min(u+1, sides)
+                v1 = min(v+1, sides)
+                if mode != 'BOUNDS':
+                    if u > sides-1:
+                        u = sides-1
+                        u1 = sides
+                    if u < 0:
+                        u = 0
+                        u1 = 1
+                    if v > sides-1:
+                        v = sides-1
+                        v1 = sides
+                    if v < 0:
+                        v = 0
+                        v1 = 1
+                _sk_uv_quads[i] = (u,v,u1,v1)
+                # factor coordinates
+                fu = (sk_vert[0]-u*step)/step
+                fv = (sk_vert[1]-v*step)/step
+                fw = sk_vert.z
+                _sk_uv[i] = Vector((fu,fv,fw))
+            sk_uv_quads.append(_sk_uv_quads)
+            sk_uv.append(_sk_uv)
 
     for i in range(n_patches):
         poly = me0.polygons[i*patch_faces]
@@ -850,118 +958,145 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                     else:
                         verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
 
-        step = 1/sides
-        for vert, patch_vert in zip(verts1, new_patch.data.vertices):
-            # grid coordinates
-            u = int(vert[0]//step)
-            v = int(vert[1]//step)
-            u1 = min(u+1, sides)
-            v1 = min(v+1, sides)
-            if mode != 'BOUNDS':
-                if u > sides-1:
-                    u = sides-1
-                    u1 = sides
-                if u < 0:
-                    u = 0
-                    u1 = 1
-                if v > sides-1:
-                    v = sides-1
-                    v1 = sides
-                if v < 0:
-                    v = 0
-                    v1 = 1
-            v00 = verts[u][v]
-            v10 = verts[u1][v]
-            v01 = verts[u][v1]
-            v11 = verts[u1][v1]
-            # factor coordinates
-            fu = (vert[0]-u*step)/step
-            fv = (vert[1]-v*step)/step
-            fw = vert.z
-            # interpolate Z scaling factor
-            fvec2d = Vector((fu,fv,0))
+        if True:
+            verts_xyz = np.array([[v.co for v in _verts] for _verts in verts])
+            verts_norm = np.array([[v.normal for v in _verts] for _verts in verts])
+            np_verts1_uv = np.array(verts1_uv)
+            verts1_uv_quads = np.array(verts1_uv_quads)
+            u = verts1_uv_quads[:,0]
+            v = verts1_uv_quads[:,1]
+            u1 = verts1_uv_quads[:,2]
+            v1 = verts1_uv_quads[:,3]
+            v00 = verts_xyz[u,v]
+            v10 = verts_xyz[u1,v]
+            v01 = verts_xyz[u,v1]
+            v11 = verts_xyz[u1,v1]
+            n00 = verts_norm[u,v]
+            n10 = verts_norm[u1,v]
+            n01 = verts_norm[u,v1]
+            n11 = verts_norm[u1,v1]
+            vx = np_verts1_uv[:,0].reshape((n_verts1,1))
+            vy = np_verts1_uv[:,1].reshape((n_verts1,1))
+            vz = np_verts1_uv[:,2].reshape((n_verts1,1))
+            co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
+            n2 = np_lerp2(n00,n10,n01,n11,vx,vy)
             if scale_mode == 'ADAPTIVE':
-                a00 = verts_area[v00.index]
-                a10 = verts_area[v10.index]
-                a01 = verts_area[v01.index]
-                a11 = verts_area[v11.index]
-                fw*=lerp2(a00,a10,a01,a11,fvec2d)
-            # build factor vector
-            fvec = Vector((fu,fv,fw))
-            # interpolate vertex on patch
-            patch_vert.co = lerp3(v00, v10, v01, v11, fvec)
+                areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
+                a00 = areas[u,v].reshape((n_verts1,1))
+                a10 = areas[u1,v].reshape((n_verts1,1))
+                a01 = areas[u,v1].reshape((n_verts1,1))
+                a11 = areas[u1,v1].reshape((n_verts1,1))
+                # remapped z scale
+                a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
+                co3 = co2 + n2 * vz * a2
+            else:
+                co3 = co2 + n2 * vz
+            coordinates = co3.flatten().tolist()
+            new_patch.data.vertices.foreach_set('co',coordinates)
 
-            # Vertex Group
+            # vertex groups
             if bool_vertex_group:
                 for _weight, vg in zip(weight, new_patch.vertex_groups):
-                    w00 = _weight[v00.index]
-                    w10 = _weight[v10.index]
-                    w01 = _weight[v01.index]
-                    w11 = _weight[v11.index]
-                    wuv = lerp2(w00,w10,w01,w11, fvec2d)
-                    vg.add([patch_vert.index], wuv, "ADD")
+                    np_weight = np.array([[_weight[v.index] for v in verts_v] for verts_v in verts])
+                    w00 = np_weight[u,v].reshape((n_verts1,1))
+                    w10 = np_weight[u1,v].reshape((n_verts1,1))
+                    w01 = np_weight[u,v1].reshape((n_verts1,1))
+                    w11 = np_weight[u1,v1].reshape((n_verts1,1))
+                    # remapped z scale
+                    w2 = np_lerp2(w00,w10,w01,w11,vx,vy)
+                    for vert_id in range(n_verts1):
+                        vg.add([vert_id], w2[vert_id], "ADD")
 
-        if bool_shapekeys:
-            for sk in ob1.data.shape_keys.key_blocks:
-                source = sk.data
-                for sk_v, _v in zip(source, me1.vertices):
-                    if mode == 'BOUNDS':
-                        sk_vert = sk_v.co - min_c  # (ob1.matrix_world * v.co) - min_c
-                        sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
-                        sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
-                        sk_vert[2] = (sk_vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-                    elif mode == 'LOCAL':
-                        sk_vert = sk_v.co#.xyzco
-                        #sk_vert[2] *= zscale
-                        #sk_vert[2] = (sk_vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-                    elif mode == 'GLOBAL':
-                        #sk_vert = ob1.matrix_world @ sk_v.co
-                        sk_vert = sk_v.co
-                        #sk_vert[2] *= zscale
-
-                    # grid coordinates
-                    u = int(sk_vert[0]//step)
-                    v = int(sk_vert[1]//step)
-                    u1 = min(u+1, sides)
-                    v1 = min(v+1, sides)
-                    if mode != 'BOUNDS':
-                        if u > sides-1:
-                            u = sides-1
-                            u1 = sides
-                        if u < 0:
-                            u = 0
-                            u1 = 1
-                        if v > sides-1:
-                            v = sides-1
-                            v1 = sides
-                        if v < 0:
-                            v = 0
-                            v1 = 1
-                    v00 = verts[u][v]
-                    v10 = verts[u1][v]
-                    v01 = verts[u][v1]
-                    v11 = verts[u1][v1]
-                    # factor coordinates
-                    fu = (sk_vert[0]-u*step)/step
-                    fv = (sk_vert[1]-v*step)/step
-                    fw = sk_vert.z
-
+            if bool_shapekeys:
+                for i_sk, sk in enumerate(ob1.data.shape_keys.key_blocks):
+                    np_verts1_uv = np.array(sk_uv[i_sk])
+                    np_sk_uv_quads = np.array(sk_uv_quads[i_sk])
+                    u = np_sk_uv_quads[:,0]
+                    v = np_sk_uv_quads[:,1]
+                    u1 = np_sk_uv_quads[:,2]
+                    v1 = np_sk_uv_quads[:,3]
+                    v00 = verts_xyz[u,v]
+                    v10 = verts_xyz[u1,v]
+                    v01 = verts_xyz[u,v1]
+                    v11 = verts_xyz[u1,v1]
+                    vx = np_verts1_uv[:,0].reshape((n_verts1,1))
+                    vy = np_verts1_uv[:,1].reshape((n_verts1,1))
+                    vz = np_verts1_uv[:,2].reshape((n_verts1,1))
+                    co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
+                    n2 = np_lerp2(n00,n10,n01,n11,vx,vy)
                     if scale_mode == 'ADAPTIVE':
-                        a00 = verts_area[v00.index]
-                        a10 = verts_area[v10.index]
-                        a01 = verts_area[v01.index]
-                        a11 = verts_area[v11.index]
-                        fw*=lerp2(a00,a10,a01,a11,Vector((fu,fv,0)))
+                        areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
+                        a00 = areas[u,v].reshape((n_verts1,1))
+                        a10 = areas[u1,v].reshape((n_verts1,1))
+                        a01 = areas[u,v1].reshape((n_verts1,1))
+                        a11 = areas[u1,v1].reshape((n_verts1,1))
+                        # remapped z scale
+                        a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
+                        co3 = co2 + n2 * vz * a2
+                    else:
+                        co3 = co2 + n2 * vz
+                    coordinates = co3.flatten().tolist()
+                    new_patch.data.shape_keys.key_blocks[sk.name].data.foreach_set('co', coordinates)
+                    #new_patch.data.shape_keys.key_blocks[sk.name].data[i_vert].co = sk_co
+        else:
+            for _fvec, uv_quad, patch_vert in zip(verts1_uv, verts1_uv_quads, new_patch.data.vertices):
+                u = uv_quad[0]
+                v = uv_quad[1]
+                u1 = uv_quad[2]
+                v1 = uv_quad[3]
+                v00 = verts[u][v]
+                v10 = verts[u1][v]
+                v01 = verts[u][v1]
+                v11 = verts[u1][v1]
+                # interpolate Z scaling factor
+                fvec = _fvec.copy()
+                if scale_mode == 'ADAPTIVE':
+                    a00 = verts_area[v00.index]
+                    a10 = verts_area[v10.index]
+                    a01 = verts_area[v01.index]
+                    a11 = verts_area[v11.index]
+                    fvec[2]*=lerp2(a00,a10,a01,a11,fvec)
+                # interpolate vertex on patch
+                patch_vert.co = lerp3(v00, v10, v01, v11, fvec)
 
-                    fvec = Vector((fu,fv,fw))
-                    sk_co = lerp3(v00, v10, v01, v11, fvec)
+                # Vertex Group
+                if bool_vertex_group:
+                    for _weight, vg in zip(weight, new_patch.vertex_groups):
+                        w00 = _weight[v00.index]
+                        w10 = _weight[v10.index]
+                        w01 = _weight[v01.index]
+                        w11 = _weight[v11.index]
+                        wuv = lerp2(w00,w10,w01,w11, fvec)
+                        vg.add([patch_vert.index], wuv, "ADD")
 
-                    new_patch.data.shape_keys.key_blocks[sk.name].data[_v.index].co = sk_co
+            if bool_shapekeys:
+                for i_sk, sk in enumerate(ob1.data.shape_keys.key_blocks):
+                    for i_vert, _fvec, _sk_uv_quad in zip(range(len(new_patch.data.vertices)), sk_uv[i_sk], sk_uv_quads[i_sk]):
+                        u = _sk_uv_quad[0]
+                        v = _sk_uv_quad[1]
+                        u1 = _sk_uv_quad[2]
+                        v1 = _sk_uv_quad[3]
+                        v00 = verts[u][v]
+                        v10 = verts[u1][v]
+                        v01 = verts[u][v1]
+                        v11 = verts[u1][v1]
+
+                        fvec = _fvec.copy()
+                        if scale_mode == 'ADAPTIVE':
+                            a00 = verts_area[v00.index]
+                            a10 = verts_area[v10.index]
+                            a01 = verts_area[v01.index]
+                            a11 = verts_area[v11.index]
+                            fvec[2]*=lerp2(a00, a10, a01, a11, fvec)
+                        sk_co = lerp3(v00, v10, v01, v11, fvec)
+
+                        new_patch.data.shape_keys.key_blocks[sk.name].data[i_vert].co = sk_co
 
     #if ob0.type == 'MESH': ob0.data = old_me0
     if not bool_correct: return 0
 
     bpy.ops.object.join()
+
 
     if bool_shapekeys:
         # set original values and combine Shape Keys and Vertex Groups
@@ -973,6 +1108,11 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 for vg in new_patch.vertex_groups:
                     if sk.name == vg.name:
                         sk.vertex_group = vg.name
+    else:
+        try:
+            for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
+                sk.value = val
+        except: pass
 
     new_name = ob0.name + "_" + ob1.name
     new_patch.name = "tessellate_temp"
@@ -1051,7 +1191,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         for o in bpy.context.view_layer.objects: o.select_set(False)
         bpy.context.view_layer.objects.active = ob1
         ob1.select_set(True)
-        bpy.context.object.active_shape_key_index = 0
+        ob1.active_shape_key_index = 0
         # Bound X
         if bounds_x != 'EXTEND':
             if mode == 'GLOBAL':
@@ -1528,9 +1668,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     _vs0_3 = _vs0[:,3].reshape((n_faces,1,3))
 
     # remapped vertex coordinates
-    v0 = _vs0_0 + (_vs0_1 - _vs0_0) * vx
-    v1 = _vs0_3 + (_vs0_2 - _vs0_3) * vx
-    v2 = v0 + (v1 - v0) * vy
+    v2 = np_lerp2(_vs0_0, _vs0_1, _vs0_3, _vs0_2, vx, vy)
 
     # remapped vertex normal
     if normals_mode == 'VERTS':
@@ -1539,9 +1677,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         _nvs0_1 = _nvs0[:,1].reshape((n_faces,1,3))
         _nvs0_2 = _nvs0[:,2].reshape((n_faces,1,3))
         _nvs0_3 = _nvs0[:,3].reshape((n_faces,1,3))
-        nv0 = _nvs0_0 + (_nvs0_1 - _nvs0_0) * vx
-        nv1 = _nvs0_3 + (_nvs0_2 - _nvs0_3) * vx
-        nv2 = nv0 + (nv1 - nv0) * vy
+        nv2 = np_lerp2(_nvs0_0, _nvs0_1, _nvs0_3, _nvs0_2, vx, vy)
     else:
         nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
 
@@ -1553,9 +1689,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         w_2 = w[:,:,2].reshape((n_vg, n_faces,1,1))
         w_3 = w[:,:,3].reshape((n_vg, n_faces,1,1))
         # remapped weight
-        w0 = w_0 + (w_1 - w_0) * vx
-        w1 = w_3 + (w_2 - w_3) * vx
-        w = w0 + (w1 - w0) * vy
+        w = np_lerp2(w_0, w_1, w_3, w_2, vx, vy)
         w = w.reshape((n_vg, n_faces*n_verts1))
 
     if scale_mode == 'ADAPTIVE':
@@ -1564,9 +1698,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         _sz_2 = _sz[:,2].reshape((n_faces,1,1))
         _sz_3 = _sz[:,3].reshape((n_faces,1,1))
         # remapped z scale
-        sz0 = _sz_0 + (_sz_1 - _sz_0) * vx
-        sz1 = _sz_3 + (_sz_2 - _sz_3) * vx
-        sz2 = sz0 + (sz1 - sz0) * vy
+        sz2 = np_lerp2(_sz_0, _sz_1, _sz_3, _sz_2, vx, vy)
         v3 = v2 + nv2 * vz * sz2
     else:
         v3 = v2 + nv2 * vz
@@ -1582,23 +1714,17 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
             vz = np.array(vz_key[i])
 
             # remapped vertex coordinates
-            v0 = _vs0_0 + (_vs0_1 - _vs0_0) * vx
-            v1 = _vs0_3 + (_vs0_2 - _vs0_3) * vx
-            v2 = v0 + (v1 - v0) * vy
+            v2 = np_lerp2(_vs0_0, _vs0_1, _vs0_3, _vs0_2, vx, vy)
 
             # remapped vertex normal
             if normals_mode == 'VERTS':
-                nv0 = _nvs0_0 + (_nvs0_1 - _nvs0_0) * vx
-                nv1 = _nvs0_3 + (_nvs0_2 - _nvs0_3) * vx
-                nv2 = nv0 + (nv1 - nv0) * vy
+                nv2 = np_lerp2(_nvs0_0, _nvs0_1, _nvs0_3, _nvs0_2, vx, vy)
             else:
                 nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
 
             if scale_mode == 'ADAPTIVE':
                 # remapped z scale
-                sz0 = _sz_0 + (_sz_1 - _sz_0) * vx
-                sz1 = _sz_3 + (_sz_2 - _sz_3) * vx
-                sz2 = sz0 + (sz1 - sz0) * vy
+                sz2 = np_lerp2(_sz_0, _sz_1, _sz_3, _sz_2, vx, vy)
                 v3 = v2 + nv2 * vz * sz2
             else:
                 v3 = v2 + nv2 * vz
@@ -1915,6 +2041,14 @@ class tessellate(Operator):
             default='EXTEND',
             name="Bounds Y",
             )
+    close_mesh : EnumProperty(
+            items=(
+                ('NONE', 'None', 'Keep the mesh open'),
+                ('CAP', 'Cap Holes', 'Automatically cap open loops'),
+                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs')),
+            default='NONE',
+            name="Close Mesh"
+            )
     cap_faces : BoolProperty(
             name="Cap Holes",
             default=False,
@@ -1926,6 +2060,20 @@ class tessellate(Operator):
             min=0,
             max=1,
             description="Automatically set crease for open edges"
+            )
+    bridge_smoothness : FloatProperty(
+            name="Smoothness",
+            default=1,
+            min=0,
+            max=1,
+            description="Bridge Smoothness"
+            )
+    bridge_cuts : IntProperty(
+            name="Smoothness",
+            default=0,
+            min=0,
+            max=20,
+            description="Bridge Cuts"
             )
     working_on : ""
 
@@ -2138,11 +2286,19 @@ class tessellate(Operator):
                 col2.prop(self, "bool_dissolve_seams")
                 #if ob1.type != 'MESH': col2.enabled = False
 
+            col.separator()
             row = col.row(align=True)
-            row.prop(self, "cap_faces")
-            if self.cap_faces:
-                col2 = row.column(align=True)
-                col2.prop(self, "open_edges_crease", text="Crease")
+            col2 = row.column(align=True)
+            col2.label(text='Close Mesh:')
+            col2 = row.column(align=True)
+            col2.prop(self, "close_mesh",text='')
+            if self.close_mesh != 'NONE':
+                row = col.row(align=True)
+                row.prop(self, "open_edges_crease", text="Crease")
+                if self.close_mesh == 'BRIDGE':
+                    row = col.row(align=True)
+                    row.prop(self, "bridge_cuts")
+                    row.prop(self, "bridge_smoothness")
 
             # Advanced Settings
             col = layout.column(align=True)
@@ -2153,6 +2309,7 @@ class tessellate(Operator):
             if self.bool_advanced:
                 allow_multi = False
                 allow_shapekeys = not self.com_modifiers
+                if self.com_modifiers: self.bool_shapekeys = False
                 for m in ob0.data.materials:
                     try:
                         o = bpy.data.objects[m.name]
@@ -2349,7 +2506,10 @@ class update_tessellate(Operator):
             bounds_x = ob.tissue_tessellate.bounds_x
             bounds_y = ob.tissue_tessellate.bounds_y
             cap_faces = ob.tissue_tessellate.cap_faces
+            close_mesh = ob.tissue_tessellate.close_mesh
             open_edges_crease = ob.tissue_tessellate.open_edges_crease
+            bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
+            bridge_cuts = ob.tissue_tessellate.bridge_cuts
 
         try:
             generator.name
@@ -2663,16 +2823,20 @@ class update_tessellate(Operator):
                     bpy.ops.object.mode_set(mode='EDIT')
                     bpy.ops.mesh.dissolve_edges()
             except: pass
-        if cap_faces:
+        if close_mesh != 'NONE':
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_mode(
                 use_extend=False, use_expand=False, type='EDGE')
             bpy.ops.mesh.select_non_manifold(
                 extend=False, use_wire=False, use_boundary=True,
                 use_multi_face=False, use_non_contiguous=False, use_verts=False)
-            bpy.ops.mesh.edge_face_add()
             if open_edges_crease != 0:
                 bpy.ops.transform.edge_crease(value=open_edges_crease)
+            if close_mesh == 'CAP':
+                bpy.ops.mesh.edge_face_add()
+            if close_mesh == 'BRIDGE':
+                bpy.ops.mesh.bridge_edge_loops(
+                    number_cuts=bridge_cuts, interpolation='SURFACE', smoothness=bridge_smoothness)
 
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -2928,11 +3092,19 @@ class TISSUE_PT_tessellate_object(Panel):
                 col2.prop(props, "bool_dissolve_seams")
                 #if props.component.type != 'MESH': col2.enabled = False
 
+            col.separator()
             row = col.row(align=True)
-            row.prop(props, "cap_faces")
-            if props.cap_faces:
-                col2 = row.column(align=True)
-                col2.prop(props, "open_edges_crease", text="Crease")
+            col2 = row.column(align=True)
+            col2.label(text='Close Mesh:')
+            col2 = row.column(align=True)
+            col2.prop(props, "close_mesh",text='')
+            if props.close_mesh != 'NONE':
+                row = col.row(align=True)
+                row.prop(props, "open_edges_crease", text="Crease")
+                if props.close_mesh == 'BRIDGE':
+                    row = col.row(align=True)
+                    row.prop(props, "bridge_cuts")
+                    row.prop(props, "bridge_smoothness")
 
             # Advanced Settings
             col = layout.column(align=True)
@@ -2970,6 +3142,10 @@ class TISSUE_PT_tessellate_object(Panel):
                 row2 = col2.row(align=True)
                 row2.prop(props, "bool_shapekeys", text="Use Shape Keys",  icon='SHAPEKEY_DATA')
                 row2.enabled = allow_shapekeys
+                if not allow_shapekeys:
+                    col2 = layout.column(align=True)
+                    row2 = col2.row(align=True)
+                    row2.label(text="Use Shape Keys is not compatible with Use Modifiers", icon='INFO')
 
                 # LIMITED TESSELLATION
                 col = layout.column(align=True)
