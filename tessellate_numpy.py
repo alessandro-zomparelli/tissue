@@ -394,6 +394,13 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Bridge Cuts",
             update = anim_tessellate_active
             )
+    cap_material_index : IntProperty(
+            name="Material",
+            default=0,
+            min=0,
+            description="Material index for the cap/bridge faces",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -431,6 +438,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.close_mesh = operator.close_mesh
     ob.tissue_tessellate.bridge_cuts = operator.bridge_cuts
     ob.tissue_tessellate.bridge_smoothness = operator.bridge_smoothness
+    ob.tissue_tessellate.cap_material_index = operator.cap_material_index
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -2069,11 +2077,17 @@ class tessellate(Operator):
             description="Bridge Smoothness"
             )
     bridge_cuts : IntProperty(
-            name="Smoothness",
+            name="Cuts",
             default=0,
             min=0,
             max=20,
             description="Bridge Cuts"
+            )
+    cap_material_index : IntProperty(
+            name="Material",
+            default=0,
+            min=0,
+            description="Material index for the cap/bridge faces"
             )
     working_on : ""
 
@@ -2271,34 +2285,32 @@ class tessellate(Operator):
                 full_event=False, emboss=True, index=-1)
             row.enabled = self.fill_mode != 'PATCH'
 
-            # Merge
+            col.separator()
+            row = col.row(align=True)
+            row.prop(self, "bool_smooth")
+
+            # merge settings
             col = layout.column(align=True)
             row = col.row(align=True)
             row.prop(self, "merge")
             if self.merge:
                 row.prop(self, "merge_thres")
-            row = col.row(align=True)
-
-            row = col.row(align=True)
-            row.prop(self, "bool_smooth")
-            if self.merge:
-                col2 = row.column(align=True)
-                col2.prop(self, "bool_dissolve_seams")
-                #if ob1.type != 'MESH': col2.enabled = False
-
-            col.separator()
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.label(text='Close Mesh:')
-            col2 = row.column(align=True)
-            col2.prop(self, "close_mesh",text='')
-            if self.close_mesh != 'NONE':
+                col.separator()
                 row = col.row(align=True)
-                row.prop(self, "open_edges_crease", text="Crease")
-                if self.close_mesh == 'BRIDGE':
+                col2 = row.column(align=True)
+                col2.label(text='Close Mesh:')
+                col2 = row.column(align=True)
+                col2.prop(self, "close_mesh",text='')
+                if self.close_mesh != 'NONE':
                     row = col.row(align=True)
-                    row.prop(self, "bridge_cuts")
-                    row.prop(self, "bridge_smoothness")
+                    row.prop(self, "open_edges_crease", text="Crease")
+                    row.prop(self, "cap_material_index")
+                    if self.close_mesh == 'BRIDGE':
+                        row = col.row(align=True)
+                        row.prop(self, "bridge_cuts")
+                        row.prop(self, "bridge_smoothness")
+                row = col.row(align=True)
+                row.prop(self, "bool_dissolve_seams")
 
             # Advanced Settings
             col = layout.column(align=True)
@@ -2510,6 +2522,7 @@ class update_tessellate(Operator):
             open_edges_crease = ob.tissue_tessellate.open_edges_crease
             bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
             bridge_cuts = ob.tissue_tessellate.bridge_cuts
+            cap_material_index = ob.tissue_tessellate.cap_material_index
 
         try:
             generator.name
@@ -2823,29 +2836,25 @@ class update_tessellate(Operator):
                     bpy.ops.object.mode_set(mode='EDIT')
                     bpy.ops.mesh.dissolve_edges()
             except: pass
-        if close_mesh != 'NONE':
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(
-                use_extend=False, use_expand=False, type='EDGE')
-            bpy.ops.mesh.select_non_manifold(
-                extend=False, use_wire=False, use_boundary=True,
-                use_multi_face=False, use_non_contiguous=False, use_verts=False)
-            if open_edges_crease != 0:
-                bpy.ops.transform.edge_crease(value=open_edges_crease)
-            if close_mesh == 'CAP':
-                bpy.ops.mesh.edge_face_add()
-            if close_mesh == 'BRIDGE':
-                bpy.ops.mesh.bridge_edge_loops(
-                    number_cuts=bridge_cuts, interpolation='SURFACE', smoothness=bridge_smoothness)
-
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.object.mode_set(mode='OBJECT')
+            if close_mesh != 'NONE':
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_mode(
+                    use_extend=False, use_expand=False, type='EDGE')
+                bpy.ops.mesh.select_non_manifold(
+                    extend=False, use_wire=False, use_boundary=True,
+                    use_multi_face=False, use_non_contiguous=False, use_verts=False)
+                if open_edges_crease != 0:
+                    bpy.ops.transform.edge_crease(value=open_edges_crease)
+                if close_mesh == 'CAP':
+                    bpy.ops.mesh.edge_face_add()
+                if close_mesh == 'BRIDGE':
+                    bpy.ops.mesh.bridge_edge_loops(
+                        number_cuts=bridge_cuts, interpolation='SURFACE', smoothness=bridge_smoothness)
+                bpy.ops.object.mode_set(mode='OBJECT')
+                for f in ob.data.polygons:
+                    if f.select: f.material_index = cap_material_index
 
         if bool_smooth: bpy.ops.object.shade_smooth()
-        ####values = [True] * len(ob.data.polygons)
-        ####ob.data.polygons.foreach_set("use_smooth", values)
-
-        #for m, vis in zip(ob.modifiers, mod_visibility): m.show_viewport = vis
 
         end_time = time.time()
         print('Tissue: object "{}" tessellated in {:.4f} sec'.format(ob.name, end_time-start_time))
@@ -3079,32 +3088,32 @@ class TISSUE_PT_tessellate_object(Panel):
                 full_event=False, emboss=True, index=-1)
             row.enabled = props.fill_mode != 'PATCH'
 
-            # merge
+            col.separator()
+            row = col.row(align=True)
+            row.prop(props, "bool_smooth")
+
+            # merge settings
             col = layout.column(align=True)
             row = col.row(align=True)
             row.prop(props, "merge")
             if props.merge:
                 row.prop(props, "merge_thres")
-            row = col.row(align=True)
-            row.prop(props, "bool_smooth")
-            if props.merge:
-                col2 = row.column(align=True)
-                col2.prop(props, "bool_dissolve_seams")
-                #if props.component.type != 'MESH': col2.enabled = False
-
-            col.separator()
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.label(text='Close Mesh:')
-            col2 = row.column(align=True)
-            col2.prop(props, "close_mesh",text='')
-            if props.close_mesh != 'NONE':
+                col.separator()
                 row = col.row(align=True)
-                row.prop(props, "open_edges_crease", text="Crease")
-                if props.close_mesh == 'BRIDGE':
+                col2 = row.column(align=True)
+                col2.label(text='Close Mesh:')
+                col2 = row.column(align=True)
+                col2.prop(props, "close_mesh",text='')
+                if props.close_mesh != 'NONE':
                     row = col.row(align=True)
-                    row.prop(props, "bridge_cuts")
-                    row.prop(props, "bridge_smoothness")
+                    row.prop(props, "open_edges_crease", text="Crease")
+                    row.prop(props, "cap_material_index")
+                    if props.close_mesh == 'BRIDGE':
+                        row = col.row(align=True)
+                        row.prop(props, "bridge_cuts")
+                        row.prop(props, "bridge_smoothness")
+                row = col.row(align=True)
+                row.prop(props, "bool_dissolve_seams")
 
             # Advanced Settings
             col = layout.column(align=True)
