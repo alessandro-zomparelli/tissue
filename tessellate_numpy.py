@@ -2849,7 +2849,10 @@ class update_tessellate(Operator):
                     bpy.ops.mesh.edge_face_add()
                 if close_mesh == 'BRIDGE':
                     bpy.ops.mesh.bridge_edge_loops(
-                        number_cuts=bridge_cuts, interpolation='SURFACE', smoothness=bridge_smoothness)
+                        type='PAIRS',
+                        number_cuts=bridge_cuts,
+                        interpolation='SURFACE',
+                        smoothness=bridge_smoothness)
                 bpy.ops.object.mode_set(mode='OBJECT')
                 for f in ob.data.polygons:
                     if f.select: f.material_index = cap_material_index
