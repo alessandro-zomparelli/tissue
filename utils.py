@@ -160,7 +160,8 @@ def _convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     return new_ob
 
 def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
-    if not ob.name: return None
+    try: ob.name
+    except: return None
     if ob.type != 'MESH':
         if not apply_modifiers:
             mod_visibility = [m.show_viewport for m in ob.modifiers]

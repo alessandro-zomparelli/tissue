@@ -126,6 +126,9 @@ class dual_mesh_tessellated(Operator):
         ob.matrix_world = ob0.matrix_world
         return {'FINISHED'}
 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
 class dual_mesh(Operator):
     bl_idname = "object.dual_mesh"
     bl_label = "Convert to Dual Mesh"
