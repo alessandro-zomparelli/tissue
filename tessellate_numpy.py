@@ -2693,7 +2693,6 @@ class update_tessellate(Operator):
 
                 # if empty or error, continue
                 if type(new_ob) is not bpy.types.Object:
-                    print(new_ob)
                     continue
 
                 # prepare base object
@@ -2754,7 +2753,10 @@ class update_tessellate(Operator):
                     remove_materials = [material_id]
                 else: remove_materials = []
                 if bool_selection:
-                    remove_faces = [f for f in bm.faces if f.material_index in remove_materials and f.select]
+                    if bool_multi_components or bool_material_id:
+                        remove_faces = [f for f in bm.faces if f.material_index in remove_materials and f.select]
+                    else:
+                        remove_faces = [f for f in bm.faces if f.select]
                 else:
                     remove_faces = [f for f in bm.faces if f.material_index in remove_materials]
                 bmesh.ops.delete(bm, geom=remove_faces, context='FACES')
@@ -2789,7 +2791,6 @@ class update_tessellate(Operator):
                 iter_objects = [new_ob]
 
             # Combine
-            print(iter_objects)
             if combine_mode != 'LAST' and len(iter_objects)>0:
                 if base_ob not in iter_objects and type(base_ob) == bpy.types.Object:
                     bpy.data.objects.remove(base_ob)
