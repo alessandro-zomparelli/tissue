@@ -2808,7 +2808,7 @@ class update_tessellate(Operator):
                 bpy.ops.mesh.select_mode(
                     use_extend=False, use_expand=False, type='VERT')
                 bpy.ops.mesh.select_non_manifold(
-                    extend=False, use_wire=False, use_boundary=True,
+                    extend=False, use_wire=True, use_boundary=True,
                     use_multi_face=False, use_non_contiguous=False, use_verts=False)
 
                 bpy.ops.mesh.remove_doubles(
@@ -2935,7 +2935,7 @@ class update_tessellate(Operator):
                 #    use_extend=False, use_expand=False, type='VERT')
                 bpy.ops.mesh.select_mode(type='VERT')
                 bpy.ops.mesh.select_non_manifold(
-                    extend=False, use_wire=False, use_boundary=True,
+                    extend=False, use_wire=True, use_boundary=True,
                     use_multi_face=False, use_non_contiguous=False, use_verts=False)
 
                 bpy.ops.mesh.remove_doubles(
