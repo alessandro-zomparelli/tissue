@@ -877,8 +877,10 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                     sk_vert[2] = (sk_vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
                 elif mode == 'LOCAL':
                     sk_vert = sk_v.co
+                    sk_vert[2] *= zscale
                 elif mode == 'GLOBAL':
                     sk_vert = sk_v.co
+                    sk_vert[2] *= zscale
 
                 # grid coordinates
                 u = int(sk_vert[0]//step)
@@ -2701,8 +2703,6 @@ class update_tessellate(Operator):
                     bpy.data.objects.remove(base_ob)
                     base_ob = temp_base_ob
                     iter_objects = [base_ob]
-                base_ob.location = ob_location
-                base_ob.matrix_world = ob_matrix_world
 
                 # rename, make active and change transformations
                 new_ob.name = '_tissue_tmp_{}_{}'.format(iter,m_id)
@@ -2722,6 +2722,9 @@ class update_tessellate(Operator):
                     except:
                         pass
                 if bool_multi_components: same_iteration.append(new_ob)
+
+            base_ob.location = ob_location
+            base_ob.matrix_world = ob_matrix_world
 
             # join together multiple components iterations
             if bool_multi_components:
@@ -2881,7 +2884,8 @@ class update_tessellate(Operator):
             for o in iter_objects:
                 try: bpy.data.objects.remove(o)
                 except: pass
-            bpy.data.meshes.remove(data1)
+            try: bpy.data.meshes.remove(data1)
+            except: pass
             bpy.context.view_layer.objects.active = ob
             ob.select_set(True)
             message = errors[new_ob]
