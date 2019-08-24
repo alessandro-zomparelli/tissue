@@ -401,6 +401,13 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Material index for the cap/bridge faces",
             update = anim_tessellate_active
             )
+    patch_subs : IntProperty(
+            name="Patch Subdivisions",
+            default=1,
+            min=0,
+            description="Subdivisions levels for Patch tessellation after the first iteration",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -439,6 +446,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bridge_cuts = operator.bridge_cuts
     ob.tissue_tessellate.bridge_smoothness = operator.bridge_smoothness
     ob.tissue_tessellate.cap_material_index = operator.cap_material_index
+    ob.tissue_tessellate.patch_subs = operator.patch_subs
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -478,6 +486,7 @@ def load_parameters(operator, ob):
     operator.bridge_cuts = ob.tissue_tessellate.bridge_cuts
     operator.bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
     operator.cap_material_index = ob.tissue_tessellate.cap_material_index
+    operator.patch_subs = ob.tissue_tessellate.patch_subs
     return ob
 
 def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
@@ -2138,6 +2147,12 @@ class tessellate(Operator):
             min=0,
             description="Material index for the cap/bridge faces"
             )
+    patch_subs : IntProperty(
+            name="Patch Subdivisions",
+            default=1,
+            min=0,
+            description="Subdivisions levels for Patch tessellation after the first iteration"
+            )
     working_on = ""
 
     def draw(self, context):
@@ -2434,7 +2449,10 @@ class tessellate(Operator):
                 row = col.row(align=True)
                 row.label(text='Reiterate Tessellation:', icon='FILE_REFRESH')
                 row.prop(self, 'iterations', text='Repeat', icon='SETTINGS')
-
+                if self.iterations > 1 and self.fill_mode == 'PATCH':
+                    col.separator()
+                    row = col.row(align=True)
+                    row.prop(self, 'patch_subs')
                 col.separator()
                 row = col.row(align=True)
                 row.label(text='Combine Iterations:')
@@ -2576,6 +2594,7 @@ class update_tessellate(Operator):
             bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
             bridge_cuts = ob.tissue_tessellate.bridge_cuts
             cap_material_index = ob.tissue_tessellate.cap_material_index
+            patch_subs = ob.tissue_tessellate.patch_subs
 
         try:
             generator.name
@@ -2678,12 +2697,18 @@ class update_tessellate(Operator):
 
                 if iter != 0: gen_modifiers = True
                 if fill_mode == 'PATCH':
+                    if iter > 0:
+                        base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
+                        base_ob.modifiers['Tissue_Subsurf'].levels = patch_subs
+                        temp_mod = base_ob.modifiers['Tissue_Subsurf']
                     new_ob = tessellate_patch(
                             base_ob, ob1, offset, zscale, com_modifiers, mode, scale_mode,
                             rotation_mode, random_seed, bool_vertex_group,
                             bool_selection, bool_shapekeys, bool_material_id, material_id,
                             bounds_x, bounds_y
                             )
+                    if iter > 0:
+                        base_ob.modifiers.remove(temp_mod)
                 else:
                     new_ob = tessellate_original(
                             base_ob, ob1, offset, zscale, gen_modifiers,
@@ -3327,6 +3352,10 @@ class TISSUE_PT_tessellate_object(Panel):
                 row = col.row(align=True)
                 row.label(text='Reiterate Tessellation:', icon='FILE_REFRESH')
                 row.prop(props, 'iterations', text='Repeat', icon='SETTINGS')
+                if props.iterations > 1 and props.fill_mode == 'PATCH':
+                    col.separator()
+                    row = col.row(align=True)
+                    row.prop(props, 'patch_subs')
                 col.separator()
                 row = col.row(align=True)
                 row.label(text='Combine Iterations:')
