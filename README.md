@@ -13,7 +13,7 @@ Development branch (most updated version): https://github.com/alessandro-zompare
 
 ### Blender 2.79
 
-Tissue v0.3.4 for Blender 2.79b: https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-4
+Tissue v0.3.4 for Blender 2.79b (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-4
 
 Development branch (most updated version): https://github.com/alessandro-zomparelli/tissue/tree/dev1
 

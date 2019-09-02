@@ -46,7 +46,7 @@ from bpy.props import (
         )
 from mathutils import Vector
 import numpy as np
-from math import sqrt
+from math import *
 import random, time
 import bmesh
 from .utils import *
@@ -176,7 +176,8 @@ class tissue_tessellate_prop(PropertyGroup):
             ('PATCH', 'Patch', 'Curved tessellation according to the last ' +
             'Subsurf\n(or Multires) modifiers. Works only with 4 sides ' +
             'patches.\nAfter the last Subsurf (or Multires) only ' +
-            'deformation\nmodifiers can be used')),
+            'deformation\nmodifiers can be used'),
+            ('FRAME', 'Frame', 'Essellation along the edges of each face')),
         default='QUAD',
         name="Fill Mode",
         update = anim_tessellate_active
@@ -370,6 +371,12 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Cap open edges loops",
             update = anim_tessellate_active
             )
+    frame_boundary : BoolProperty(
+            name="Frame Boundary",
+            default=False,
+            description="Support face boundaries",
+            update = anim_tessellate_active
+            )
     open_edges_crease : FloatProperty(
             name="Open Edges Crease",
             default=0,
@@ -384,6 +391,14 @@ class tissue_tessellate_prop(PropertyGroup):
             min=0,
             max=1,
             description="Bridge Smoothness",
+            update = anim_tessellate_active
+            )
+    frame_thickness : FloatProperty(
+            name="Frame Thickness",
+            default=1,
+            min=0,
+            soft_max=2,
+            description="Frame Thickness",
             update = anim_tessellate_active
             )
     bridge_cuts : IntProperty(
@@ -445,6 +460,8 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.close_mesh = operator.close_mesh
     ob.tissue_tessellate.bridge_cuts = operator.bridge_cuts
     ob.tissue_tessellate.bridge_smoothness = operator.bridge_smoothness
+    ob.tissue_tessellate.frame_thickness = operator.frame_thickness
+    ob.tissue_tessellate.frame_boundary = operator.frame_boundary
     ob.tissue_tessellate.cap_material_index = operator.cap_material_index
     ob.tissue_tessellate.patch_subs = operator.patch_subs
     ob.tissue_tessellate.bool_hold = False
@@ -487,6 +504,8 @@ def load_parameters(operator, ob):
     operator.bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
     operator.cap_material_index = ob.tissue_tessellate.cap_material_index
     operator.patch_subs = ob.tissue_tessellate.patch_subs
+    operator.frame_boundary = ob.tissue_tessellate.frame_boundary
+    operator.frame_thickness = ob.tissue_tessellate.frame_thickness
     return ob
 
 def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
@@ -1961,7 +1980,8 @@ class tessellate(Operator):
                 ('PATCH', 'Patch', 'Curved tessellation according to the last ' +
                 'Subsurf\n(or Multires) modifiers. Works only with 4 sides ' +
                 'patches.\nAfter the last Subsurf (or Multires) only ' +
-                'deformation\nmodifiers can be used')),
+                'deformation\nmodifiers can be used'),
+                ('FRAME', 'Frame', 'Essellation along the edges of each face')),
             default='QUAD',
             name="Fill Mode"
             )
@@ -2120,6 +2140,11 @@ class tessellate(Operator):
             default=False,
             description="Cap open edges loops"
             )
+    frame_boundary : BoolProperty(
+            name="Frame Boundary",
+            default=False,
+            description="Support face boundaries"
+            )
     open_edges_crease : FloatProperty(
             name="Open Edges Crease",
             default=0,
@@ -2133,6 +2158,13 @@ class tessellate(Operator):
             min=0,
             max=1,
             description="Bridge Smoothness"
+            )
+    frame_thickness : FloatProperty(
+            name="Frame Thickness",
+            default=1,
+            min=0,
+            soft_max=2,
+            description="Frame Thickness"
             )
     bridge_cuts : IntProperty(
             name="Cuts",
@@ -2258,21 +2290,23 @@ class tessellate(Operator):
             row.label(text="Fill Mode:")
             row.label(text="Rotation:")
             row = col.row(align=True)
-            #col2 = row.column(align=True)
             row.prop(
                 self, "fill_mode", text="", icon='NONE', expand=False,
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
-
-            # Rotation
             row.separator()
+
+            # rotation
             col2 = row.column(align=True)
-            col2.prop(
-                self, "rotation_mode", text="", icon='NONE', expand=False,
-                slider=True, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-            if self.rotation_mode == 'RANDOM':
-                col2.prop(self, "random_seed")
+            if self.fill_mode != 'FRAME':
+                col2.prop(self, "rotation_mode", text="", icon='NONE', expand=False,
+                         slider=True, toggle=False, icon_only=False, event=False,
+                         full_event=False, emboss=True, index=-1)
+                if self.rotation_mode == 'RANDOM':
+                    col2.prop(props, "random_seed")
+            else:
+                col2.prop(self, "frame_thickness", text='Thickness', icon='NONE')
+                col2.prop(self, "frame_boundary", icon='NONE')
 
             if self.rotation_mode == 'UV':
                 uv_error = False
@@ -2592,6 +2626,8 @@ class update_tessellate(Operator):
             close_mesh = ob.tissue_tessellate.close_mesh
             open_edges_crease = ob.tissue_tessellate.open_edges_crease
             bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
+            frame_thickness = ob.tissue_tessellate.frame_thickness
+            frame_boundary = ob.tissue_tessellate.frame_boundary
             bridge_cuts = ob.tissue_tessellate.bridge_cuts
             cap_material_index = ob.tissue_tessellate.cap_material_index
             patch_subs = ob.tissue_tessellate.patch_subs
@@ -2658,6 +2694,115 @@ class update_tessellate(Operator):
         if bool_update_cloth:
             bpy.ops.ptcache.free_bake_all()
             bpy.ops.ptcache.bake_all()
+
+        ### FRAME
+        if fill_mode == 'FRAME':
+            bpy.data.objects.remove(base_ob)
+            base_ob = convert_object_to_mesh(ob0, gen_modifiers, True)
+            # make base object selected and active
+            for o in bpy.context.view_layer.objects: o.select_set(False)
+            base_ob.select_set(True)
+            bpy.context.view_layer.objects.active = base_ob
+
+            bpy.ops.object.mode_set(mode='EDIT')
+            # boundary
+            if frame_boundary:
+                # make boundary faces, needed for loop detections
+                bpy.ops.mesh.select_mode(type='EDGE')
+                bpy.ops.mesh.select_non_manifold(
+                    extend=False, use_wire=False, use_boundary=True,
+                    use_multi_face=False, use_non_contiguous=False, use_verts=False)
+                bpy.ops.object.mode_set(mode='OBJECT')
+                # create bmesh
+                bm = bmesh.new()
+                bm.from_mesh(base_ob.data)
+                bm.verts.ensure_lookup_table()
+                bm.edges.ensure_lookup_table()
+                bm.faces.ensure_lookup_table()
+                # detect edge loops
+                selected_edges = [e for e in bm.edges if e.select]
+                loops = []
+                loop = []
+                count = 0
+                e0 = selected_edges[0]
+                selected_edges = selected_edges[1:]
+                while True:
+                    new_vert = None
+                    for e1 in selected_edges:
+                        if e1.verts[0] in e0.verts: new_vert = e1.verts[1]
+                        elif e1.verts[1] in e0.verts: new_vert = e1.verts[0]
+                        if new_vert != None:
+                            if len(loop)==0:
+                                loop = [v for v in e1.verts if v != new_vert]
+                            loop.append(new_vert)
+                            e0 = e1
+                            selected_edges.remove(e0)
+                            break
+                    if new_vert == None:
+                        try:
+                            loops.append(loop)
+                            loop = []
+                            e0 = selected_edges[0]
+                            selected_edges = selected_edges[1:]
+                        except: break
+                # compute boundary frames
+                new_faces = []
+                for loop in loops:
+                    new_loop = []
+                    loop_ext = [loop[-1]] + loop + [loop[0]]
+                    mult = 1
+                    for i in range(len(loop)):
+                        # vertices
+                        vert0 = loop_ext[i]
+                        vert = loop_ext[i+1]
+                        vert1 = loop_ext[i+2]
+                        # surface direction
+                        if i == 0:
+                            surf_point = Vector((0,0,0))
+                            for f in vert.link_faces:
+                                surf_point += f.calc_center_median()
+                            surf_point /= len(vert.link_faces)
+                        # edge vectors
+                        vec0 = (vert0.co - vert.co).normalized()
+                        vec1 = (vert.co - vert1.co).normalized()
+                        # tangent
+                        _vec1 = -vec1
+                        _vec0 = -vec0
+                        ang = (pi - vec0.angle(vec1))/2
+                        tan0 = vert.normal.cross(vec0)
+                        tan1 = vert.normal.cross(vec1)
+                        tangent = (tan0 + tan1).normalized()/sin(ang)*frame_thickness
+                        if i == 0:
+                            pos_dist = (vert.co + tangent - surf_point).length
+                            neg_dist = (vert.co - tangent - surf_point).length
+                            if pos_dist < neg_dist: mult = -1
+                        new_co = vert.co + tangent*mult
+                        # add vertex
+                        new_vert = bm.verts.new(new_co)
+                        new_loop.append(new_vert)
+                    new_loop.append(new_loop[0])
+                    for i in range(len(loop)):
+                         v0 = loop_ext[i+1]
+                         v1 = loop_ext[i+2]
+                         v2 = new_loop[i+1]
+                         v3 = new_loop[i]
+                         face_verts = [v1,v0,v3,v2]
+                         if mult == -1: face_verts = [v0,v1,v2,v3]
+                         new_faces.append(bm.faces.new(face_verts))
+                bpy.ops.object.mode_set(mode='OBJECT')
+                for f in bm.faces: f.select_set(f not in new_faces)
+                bm.to_mesh(base_ob.data)
+                base_ob.data.update()
+                bpy.ops.object.mode_set(mode='EDIT')
+            else:
+                bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.inset(
+                thickness=frame_thickness, use_even_offset=True,
+                use_select_inset=False, use_individual=True
+                )
+            bpy.ops.mesh.delete(type='FACE')
+            bpy.ops.object.mode_set(mode='OBJECT')
+            fill_mode = 'QUAD'
 
         #new_ob.location = ob.location
         #new_ob.matrix_world = ob.matrix_world
@@ -3151,7 +3296,8 @@ class TISSUE_PT_tessellate_object(Panel):
             row = col.row(align=True)
             row.label(text="Fill Mode:")
             row.separator()
-            row.label(text="Rotation:")
+            if props.fill_mode != 'FRAME': row.label(text="Rotation:")
+            else: row.label(text="Frame:")
             row = col.row(align=True)
 
             # fill
@@ -3162,13 +3308,17 @@ class TISSUE_PT_tessellate_object(Panel):
 
             # rotation
             col2 = row.column(align=True)
-            col2.prop(props, "rotation_mode", text="", icon='NONE', expand=False,
-                     slider=True, toggle=False, icon_only=False, event=False,
-                     full_event=False, emboss=True, index=-1)
+            if props.fill_mode != 'FRAME':
+                col2.prop(props, "rotation_mode", text="", icon='NONE', expand=False,
+                         slider=True, toggle=False, icon_only=False, event=False,
+                         full_event=False, emboss=True, index=-1)
 
-            if props.rotation_mode == 'RANDOM':
-                #row = col.row(align=True)
-                col2.prop(props, "random_seed")
+                if props.rotation_mode == 'RANDOM':
+                    #row = col.row(align=True)
+                    col2.prop(props, "random_seed")
+            else:
+                col2.prop(props, "frame_thickness", text='Thickness', icon='NONE')
+                col2.prop(props, "frame_boundary", icon='NONE')
 
             if props.rotation_mode == 'UV':
                 uv_error = False
@@ -3227,7 +3377,6 @@ class TISSUE_PT_tessellate_object(Panel):
                 col.prop(props, "offset", text="Offset", icon='NONE', expand=False,
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
-
 
             col.separator()
             row = col.row(align=True)
