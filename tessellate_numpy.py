@@ -3412,6 +3412,8 @@ class TISSUE_PT_tessellate_object(Panel):
                 row.prop(props, "frame_boundary", text='Boundary', icon='NONE')
                 if props.frame_boundary and show_frame_mat:
                     row.prop(props, "frame_boundary_mat", icon='NONE')
+
+            col.prop(props, "bool_smooth")
             '''
             # component XY
             row = col.row(align=True)
@@ -3720,13 +3722,18 @@ class TISSUE_PT_tessellate_options(Panel):
     bl_region_type = 'WINDOW'
     bl_context = "data"
     bl_parent_id = "TISSUE_PT_tessellate_object"
-    bl_label = "Options"
+    bl_label = " "
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
     def poll(cls, context):
         try: return context.object.type == 'MESH'
         except: return False
+
+    def draw_header(self, context):
+        ob = context.object
+        props = ob.tissue_tessellate
+        self.layout.prop(props, "merge")
 
     def draw(self, context):
         ob = context.object
@@ -3739,33 +3746,36 @@ class TISSUE_PT_tessellate_options(Panel):
             ob1 = props.component
         except: bool_tessellated = False
         layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
         if bool_tessellated:
             col = layout.column(align=True)
-            row = col.row(align=True)
-            row.prop(props, "bool_smooth")
+            #row = col.row(align=True)
+            #row.prop(props, "bool_smooth")
 
             # merge settings
-            col = layout.column(align=True)
-            row = col.row(align=True)
-            row.prop(props, "merge")
+            #col = layout.column(align=True)
+            #row = col.row(align=True)
+            #row.prop(props, "merge")
             if props.merge:
-                row.prop(props, "merge_thres")
-                col.separator()
-                row = col.row(align=True)
-                row.prop(props, "bool_dissolve_seams")
-                row = col.row(align=True)
-                col2 = row.column(align=True)
-                col2.label(text='Close Mesh:')
-                col2 = row.column(align=True)
-                col2.prop(props, "close_mesh",text='')
+                col.prop(props, "merge_thres")
+                #col.separator()
+                #col = col.row(align=True)
+                col.prop(props, "bool_dissolve_seams")
+                #row = col.row(align=True)
+                #col = row.column(align=True)
+                #col.label(text='Close Mesh:')
+                #col = row.column(align=True)
+                #col.separator()
+                col.prop(props, "close_mesh")
                 if props.close_mesh != 'NONE':
-                    row = col.row(align=True)
-                    row.prop(props, "open_edges_crease", text="Crease")
-                    row.prop(props, "cap_material_index")
+                    #row = col.row(align=True)
+                    col.prop(props, "open_edges_crease", text="Crease")
+                    col.prop(props, "cap_material_index", text='Material Index')
                     if props.close_mesh == 'BRIDGE':
-                        row = col.row(align=True)
-                        row.prop(props, "bridge_cuts")
-                        row.prop(props, "bridge_smoothness")
+                        #row = col.row(align=True)
+                        col.prop(props, "bridge_cuts")
+                        col.prop(props, "bridge_smoothness")
 
 class TISSUE_PT_tessellate_morphing(Panel):
     bl_space_type = 'PROPERTIES'
@@ -3899,18 +3909,21 @@ class TISSUE_PT_tessellate_iterations(Panel):
             ob1 = props.component
         except: bool_tessellated = False
         layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
         if bool_tessellated:
             col = layout.column(align=True)
             row = col.row(align=True)
-            row.label(text='Reiterate:', icon='FILE_REFRESH')
-            row.prop(props, 'iterations', text='Repeat', icon='SETTINGS')
+            #row.label(text='', icon='FILE_REFRESH')
+            col.prop(props, 'iterations', text='Repeat')#, icon='FILE_REFRESH')
             if props.iterations > 1 and props.fill_mode == 'PATCH':
                 col.separator()
-                row = col.row(align=True)
-                row.prop(props, 'patch_subs')
-            col.separator()
-            row = col.row(align=True)
-            row.label(text='Combine Iterations:')
+                #row = col.row(align=True)
+                col.prop(props, 'patch_subs')
+            layout.use_property_split = False
+            col = layout.column(align=True)
+            #row = col.row(align=True)
+            col.label(text='Combine Iterations:')
             row = col.row(align=True)
             row.prop(
                 props, "combine_mode", text="Combine:",icon='NONE', expand=True,
