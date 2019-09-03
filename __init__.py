@@ -70,6 +70,13 @@ classes = (
     tessellate_numpy.TISSUE_PT_tessellate,
     tessellate_numpy.rotate_face,
     tessellate_numpy.TISSUE_PT_tessellate_object,
+    #tessellate_numpy.TISSUE_PT_tessellate_general,
+    tessellate_numpy.TISSUE_PT_tessellate_coordinates,
+    tessellate_numpy.TISSUE_PT_tessellate_thickness,
+    tessellate_numpy.TISSUE_PT_tessellate_options,
+    tessellate_numpy.TISSUE_PT_tessellate_selective,
+    tessellate_numpy.TISSUE_PT_tessellate_morphing,
+    tessellate_numpy.TISSUE_PT_tessellate_iterations,
 
     colors_groups_exchanger.face_area_to_vertex_groups,
     colors_groups_exchanger.vertex_colors_to_vertex_groups,
