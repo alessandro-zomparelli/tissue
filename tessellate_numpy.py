@@ -2781,6 +2781,16 @@ class update_tessellate(Operator):
                 boundary_mat = [e0.link_faces[0].material_index]
                 boundaries_mat = []
                 selected_edges = selected_edges[1:]
+                if bool_vertex_group:
+                    base_vg = []
+                    for vg in base_ob.vertex_groups:
+                        vertex_group = []
+                        for v in bm.verts:
+                            try:
+                                vertex_group.append(vg.weight(v.index))
+                            except:
+                                vertex_group.append(0)
+                        base_vg.append(vertex_group)
                 while True:
                     new_vert = None
                     for e1 in selected_edges:
@@ -2806,6 +2816,7 @@ class update_tessellate(Operator):
                 boundaries_mat.append(boundary_mat)
                 # compute boundary frames
                 new_faces = []
+                vert_ids = []
                 for loop, materials in zip(loops, boundaries_mat):
                     new_loop = []
                     loop_ext = [loop[-1]] + loop + [loop[0]]
@@ -2839,6 +2850,7 @@ class update_tessellate(Operator):
                         # add vertex
                         new_vert = bm.verts.new(new_co)
                         new_loop.append(new_vert)
+                        vert_ids.append(vert.index)
                     new_loop.append(new_loop[0])
                     for i in range(len(loop)):
                          v0 = loop_ext[i+1]
@@ -2853,6 +2865,12 @@ class update_tessellate(Operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
                 for f in bm.faces: f.select_set(f not in new_faces)
                 bm.to_mesh(base_ob.data)
+                # propagate vertex groups
+                if bool_vertex_group:
+                    new_vert_ids = range(len(bm.verts)-len(vert_ids),len(bm.verts))
+                    for vg_id,vg in enumerate(base_ob.vertex_groups):
+                        for ii, jj in zip(vert_ids, new_vert_ids):
+                            vg.add([jj], base_vg[vg_id][ii], 'REPLACE')
                 base_ob.data.update()
                 bpy.ops.object.mode_set(mode='EDIT')
             else:
@@ -3214,7 +3232,7 @@ class update_tessellate(Operator):
                     if f.select: f.material_index = cap_material_index
         else:
             bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
 
         if bool_smooth: bpy.ops.object.shade_smooth()
 
