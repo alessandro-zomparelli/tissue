@@ -377,6 +377,24 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Support face boundaries",
             update = anim_tessellate_active
             )
+    fill_frame : BoolProperty(
+            name="Fill Frame",
+            default=False,
+            description="Fill inner faces with Fan tessellation",
+            update = anim_tessellate_active
+            )
+    frame_boundary_mat : IntProperty(
+            name="Material Offset",
+            default=0,
+            description="Material Offset for boundaries",
+            update = anim_tessellate_active
+            )
+    fill_frame_mat : IntProperty(
+            name="Material Offset",
+            default=0,
+            description="Material Offset for inner faces",
+            update = anim_tessellate_active
+            )
     open_edges_crease : FloatProperty(
             name="Open Edges Crease",
             default=0,
@@ -462,6 +480,9 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bridge_smoothness = operator.bridge_smoothness
     ob.tissue_tessellate.frame_thickness = operator.frame_thickness
     ob.tissue_tessellate.frame_boundary = operator.frame_boundary
+    ob.tissue_tessellate.fill_frame = operator.fill_frame
+    ob.tissue_tessellate.frame_boundary_mat = operator.frame_boundary_mat
+    ob.tissue_tessellate.fill_frame_mat = operator.fill_frame_mat
     ob.tissue_tessellate.cap_material_index = operator.cap_material_index
     ob.tissue_tessellate.patch_subs = operator.patch_subs
     ob.tissue_tessellate.bool_hold = False
@@ -505,6 +526,9 @@ def load_parameters(operator, ob):
     operator.cap_material_index = ob.tissue_tessellate.cap_material_index
     operator.patch_subs = ob.tissue_tessellate.patch_subs
     operator.frame_boundary = ob.tissue_tessellate.frame_boundary
+    operator.fill_frame = ob.tissue_tessellate.fill_frame
+    operator.frame_boundary_mat = ob.tissue_tessellate.frame_boundary_mat
+    operator.fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
     operator.frame_thickness = ob.tissue_tessellate.frame_thickness
     return ob
 
@@ -2145,6 +2169,21 @@ class tessellate(Operator):
             default=False,
             description="Support face boundaries"
             )
+    fill_frame : BoolProperty(
+            name="Fill Frame",
+            default=False,
+            description="Fill inner faces with Fan tessellation"
+            )
+    frame_boundary_mat : IntProperty(
+            name="Material Offset",
+            default=0,
+            description="Material Offset for boundaries"
+            )
+    fill_frame_mat : IntProperty(
+            name="Material Offset",
+            default=0,
+            description="Material Offset for inner faces"
+            )
     open_edges_crease : FloatProperty(
             name="Open Edges Crease",
             default=0,
@@ -2296,17 +2335,29 @@ class tessellate(Operator):
                 full_event=False, emboss=True, index=-1)
             row.separator()
 
-            # rotation
             col2 = row.column(align=True)
+            # rotation
             if self.fill_mode != 'FRAME':
                 col2.prop(self, "rotation_mode", text="", icon='NONE', expand=False,
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
                 if self.rotation_mode == 'RANDOM':
-                    col2.prop(props, "random_seed")
+                    col2.prop(self, "random_seed")
+            # frame settings
             else:
                 col2.prop(self, "frame_thickness", text='Thickness', icon='NONE')
-                col2.prop(self, "frame_boundary", icon='NONE')
+                row = col.row(align=True)
+                col2 = row.column(align=True)
+                col2.prop(self, "fill_frame", icon='NONE')
+                row.separator()
+                show_frame_mat = self.bool_multi_components or self.bool_material_id
+                if self.fill_frame and show_frame_mat:
+                    col2.prop(self, "fill_frame_mat", icon='NONE')
+                    row.separator()
+                col2 = row.column(align=True)
+                col2.prop(self, "frame_boundary", text='Boundary', icon='NONE')
+                if self.frame_boundary and show_frame_mat:
+                    col2.prop(self, "frame_boundary_mat", icon='NONE')
 
             if self.rotation_mode == 'UV':
                 uv_error = False
@@ -2628,10 +2679,12 @@ class update_tessellate(Operator):
             bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
             frame_thickness = ob.tissue_tessellate.frame_thickness
             frame_boundary = ob.tissue_tessellate.frame_boundary
+            fill_frame = ob.tissue_tessellate.fill_frame
+            frame_boundary_mat = ob.tissue_tessellate.frame_boundary_mat
+            fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
             bridge_cuts = ob.tissue_tessellate.bridge_cuts
             cap_material_index = ob.tissue_tessellate.cap_material_index
             patch_subs = ob.tissue_tessellate.patch_subs
-
         try:
             generator.name
             component.name
@@ -2725,6 +2778,8 @@ class update_tessellate(Operator):
                 loop = []
                 count = 0
                 e0 = selected_edges[0]
+                boundary_mat = [e0.link_faces[0].material_index]
+                boundaries_mat = []
                 selected_edges = selected_edges[1:]
                 while True:
                     new_vert = None
@@ -2736,6 +2791,7 @@ class update_tessellate(Operator):
                                 loop = [v for v in e1.verts if v != new_vert]
                             loop.append(new_vert)
                             e0 = e1
+                            boundary_mat.append(e0.link_faces[0].material_index)
                             selected_edges.remove(e0)
                             break
                     if new_vert == None:
@@ -2744,10 +2800,13 @@ class update_tessellate(Operator):
                             loop = []
                             e0 = selected_edges[0]
                             selected_edges = selected_edges[1:]
+                            boundaries_mat.append(boundary_mat)
+                            boundary_mat = [e0.link_faces[0].material_index]
                         except: break
+                boundaries_mat.append(boundary_mat)
                 # compute boundary frames
                 new_faces = []
-                for loop in loops:
+                for loop, materials in zip(loops, boundaries_mat):
                     new_loop = []
                     loop_ext = [loop[-1]] + loop + [loop[0]]
                     mult = 1
@@ -2788,7 +2847,9 @@ class update_tessellate(Operator):
                          v3 = new_loop[i]
                          face_verts = [v1,v0,v3,v2]
                          if mult == -1: face_verts = [v0,v1,v2,v3]
-                         new_faces.append(bm.faces.new(face_verts))
+                         new_face = bm.faces.new(face_verts)
+                         new_face.material_index = materials[i] + frame_boundary_mat
+                         new_faces.append(new_face)
                 bpy.ops.object.mode_set(mode='OBJECT')
                 for f in bm.faces: f.select_set(f not in new_faces)
                 bm.to_mesh(base_ob.data)
@@ -2800,8 +2861,14 @@ class update_tessellate(Operator):
                 thickness=frame_thickness, use_even_offset=True,
                 use_select_inset=False, use_individual=True
                 )
-            bpy.ops.mesh.delete(type='FACE')
-            bpy.ops.object.mode_set(mode='OBJECT')
+            if fill_frame:
+                bpy.ops.mesh.poke()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                for f in base_ob.data.polygons:
+                    if f.select: f.material_index += fill_frame_mat
+            else:
+                bpy.ops.mesh.delete(type='FACE')
+                bpy.ops.object.mode_set(mode='OBJECT')
             fill_mode = 'QUAD'
 
         #new_ob.location = ob.location
@@ -3306,8 +3373,8 @@ class TISSUE_PT_tessellate_object(Panel):
                      full_event=False, emboss=True, index=-1)
             row.separator()
 
-            # rotation
             col2 = row.column(align=True)
+            # rotation
             if props.fill_mode != 'FRAME':
                 col2.prop(props, "rotation_mode", text="", icon='NONE', expand=False,
                          slider=True, toggle=False, icon_only=False, event=False,
@@ -3316,9 +3383,21 @@ class TISSUE_PT_tessellate_object(Panel):
                 if props.rotation_mode == 'RANDOM':
                     #row = col.row(align=True)
                     col2.prop(props, "random_seed")
+            # frame settings
             else:
                 col2.prop(props, "frame_thickness", text='Thickness', icon='NONE')
-                col2.prop(props, "frame_boundary", icon='NONE')
+                row = col.row(align=True)
+                col2 = row.column(align=True)
+                col2.prop(props, "fill_frame", icon='NONE')
+                row.separator()
+                show_frame_mat = props.bool_multi_components or props.bool_material_id
+                if props.fill_frame and show_frame_mat:
+                    col2.prop(props, "fill_frame_mat", icon='NONE')
+                    row.separator()
+                col2 = row.column(align=True)
+                col2.prop(props, "frame_boundary", text='Boundary', icon='NONE')
+                if props.frame_boundary and show_frame_mat:
+                    col2.prop(props, "frame_boundary_mat", icon='NONE')
 
             if props.rotation_mode == 'UV':
                 uv_error = False
