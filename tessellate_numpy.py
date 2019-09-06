@@ -164,9 +164,25 @@ class tissue_tessellate_prop(PropertyGroup):
     rotation_mode : EnumProperty(
         items=(('RANDOM', "Random", "Random faces rotation"),
                ('UV', "Active UV", "Rotate according to UV coordinates"),
+               ('WEIGHT', "Active Weight", "Rotate according to Vertex Group gradient"),
                ('DEFAULT', "Default", "Default rotation")),
         default='DEFAULT',
         name="Component Rotation",
+        update = anim_tessellate_active
+        )
+    rotation_direction : EnumProperty(
+        items=(('ORTHO', "Orthogonal", "Component main directions in XY"),
+               ('DIAG', "Diagonal", "Component main direction aligned with diagonal")),
+        default='ORTHO',
+        name="Direction",
+        update = anim_tessellate_active
+        )
+    rotation_shift : IntProperty(
+        name="Shift",
+        default=0,
+        soft_min=0,
+        soft_max=3,
+        description="Shift components rotation",
         update = anim_tessellate_active
         )
     fill_mode : EnumProperty(
@@ -452,6 +468,8 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.com_modifiers = operator.com_modifiers
     ob.tissue_tessellate.mode = operator.mode
     ob.tissue_tessellate.rotation_mode = operator.rotation_mode
+    ob.tissue_tessellate.rotation_shift = operator.rotation_shift
+    ob.tissue_tessellate.rotation_direction = operator.rotation_direction
     ob.tissue_tessellate.merge = operator.merge
     ob.tissue_tessellate.merge_thres = operator.merge_thres
     ob.tissue_tessellate.scale_mode = operator.scale_mode
@@ -497,6 +515,8 @@ def load_parameters(operator, ob):
     operator.com_modifiers = ob.tissue_tessellate.com_modifiers
     operator.mode = ob.tissue_tessellate.mode
     operator.rotation_mode = ob.tissue_tessellate.rotation_mode
+    operator.rotation_shift = ob.tissue_tessellate.rotation_shift
+    operator.rotation_direction = ob.tissue_tessellate.rotation_direction
     operator.merge = ob.tissue_tessellate.merge
     operator.merge_thres = ob.tissue_tessellate.merge_thres
     operator.scale_mode = ob.tissue_tessellate.scale_mode
@@ -1238,7 +1258,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     return new_patch
 
 def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
-               scale_mode, rotation_mode, rand_seed, fill_mode,
+               scale_mode, rotation_mode, rotation_shift, rotation_direction, rand_seed, fill_mode,
                bool_vertex_group, bool_selection, bool_shapekeys,
                bool_material_id, material_id, normals_mode, bounds_x, bounds_y):
 
@@ -1520,7 +1540,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
             #sk_np.append([])
 
     # All vertex group
-    if bool_vertex_group:
+    if bool_vertex_group or rotation_mode == 'WEIGHT':
         try:
             weight = []
             for vg in ob0.vertex_groups:
@@ -1625,8 +1645,10 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     for j, p in enumerate(base_polygons):
 
         bool_correct = True
-        if rotation_mode == 'UV' and ob0.type != 'MESH':
+        if rotation_mode in ['UV', 'WEIGHT'] and ob0.type != 'MESH':
             rotation_mode = 'DEFAULT'
+
+        ordered = p.vertices
 
         # Random rotation
         if rotation_mode == 'RANDOM':
@@ -1637,21 +1659,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                 shifted_vertices.append(p.vertices[(i + rand) % n_poly_verts])
             if scale_mode == 'ADAPTIVE':
                 verts_area0 = np.array([verts_area[i] for i in shifted_vertices])
-            vs0 = np.array([verts0[i].co for i in shifted_vertices])
-            nvs0 = np.array([verts0[i].normal for i in shifted_vertices])
-            if normals_mode == 'VERTS':
-                nvs0 = np.array([verts0[i].normal for i in shifted_vertices])
-            # vertex weight
-            if bool_vertex_group:
-                ws0 = []
-                for w in weight:
-                    _ws0 = []
-                    for i in shifted_vertices:
-                        try:
-                            _ws0.append(w[i])
-                        except:
-                            _ws0.append(0)
-                    ws0.append(np.array(_ws0))
+            ordered = shifted_vertices
 
         # UV rotation
         elif rotation_mode == 'UV':
@@ -1695,41 +1703,44 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                         vertUV = p.vertices[:]
                     else:
                         vertUV = p.vertices[2:] + p.vertices[:2]
-                vs0 = np.array([verts0[i].co for i in vertUV])
-                nvs0 = np.array([verts0[i].normal for i in vertUV])
-                if scale_mode == 'ADAPTIVE':
-                    verts_area0 = np.array([verts_area[i] for i in vertUV])
-
-                # Vertex weight
-                if bool_vertex_group:
-                    ws0 = []
-                    for w in weight:
-                        _ws0 = []
-                        for i in vertUV:
-                            try:
-                                _ws0.append(w[i])
-                            except:
-                                _ws0.append(0)
-                        ws0.append(np.array(_ws0))
-
+                ordered = vertUV
                 count += len(p.vertices)
-            else: rotation_mode = 'DEFAULT'
 
-        # Default rotation
-        if rotation_mode == 'DEFAULT':
-            vs0 = np.array([verts0[i].co for i in p.vertices])
-            nvs0 = np.array([verts0[i].normal for i in p.vertices])
-            # Vertex weight
-            if bool_vertex_group:
-                ws0 = []
-                for vg in weight:
-                    _ws0 = []
-                    for i in p.vertices:
-                        try:
-                            _ws0.append(vg[i])
-                        except:
-                            _ws0.append(0)
-                    ws0.append(np.array(_ws0))
+        # Weight Rotation
+        elif rotation_mode == 'WEIGHT':
+            if len(weight) > 0:
+                active_weight = weight[ob0.vertex_groups.active_index]
+                i = p.index
+                face_weights = [active_weight[v] for v in p.vertices]
+                face_weights*=2
+                if rotation_direction == 'DIAG':
+                    differential = [face_weights[ii]-face_weights[ii+2] for ii in range(4)]
+                else:
+                    differential = [face_weights[ii]+face_weights[ii+1]-face_weights[ii+2]- face_weights[ii+3] for ii in range(4)]
+                starting = differential.index(max(differential))
+
+                ordered = p.vertices[starting:] + p.vertices[:starting]
+
+        if rotation_mode != 'RANDOM':
+            ordered = np.roll(np.array(ordered),rotation_shift)
+        ordered = np.array((ordered[0], ordered[1], ordered[2], ordered[-1]))
+
+        # assign vertices and values
+        vs0 = np.array([verts0[i].co for i in ordered])
+        nvs0 = np.array([verts0[i].normal for i in ordered])
+        if scale_mode == 'ADAPTIVE':
+            np_verts_area = np.array([verts_area[i] for i in ordered])
+        # Vertex weight
+        if bool_vertex_group:
+            ws0 = []
+            for w in weight:
+                _ws0 = []
+                for i in ordered:
+                    try:
+                        _ws0.append(w[i])
+                    except:
+                        _ws0.append(0)
+                ws0.append(np.array(_ws0))
 
         # optimization test
         _vs0[j] = (vs0[0], vs0[1], vs0[2], vs0[-1])
@@ -1738,14 +1749,11 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         #else:
         #    _nvs0[j] = base_face_normals[j]
 
-
         # vertex z to normal
         if scale_mode == 'ADAPTIVE':
             poly_faces = (p.vertices[0], p.vertices[1], p.vertices[2], p.vertices[-1])
-            if rotation_mode != 'DEFAULT': sz = verts_area0
-            else: sz = np.array([verts_area[i] for i in poly_faces])
-
-            _sz[j] = sz
+            #sz = np_verts_area
+            _sz[j] = np_verts_area
 
         if bool_vertex_group:
             for i_vg, ws0_face in enumerate(ws0):
@@ -1800,6 +1808,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         w = w.reshape((n_vg, n_faces*n_verts1))
 
     if scale_mode == 'ADAPTIVE':
+        _sz = np.array(_sz)
+        print(_sz.shape)
         _sz_0 = _sz[:,0].reshape((n_faces,1,1))
         _sz_1 = _sz[:,1].reshape((n_faces,1,1))
         _sz_2 = _sz[:,2].reshape((n_faces,1,1))
@@ -1993,9 +2003,23 @@ class tessellate(Operator):
     rotation_mode : EnumProperty(
             items=(('RANDOM', "Random", "Random faces rotation"),
                    ('UV', "Active UV", "Face rotation is based on UV coordinates"),
+                   ('WEIGHT', "Active Weight", "Rotate according to Vertex Group gradient"),
                    ('DEFAULT', "Default", "Default rotation")),
             default='DEFAULT',
             name="Component Rotation"
+            )
+    rotation_direction : EnumProperty(
+            items=(('ORTHO', "Orthogonal", "Component main directions in XY"),
+                   ('DIAG', "Diagonal", "Component main direction aligned with diagonal")),
+            default='ORTHO',
+            name="Direction"
+            )
+    rotation_shift : IntProperty(
+            name="Shift",
+            default=0,
+            soft_min=0,
+            soft_max=3,
+            description="Shift components rotation"
             )
     fill_mode : EnumProperty(
             items=(
@@ -2327,37 +2351,29 @@ class tessellate(Operator):
             # Fill and Rotation
             row = col.row(align=True)
             row.label(text="Fill Mode:")
-            row.label(text="Rotation:")
             row = col.row(align=True)
             row.prop(
-                self, "fill_mode", text="", icon='NONE', expand=False,
+                self, "fill_mode", icon='NONE', expand=True,
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
-            row.separator()
+            row = col.row(align=True)
+            row.prop(self, "bool_smooth")
 
-            col2 = row.column(align=True)
-            # rotation
-            if self.fill_mode != 'FRAME':
-                col2.prop(self, "rotation_mode", text="", icon='NONE', expand=False,
-                         slider=True, toggle=False, icon_only=False, event=False,
-                         full_event=False, emboss=True, index=-1)
-                if self.rotation_mode == 'RANDOM':
-                    col2.prop(self, "random_seed")
             # frame settings
-            else:
-                col2.prop(self, "frame_thickness", text='Thickness', icon='NONE')
+            if self.fill_mode == 'FRAME':
+                col.separator()
+                col.label(text="Frame Settings:")
+                col.prop(self, "frame_thickness", text='Thickness', icon='NONE')
+                col.separator()
                 row = col.row(align=True)
-                col2 = row.column(align=True)
-                col2.prop(self, "fill_frame", icon='NONE')
-                row.separator()
+                row.prop(self, "fill_frame", icon='NONE')
                 show_frame_mat = self.bool_multi_components or self.bool_material_id
                 if self.fill_frame and show_frame_mat:
-                    col2.prop(self, "fill_frame_mat", icon='NONE')
-                    row.separator()
-                col2 = row.column(align=True)
-                col2.prop(self, "frame_boundary", text='Boundary', icon='NONE')
+                    row.prop(self, "fill_frame_mat", icon='NONE')
+                row = col.row(align=True)
+                row.prop(self, "frame_boundary", text='Boundary', icon='NONE')
                 if self.frame_boundary and show_frame_mat:
-                    col2.prop(self, "frame_boundary_mat", icon='NONE')
+                    row.prop(self, "frame_boundary_mat", icon='NONE')
 
             if self.rotation_mode == 'UV':
                 uv_error = False
@@ -2385,7 +2401,26 @@ class tessellate(Operator):
                     row.label(text="Default rotation will be used instead",
                               icon='INFO')
 
+            # Component Z
+            col.separator()
+            col.label(text="Thickness:")
+            row = col.row(align=True)
+            row.prop(
+                self, "scale_mode", text="Scale Mode", icon='NONE', expand=True,
+                slider=False, toggle=False, icon_only=False, event=False,
+                full_event=False, emboss=True, index=-1)
+            col.prop(
+                self, "zscale", text="Scale", icon='NONE', expand=False,
+                slider=True, toggle=False, icon_only=False, event=False,
+                full_event=False, emboss=True, index=-1)
+            if self.mode == 'BOUNDS':
+                col.prop(
+                    self, "offset", text="Offset", icon='NONE', expand=False,
+                    slider=True, toggle=False, icon_only=False, event=False,
+                    full_event=False, emboss=True, index=-1)
+
             # Component XY
+            col.separator()
             row = col.row(align=True)
             row.label(text="Component Coordinates:")
             row = col.row(align=True)
@@ -2410,26 +2445,6 @@ class tessellate(Operator):
                     slider=False, toggle=False, icon_only=False, event=False,
                     full_event=False, emboss=True, index=-1)
 
-            # Component Z
-            col.label(text="Thickness:")
-            row = col.row(align=True)
-            row.prop(
-                self, "scale_mode", text="Scale Mode", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-            col.prop(
-                self, "zscale", text="Scale", icon='NONE', expand=False,
-                slider=True, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-            if self.mode == 'BOUNDS':
-                col.prop(
-                    self, "offset", text="Offset", icon='NONE', expand=False,
-                    slider=True, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-
-            col.separator()
-            row = col.row(align=True)
-            row.prop(self, "bool_smooth")
 
             # merge settings
             col = layout.column(align=True)
@@ -2461,6 +2476,47 @@ class tessellate(Operator):
             row = col.row(align=True)
             row.prop(self, "bool_advanced", icon='SETTINGS')
             if self.bool_advanced:
+                # rotation
+                layout.use_property_split = True
+                layout.use_property_decorate = False  # No animation.
+                col = layout.column(align=True)
+                col.prop(self, "rotation_mode", text='Rotation', icon='NONE', expand=False,
+                         slider=True, toggle=False, icon_only=False, event=False,
+                         full_event=False, emboss=True, index=-1)
+                if self.rotation_mode == 'WEIGHT':
+                    col.prop(self, "rotation_direction", expand=False,
+                              slider=True, toggle=False, icon_only=False, event=False,
+                              full_event=False, emboss=True, index=-1)
+                if self.rotation_mode == 'RANDOM':
+                    col.prop(self, "random_seed")
+                else:
+                    col.prop(self, "rotation_shift")
+
+                if self.rotation_mode == 'UV':
+                    uv_error = False
+                    if self.fill_mode == 'FAN':
+                        row = col.row(align=True)
+                        row.label(text="UV rotation doesn't work in FAN mode",
+                                  icon='ERROR')
+                        uv_error = True
+                    if self.generator.type != 'MESH':
+                        row = col.row(align=True)
+                        row.label(
+                            text="UV rotation supported only for Mesh objects",
+                            icon='ERROR')
+                        uv_error = True
+                    else:
+                        if len(self.generator.data.uv_layers) == 0:
+                            row = col.row(align=True)
+                            row.label(text="'" + props.generator.name +
+                                      " doesn't have UV Maps", icon='ERROR')
+                            uv_error = True
+                    if uv_error:
+                        row = col.row(align=True)
+                        row.label(text="Default rotation will be used instead",
+                                  icon='INFO')
+                layout.use_property_split = False
+
                 # Direction
                 col = layout.column(align=True)
                 row = col.row(align=True)
@@ -2492,7 +2548,6 @@ class tessellate(Operator):
                 row = col.row(align=True)
                 col2 = row.column(align=True)
                 col2.prop(self, "bool_vertex_group", icon='GROUP_VERTEX')
-                #col2.prop_search(props, "vertex_group", props.generator, "vertex_groups")
                 try:
                     if len(ob0.vertex_groups) == 0:
                         col2.enabled = False
@@ -2517,9 +2572,6 @@ class tessellate(Operator):
                 row = col.row(align=True)
                 col2 = row.column(align=True)
                 col2.prop(self, "bool_selection", text="On selected Faces", icon='RESTRICT_SELECT_OFF')
-                #if self.bool_material_id or self.bool_selection or self.bool_multi_components:
-                    #col2 = row.column(align=True)
-                #    col2.prop(self, "bool_combine")
                 row.separator()
                 if ob0.type != 'MESH':
                     col2.enabled = False
@@ -2648,6 +2700,8 @@ class update_tessellate(Operator):
             zscale = ob.tissue_tessellate.zscale
             scale_mode = ob.tissue_tessellate.scale_mode
             rotation_mode = ob.tissue_tessellate.rotation_mode
+            rotation_shift = ob.tissue_tessellate.rotation_shift
+            rotation_direction = ob.tissue_tessellate.rotation_direction
             offset = ob.tissue_tessellate.offset
             merge = ob.tissue_tessellate.merge
             merge_thres = ob.tissue_tessellate.merge_thres
@@ -2947,6 +3001,7 @@ class update_tessellate(Operator):
                     new_ob = tessellate_original(
                             base_ob, ob1, offset, zscale, gen_modifiers,
                             com_modifiers, mode, scale_mode, rotation_mode,
+                            rotation_shift, rotation_direction,
                             random_seed, fill_mode, bool_vertex_group,
                             bool_selection, bool_shapekeys, bool_material_id,
                             material_id, normals_mode, bounds_x, bounds_y
@@ -3296,12 +3351,8 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.tessellate")
         col.operator("object.dual_mesh_tessellated")
         col.separator()
-        #col = layout.column(align=True)
-        #col.label(text="Tessellate Edit:")
-        #col.operator("object.settings_tessellate")
         col.operator("object.update_tessellate", icon='FILE_REFRESH')
 
-        #col = layout.column(align=True)
         col.operator("mesh.rotate_face", icon='NDOF_TURN')
 
         col.separator()
@@ -3390,28 +3441,6 @@ class TISSUE_PT_tessellate_object(Panel):
                      slider=True, toggle=False, icon_only=False, event=False,
                      full_event=False, emboss=True, index=-1)
             col.separator()
-
-            # frame settings
-            if props.fill_mode == 'FRAME':
-                #layout.use_property_split = True
-                #layout.use_property_decorate = False  # No animation.
-                row = col.row(align=True)
-                row.label(text="Frame thickness")
-                row.prop(props, "frame_thickness", text='', icon='NONE')
-                #layout.use_property_split = False
-                col = layout.column(align=True)
-                row = col.row(align=True)
-                #col2 = row.column(align=True)
-                row.prop(props, "fill_frame", icon='NONE')
-                #row.separator()
-                show_frame_mat = props.bool_multi_components or props.bool_material_id
-                if props.fill_frame and show_frame_mat:
-                    row.prop(props, "fill_frame_mat", icon='NONE')
-                    #row.separator()
-                row = col.row(align=True)
-                row.prop(props, "frame_boundary", text='Boundary', icon='NONE')
-                if props.frame_boundary and show_frame_mat:
-                    row.prop(props, "frame_boundary_mat", icon='NONE')
 
             col.prop(props, "bool_smooth")
             '''
@@ -3586,6 +3615,48 @@ class TISSUE_PT_tessellate_object(Panel):
                     full_event=False, emboss=True, index=-1)
             '''
 
+class TISSUE_PT_tessellate_frame(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_parent_id = "TISSUE_PT_tessellate_object"
+    bl_label = "Frame Settings"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            bool_frame = context.object.tissue_tessellate.fill_mode == 'FRAME'
+            return context.object.type == 'MESH' and bool_frame
+        except:
+            return False
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_tessellate
+        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
+
+        try:
+            bool_tessellated = props.generator or props.component != None
+            ob0 = props.generator
+            ob1 = props.component
+        except: bool_tessellated = False
+        layout = self.layout
+        if bool_tessellated:
+            col = layout.column(align=True)
+            row = col.row(align=True)
+            row.prop(props, "frame_thickness", icon='NONE', expand=True)
+            col = layout.column(align=True)
+            row = col.row(align=True)
+            row.prop(props, "fill_frame", icon='NONE')
+            show_frame_mat = props.bool_multi_components or props.bool_material_id
+            if props.fill_frame and show_frame_mat:
+                row.prop(props, "fill_frame_mat", icon='NONE')
+            row = col.row(align=True)
+            row.prop(props, "frame_boundary", text='Boundary', icon='NONE')
+            if props.frame_boundary and show_frame_mat:
+                row.prop(props, "frame_boundary_mat", icon='NONE')
+
 class TISSUE_PT_tessellate_coordinates(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -3614,8 +3685,6 @@ class TISSUE_PT_tessellate_coordinates(Panel):
             col = layout.column(align=True)
             # component XY
             row = col.row(align=True)
-            #row.label(text="Component Coordinates:")
-            row = col.row(align=True)
             row.prop(props, "mode", expand=True)
 
             if props.mode != 'BOUNDS':
@@ -3634,6 +3703,31 @@ class TISSUE_PT_tessellate_coordinates(Panel):
                     slider=False, toggle=False, icon_only=False, event=False,
                     full_event=False, emboss=True, index=-1)
 
+class TISSUE_PT_tessellate_rotation(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_parent_id = "TISSUE_PT_tessellate_object"
+    bl_label = "Rotation"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        try: return context.object.type == 'MESH'
+        except: return False
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_tessellate
+        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
+
+        try:
+            bool_tessellated = props.generator or props.component != None
+            ob0 = props.generator
+            ob1 = props.component
+        except: bool_tessellated = False
+        layout = self.layout
+        if bool_tessellated:
             # rotation
             layout.use_property_split = True
             layout.use_property_decorate = False  # No animation.
@@ -3641,8 +3735,14 @@ class TISSUE_PT_tessellate_coordinates(Panel):
             col.prop(props, "rotation_mode", text='Rotation', icon='NONE', expand=False,
                      slider=True, toggle=False, icon_only=False, event=False,
                      full_event=False, emboss=True, index=-1)
+            if props.rotation_mode == 'WEIGHT':
+                col.prop(props, "rotation_direction", expand=False,
+                          slider=True, toggle=False, icon_only=False, event=False,
+                          full_event=False, emboss=True, index=-1)
             if props.rotation_mode == 'RANDOM':
                 col.prop(props, "random_seed")
+            else:
+                col.prop(props, "rotation_shift")
 
             if props.rotation_mode == 'UV':
                 uv_error = False
@@ -3750,30 +3850,17 @@ class TISSUE_PT_tessellate_options(Panel):
         layout.use_property_decorate = False  # No animation.
         if bool_tessellated:
             col = layout.column(align=True)
-            #row = col.row(align=True)
-            #row.prop(props, "bool_smooth")
-
-            # merge settings
-            #col = layout.column(align=True)
-            #row = col.row(align=True)
-            #row.prop(props, "merge")
             if props.merge:
                 col.prop(props, "merge_thres")
-                #col.separator()
-                #col = col.row(align=True)
                 col.prop(props, "bool_dissolve_seams")
-                #row = col.row(align=True)
-                #col = row.column(align=True)
-                #col.label(text='Close Mesh:')
-                #col = row.column(align=True)
-                #col.separator()
                 col.prop(props, "close_mesh")
                 if props.close_mesh != 'NONE':
                     #row = col.row(align=True)
+                    col.separator()
                     col.prop(props, "open_edges_crease", text="Crease")
                     col.prop(props, "cap_material_index", text='Material Index')
                     if props.close_mesh == 'BRIDGE':
-                        #row = col.row(align=True)
+                        col.separator()
                         col.prop(props, "bridge_cuts")
                         col.prop(props, "bridge_smoothness")
 
