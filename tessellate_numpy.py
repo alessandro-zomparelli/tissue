@@ -3928,8 +3928,8 @@ class rotate_face(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_tessellated
+            #bool_tessellated = context.object.tissue_tessellate.generator != None
+            return context.object.type == 'MESH'# and bool_tessellated
         except:
             return False
 

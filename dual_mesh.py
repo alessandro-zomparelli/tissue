@@ -93,14 +93,14 @@ class dual_mesh_tessellated(Operator):
         except:
             me = bpy.data.meshes.new("Dual-Mesh")  # add a new mesh
             me.from_pydata(verts, edges, faces)
-            me.update(calc_edges=True, calc_edges_loose=True, calc_loop_triangles=True)
+            me.update(calc_edges=True, calc_edges_loose=True)
             if self.source_faces == 'QUAD': n_seams = 8
             else: n_seams = 6
             for i in range(n_seams): me.edges[i].use_seam = True
             ob1 = bpy.data.objects.new(name1, me)
-            bpy.context.collection.objects.link(ob1)
+            context.collection.objects.link(ob1)
             # fix visualization issue
-            bpy.context.view_layer.objects.active = ob1
+            context.view_layer.objects.active = ob1
             ob1.select_set(True)
             bpy.ops.object.editmode_toggle()
             bpy.ops.object.editmode_toggle()
@@ -112,8 +112,8 @@ class dual_mesh_tessellated(Operator):
         ob = convert_object_to_mesh(ob0,False,False)
         ob.name = 'DualMesh'
         #ob = bpy.data.objects.new("DualMesh", convert_object_to_mesh(ob0,False,False))
-        #bpy.context.collection.objects.link(ob)
-        #bpy.context.view_layer.objects.active = ob
+        #context.collection.objects.link(ob)
+        #context.view_layer.objects.active = ob
         #ob.select_set(True)
         ob.tissue_tessellate.component = ob1
         ob.tissue_tessellate.generator = ob0
@@ -175,12 +175,12 @@ class dual_mesh(Operator):
         mode = context.mode
         if mode == 'EDIT_MESH':
             mode = 'EDIT'
-        act = bpy.context.active_object
+        act = context.active_object
         if mode != 'OBJECT':
             sel = [act]
             bpy.ops.object.mode_set(mode='OBJECT')
         else:
-            sel = bpy.context.selected_objects
+            sel = context.selected_objects
         doneMeshes = []
 
         for ob0 in sel:
@@ -209,7 +209,7 @@ class dual_mesh(Operator):
             ob.data = ob.data.copy()
             bpy.ops.object.select_all(action='DESELECT')
             ob.select_set(True)
-            bpy.context.view_layer.objects.active = ob0
+            context.view_layer.objects.active = ob0
             bpy.ops.object.mode_set(mode='EDIT')
 
             # prevent borders erosion
@@ -277,23 +277,23 @@ class dual_mesh(Operator):
             bpy.ops.object.mode_set(mode='EDIT')
 
             # select quad faces
-            bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+            context.tool_settings.mesh_select_mode = (False, False, True)
             bpy.ops.mesh.select_face_by_sides(number=4, extend=False)
 
             # deselect boundaries
             bpy.ops.object.mode_set(mode='OBJECT')
             for i in bound_v:
-                bpy.context.active_object.data.vertices[i].select = False
+                context.active_object.data.vertices[i].select = False
             for i in bound_e:
-                bpy.context.active_object.data.edges[i].select = False
+                context.active_object.data.edges[i].select = False
             for i in bound_p:
-                bpy.context.active_object.data.polygons[i].select = False
+                context.active_object.data.polygons[i].select = False
 
             bpy.ops.object.mode_set(mode='EDIT')
 
-            bpy.context.tool_settings.mesh_select_mode = (False, False, True)
+            context.tool_settings.mesh_select_mode = (False, False, True)
             bpy.ops.mesh.edge_face_add()
-            bpy.context.tool_settings.mesh_select_mode = (True, False, False)
+            context.tool_settings.mesh_select_mode = (True, False, False)
             bpy.ops.mesh.select_all(action='DESELECT')
 
             # delete boundaries
@@ -339,7 +339,7 @@ class dual_mesh(Operator):
         for o in sel:
             o.select_set(True)
 
-        bpy.context.view_layer.objects.active = act
+        context.view_layer.objects.active = act
         bpy.ops.object.mode_set(mode=mode)
 
         return {'FINISHED'}
