@@ -33,7 +33,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 33),
+    "version": (0, 3, 34),
     "blender": (2, 80, 0),
     "location": "",
     "description": "Tools for Computational Design",
@@ -67,6 +67,7 @@ classes = (
     tessellate_numpy.tissue_tessellate_prop,
     tessellate_numpy.tessellate,
     tessellate_numpy.update_tessellate,
+    tessellate_numpy.refresh_tessellate,
     tessellate_numpy.TISSUE_PT_tessellate,
     tessellate_numpy.rotate_face,
     tessellate_numpy.TISSUE_PT_tessellate_object,
