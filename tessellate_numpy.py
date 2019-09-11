@@ -157,6 +157,11 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
         default=False
         )
+    bool_hold : BoolProperty(
+        name="Hold",
+        description="Wait...",
+        default=False
+        )
     bool_dependencies : BoolProperty(
         name="Update Dependencies",
         description="Automatically updates base and components as well, if results of other tessellations",
@@ -2022,7 +2027,7 @@ class tessellate(Operator):
 
     bool_hold : BoolProperty(
             name="Hold",
-            description="Wait.",
+            description="Wait...",
             default=False
     )
     bool_lock : BoolProperty(
@@ -3444,9 +3449,11 @@ class TISSUE_PT_tessellate_object(Panel):
             lock_icon = 'LOCKED' if props.bool_lock else 'UNLOCKED'
             #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
             deps_icon = 'LINKED' if props.bool_dependencies else 'UNLINKED'
-            row.prop(props, "bool_lock", text="", icon=lock_icon)
             row.prop(props, "bool_dependencies", text="", icon=deps_icon)
-            row.prop(props, "bool_run", text="",icon='TIME')
+            row.prop(props, "bool_lock", text="", icon=lock_icon)
+            col2 = row.column(align=True)
+            col2.prop(props, "bool_run", text="",icon='TIME')
+            col2.enabled = not props.bool_lock
             '''
             col = layout.column(align=True)
             row = col.row(align=True)
