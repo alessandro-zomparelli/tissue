@@ -54,7 +54,7 @@ from .utils import *
 def anim_tessellate_active(self, context):
     ob = context.object
     props = ob.tissue_tessellate
-    if not props.bool_hold:
+    if not (props.bool_lock or props.bool_hold):
         try:
             props.generator.name
             props.component.name
@@ -82,7 +82,7 @@ def anim_tessellate_old(scene):
         old_mode = bpy.context.mode
         if old_mode == 'PAINT_WEIGHT': old_mode = 'WEIGHT_PAINT'
         for ob in scene.objects:
-            if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_hold:
+            if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_lock:
                 hidden = ob.hide_viewport
                 ob.hide_viewport = False
                 for o in scene.objects:
@@ -111,8 +111,23 @@ def anim_tessellate(scene):
     except: active_object = old_mode = selected_objects = None
     if old_mode in ('OBJECT', 'PAINT_WEIGHT'):
         for ob in scene.objects:
-            if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_hold:
+            if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_lock:
                 override = {'object': ob}
+                '''
+                win      = bpy.data.window_managers[0].windows[0]#bpy.context.window
+                scr      = win.screen
+                areas3d  = [area for area in scr.areas if area.type == 'VIEW_3D']
+                region   = [region for region in areas3d[0].regions if region.type == 'WINDOW']
+                override = {
+                    'window':win,
+                    'screen':scr,
+                    'area'  :areas3d[0],
+                    'region':region[0],
+                    'scene' :scene,
+                    'object': ob
+                }
+                '''
+                print(override)
                 bpy.ops.object.update_tessellate(override)
     # restore selected objects
     if old_mode != None:
@@ -137,9 +152,9 @@ def set_tessellate_handler(self, context):
     return
 
 class tissue_tessellate_prop(PropertyGroup):
-    bool_hold : BoolProperty(
-        name="Hold Update",
-        description="Prevent automatic update while other properties are changed",
+    bool_lock : BoolProperty(
+        name="Lock",
+        description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
         default=False
         )
     bool_dependencies : BoolProperty(
@@ -494,6 +509,7 @@ class tissue_tessellate_prop(PropertyGroup):
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
+    ob.tissue_tessellate.bool_lock = operator.bool_lock
     ob.tissue_tessellate.bool_dependencies = operator.bool_dependencies
     ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
     ob.tissue_tessellate.component = bpy.data.objects[operator.component]
@@ -543,6 +559,7 @@ def store_parameters(operator, ob):
     return ob
 
 def load_parameters(operator, ob):
+    operator.bool_lock = ob.tissue_tessellate.bool_lock
     operator.bool_dependencies = ob.tissue_tessellate.bool_dependencies
     operator.generator = ob.tissue_tessellate.generator.name
     operator.component = ob.tissue_tessellate.component.name
@@ -591,7 +608,7 @@ def load_parameters(operator, ob):
     return ob
 
 def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
-               scale_mode, rotation_mode, rand_seed, bool_vertex_group,
+               scale_mode, rotation_mode, rotation_shift, rand_seed, bool_vertex_group,
                bool_selection, bool_shapekeys, bool_material_id, material_id,
                normals_mode, bounds_x, bounds_y):
     random.seed(rand_seed)
@@ -1104,17 +1121,18 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 verts[sides][sides] = verts0[face.vertices[2]]
 
         # Random rotation
-        if rotation_mode == 'RANDOM':
-            rand = random.randint(0, 3)
-            if rand == 1:
-                verts = [[verts[k][w] for w in range(sides,-1,-1)] for k in range(sides,-1,-1)]
-            elif rand == 2:
-                verts = [[verts[w][k] for w in range(sides,-1,-1)] for k in range(sides+1)]
-            elif rand == 3:
+        if rotation_mode == 'RANDOM' or rotation_shift != 0:
+            if rotation_mode == 'RANDOM': rot = random.randint(0, 3)
+            else: rot = rotation_shift%4
+            if rot == 1:
                 verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
+            elif rot == 2:
+                verts = [[verts[k][w] for w in range(sides,-1,-1)] for k in range(sides,-1,-1)]
+            elif rot == 3:
+                verts = [[verts[w][k] for w in range(sides,-1,-1)] for k in range(sides+1)]
 
         # UV rotation
-        elif rotation_mode == 'UV' and ob0.type == 'MESH':
+        if rotation_mode == 'UV' and ob0.type == 'MESH':
             if len(ob0.data.uv_layers) > 0:
                 uv0 = me0.uv_layers.active.data[faces[0][0].index*4].uv
                 uv1 = me0.uv_layers.active.data[faces[0][-1].index*4 + 3].uv
@@ -2002,6 +2020,16 @@ class tessellate(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
 
+    bool_hold : BoolProperty(
+            name="Hold",
+            description="Wait.",
+            default=False
+    )
+    bool_lock : BoolProperty(
+            name="Lock",
+            description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
+            default=False
+    )
     bool_dependencies : BoolProperty(
             name="Update Dependencies",
             description="Automatically updates base and components as well, if results of other tessellations",
@@ -2714,6 +2742,7 @@ def update_dependencies(ob, objects):
     ob1 = ob.tissue_tessellate.component
     deps = [ob0, ob1]
     for o in deps:
+        if o.tissue_tessellate.bool_lock: continue
         o0 = o.tissue_tessellate.generator
         o1 = o.tissue_tessellate.component
         deps_deps = [o0, o1]
@@ -2762,7 +2791,10 @@ class refresh_tessellate(Operator):
                         "Active object must be Tessellate before Update")
             return {'CANCELLED'}
 
-        update_objects = list(reversed(update_dependencies(ob, [ob])))
+        if ob.tissue_tessellate.bool_dependencies:
+            update_objects = list(reversed(update_dependencies(ob, [ob])))
+        else:
+            update_objects = [ob]
         for o in update_objects:
             override = {'object': o}
             bpy.ops.object.update_tessellate(override)
@@ -2874,7 +2906,7 @@ class update_tessellate(Operator):
 
         ob0 = generator
         ob1 = component
-        auto_layer_collection()
+        ##### auto_layer_collection()
 
         ob0_hide = ob0.hide_get()
         ob0_hidev = ob0.hide_viewport
@@ -2906,11 +2938,11 @@ class update_tessellate(Operator):
         if bool_update_cloth:
             bpy.ops.ptcache.free_bake_all()
             bpy.ops.ptcache.bake_all()
+        base_ob.modifiers.update()
 
 
         #new_ob.location = ob.location
         #new_ob.matrix_world = ob.matrix_world
-        base_ob.modifiers.update()
         #bpy.ops.object.select_all(action='DESELECT')
         iter_objects = [base_ob]
         ob_location = ob.location
@@ -2949,13 +2981,15 @@ class update_tessellate(Operator):
                 if iter != 0: gen_modifiers = True
 
                 if fill_mode == 'PATCH':
+                    # patch subdivisions for additional iterations
                     if iter > 0:
                         base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
                         base_ob.modifiers['Tissue_Subsurf'].levels = patch_subs
                         temp_mod = base_ob.modifiers['Tissue_Subsurf']
+                    # patch tessellation
                     new_ob = tessellate_patch(
                             base_ob, ob1, offset, zscale, com_modifiers, mode, scale_mode,
-                            rotation_mode, random_seed, bool_vertex_group,
+                            rotation_mode, rotation_shift, random_seed, bool_vertex_group,
                             bool_selection, bool_shapekeys, bool_material_id, material_id,
                             normals_mode, bounds_x, bounds_y
                             )
@@ -2964,8 +2998,10 @@ class update_tessellate(Operator):
                 else:
                     ### FRAME and FAN ###
                     if fill_mode in ('FRAME','FAN'):
+
                         if fill_mode == 'FRAME': convert_function = convert_to_frame
                         else: convert_function = convert_to_fan
+
                         if normals_mode == 'CUSTOM' and base_ob.data.shape_keys != None:
                             ## base key
                             sk_values = [sk.value for sk in base_ob.data.shape_keys.key_blocks]
@@ -2997,8 +3033,7 @@ class update_tessellate(Operator):
                             _base_ob = convert_function(base_ob, ob.tissue_tessellate, gen_modifiers)
                         bpy.data.objects.remove(base_ob)
                         base_ob = _base_ob
-                        #fill_mode = 'QUAD'
-
+                    # quad tessellation
                     new_ob = tessellate_original(
                             base_ob, ob1, offset, zscale, gen_modifiers,
                             com_modifiers, mode, scale_mode, rotation_mode,
@@ -3406,10 +3441,10 @@ class TISSUE_PT_tessellate_object(Panel):
             set_tessellate_handler(self,context)
             set_animatable_fix_handler(self,context)
             row.operator("object.refresh_tessellate", icon='FILE_REFRESH')
-            #lock_icon = 'LOCKED' if props.bool_hold else 'UNLOCKED'
-            lock_icon = 'PINNED' if props.bool_hold else 'UNPINNED'
+            lock_icon = 'LOCKED' if props.bool_lock else 'UNLOCKED'
+            #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
             deps_icon = 'LINKED' if props.bool_dependencies else 'UNLINKED'
-            row.prop(props, "bool_hold", text="", icon=lock_icon)
+            row.prop(props, "bool_lock", text="", icon=lock_icon)
             row.prop(props, "bool_dependencies", text="", icon=deps_icon)
             row.prop(props, "bool_run", text="",icon='TIME')
             '''
@@ -3972,21 +4007,7 @@ class rotate_face(Operator):
 
 def convert_to_frame(ob, props, use_modifiers):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
-    # make base object selected and active
-    for o in bpy.context.view_layer.objects: o.select_set(False)
-    new_ob.select_set(True)
-    bpy.context.view_layer.objects.active = new_ob
-    sk_index0 = new_ob.active_shape_key_index
-    new_ob.active_shape_key_index = 0
 
-    bpy.ops.object.mode_set(mode='EDIT')
-    # boundary
-    # make boundary faces, needed for loop detections
-    bpy.ops.mesh.select_mode(type='EDGE')
-    bpy.ops.mesh.select_non_manifold(
-        extend=False, use_wire=False, use_boundary=True,
-        use_multi_face=False, use_non_contiguous=False, use_verts=False)
-    bpy.ops.object.mode_set(mode='OBJECT')
     # create bmesh
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)
@@ -4002,7 +4023,8 @@ def convert_to_frame(ob, props, use_modifiers):
     face_normals = []
     # append boundary loops
     if props.frame_boundary:
-        selected_edges = [e for e in bm.edges if e.select]
+        #selected_edges = [e for e in bm.edges if e.select]
+        selected_edges = [e for e in bm.edges if e.is_boundary]
         if len(selected_edges) > 0:
             loop = []
             count = 0
