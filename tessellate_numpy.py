@@ -70,39 +70,6 @@ def anim_tessellate_object(ob):
 
 #from bpy.app.handlers import persistent
 
-#@persistent
-def anim_tessellate_old(scene):
-    # store selected objects
-    #scene = context.scene
-    try: active_object = bpy.context.object
-    except: active_object = None
-    try: selected_objects = bpy.context.selected_objects
-    except: selected_objects = []
-    if bpy.context.mode in ('OBJECT', 'PAINT_WEIGHT'):
-        old_mode = bpy.context.mode
-        if old_mode == 'PAINT_WEIGHT': old_mode = 'WEIGHT_PAINT'
-        for ob in scene.objects:
-            if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_lock:
-                hidden = ob.hide_viewport
-                ob.hide_viewport = False
-                for o in scene.objects:
-                    if not o.hide_viewport: ob.select_set(False)
-                bpy.context.view_layer.objects.active = ob
-                ob.select_set(True)
-                try:
-                    bpy.ops.object.update_tessellate()
-                except: pass
-                ob.hide_viewport = hidden
-        # restore selected objects
-        for o in scene.objects:
-            if not o.hide_viewport: o.select_set(False)
-        for o in selected_objects:
-            if not o.hide_viewport: o.select_set(True)
-        bpy.context.view_layer.objects.active = active_object
-        try: bpy.ops.object.mode_set(mode=old_mode)
-        except: pass
-    return
-
 def anim_tessellate(scene):
     try:
         active_object = bpy.context.object
@@ -110,25 +77,29 @@ def anim_tessellate(scene):
         selected_objects = bpy.context.selected_objects
     except: active_object = old_mode = selected_objects = None
     if old_mode in ('OBJECT', 'PAINT_WEIGHT'):
+        update_objects = []
         for ob in scene.objects:
             if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_lock:
-                override = {'object': ob}
-                '''
-                win      = bpy.data.window_managers[0].windows[0]#bpy.context.window
-                scr      = win.screen
-                areas3d  = [area for area in scr.areas if area.type == 'VIEW_3D']
-                region   = [region for region in areas3d[0].regions if region.type == 'WINDOW']
-                override = {
-                    'window':win,
-                    'screen':scr,
-                    'area'  :areas3d[0],
-                    'region':region[0],
-                    'scene' :scene,
-                    'object': ob
-                }
-                '''
-                print(override)
-                bpy.ops.object.update_tessellate(override)
+                if ob not in update_objects: update_objects.append(ob)
+                update_objects = list(reversed(update_dependencies(ob, update_objects)))
+        for ob in update_objects:
+            override = {'object': ob}
+            '''
+            win      = bpy.data.window_managers[0].windows[0]#bpy.context.window
+            scr      = win.screen
+            areas3d  = [area for area in scr.areas if area.type == 'VIEW_3D']
+            region   = [region for region in areas3d[0].regions if region.type == 'WINDOW']
+            override = {
+                'window':win,
+                'screen':scr,
+                'area'  :areas3d[0],
+                'region':region[0],
+                'scene' :scene,
+                'object': ob
+            }
+            '''
+            print(override)
+            bpy.ops.object.update_tessellate(override)
     # restore selected objects
     if old_mode != None:
         for o in scene.objects:

@@ -218,3 +218,40 @@ def turn_off_animatable(scene):
         o.reaction_diffusion_settings.run = False
         #except: pass
     return
+
+def join_objects(objects, link_to_scene=True, make_active=False):
+    C = bpy.context
+    bm = bmesh.new()
+
+    materials = {}
+    faces_materials = []
+    dg = C.evaluated_depsgraph_get()
+    for o in objects:
+        bm.from_object(o, dg)
+        # add object's material to the dictionary
+        for m in o.data.materials:
+            if m not in materials: materials[m] = len(materials)
+        for f in o.data.polygons:
+            index = f.material_index
+            mat = o.material_slots[index].material
+            new_index = materials[mat]
+            faces_materials.append(new_index)
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    # assign new indexes
+    for index, f in zip(faces_materials, bm.faces): f.material_index = index
+    # create object
+    me = bpy.data.meshes.new('joined')
+    bm.to_mesh(me)
+    me.update()
+    ob = bpy.data.objects.new('joined', me)
+    if link_to_scene: C.collection.objects.link(ob)
+    # make active
+    if make_active:
+        for o in C.view_layer.objects: o.select_set(False)
+        ob.select_set(True)
+        C.view_layer.objects.active = ob
+    # add materials
+    for m in materials.keys(): ob.data.materials.append(m)
+    return ob
