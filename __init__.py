@@ -65,11 +65,12 @@ from bpy.props import PointerProperty, CollectionProperty, BoolProperty
 
 classes = (
     tessellate_numpy.tissue_tessellate_prop,
-    tessellate_numpy.tessellate,
-    tessellate_numpy.update_tessellate,
-    tessellate_numpy.refresh_tessellate,
+    tessellate_numpy.tissue_tessellate,
+    tessellate_numpy.tissue_update_tessellate,
+    tessellate_numpy.tissue_refresh_tessellate,
     tessellate_numpy.TISSUE_PT_tessellate,
-    tessellate_numpy.rotate_face,
+    tessellate_numpy.tissue_rotate_face_left,
+    tessellate_numpy.tissue_rotate_face_right,
     tessellate_numpy.TISSUE_PT_tessellate_object,
     tessellate_numpy.TISSUE_PT_tessellate_frame,
     tessellate_numpy.TISSUE_PT_tessellate_thickness,
@@ -101,6 +102,7 @@ classes = (
     colors_groups_exchanger.weight_formula,
     colors_groups_exchanger.curvature_to_vertex_groups,
     colors_groups_exchanger.weight_formula_wiki,
+    colors_groups_exchanger.tissue_weight_distance,
 
     dual_mesh.dual_mesh,
     dual_mesh.dual_mesh_tessellated,

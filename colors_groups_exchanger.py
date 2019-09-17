@@ -2023,6 +2023,64 @@ class harmonic_weight(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class tissue_weight_distance(bpy.types.Operator):
+    bl_idname = "object.tissue_weight_distance"
+    bl_label = "Weight Distance"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = ("Create a weight map according to the distance from the "
+                    "selected vertices along the mesh surface")
+
+    def fill_neighbors(self,verts,weight):
+        neigh = {}
+        for v0 in verts:
+            for f in v0.link_faces:
+                for v1 in f.verts:
+                    dist = weight[v0.index] + (v0.co-v1.co).length
+                    w1 = weight[v1.index]
+                    if w1 == None or w1 > dist:
+                        weight[v1.index] = dist
+                        neigh[v1] = 0
+        if len(neigh) == 0: return weight
+        else: return self.fill_neighbors(neigh.keys(), weight)
+
+    def execute(self, context):
+        ob = context.object
+        old_mode = ob.mode
+        if old_mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        me = ob.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        # store weight values
+        weight = [None]*len(bm.verts)
+
+        selected = [v for v in bm.verts if v.select]
+        if len(selected) == 0:
+            bpy.ops.object.mode_set(mode=old_mode)
+            message = "Please, select one or more vertices"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+        for v in selected: weight[v.index] = 0
+        weight = self.fill_neighbors(selected, weight)
+
+        weight = np.array(weight)
+        max_dist = np.max(weight)
+        if max_dist > 0:
+            weight /= max_dist
+
+        vg = ob.vertex_groups.new(name='Distance: {:.4f}'.format(max_dist))
+        for i, w in enumerate(weight):
+            if w == None: continue
+            vg.add([i], w, 'REPLACE')
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
+
 
 class TISSUE_PT_color(bpy.types.Panel):
     bl_label = "Tissue Tools"
@@ -2058,6 +2116,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         #    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
         col.operator("object.face_area_to_vertex_groups", icon="FACESEL")
         col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
+        col.operator("object.tissue_weight_distance", icon="TRACKING")
         try: col.operator("object.weight_formula", icon="CON_TRANSFORM")
         except: col.operator("object.weight_formula")#, icon="CON_TRANSFORM")
         #col.label(text="Weight Processing:")

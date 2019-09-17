@@ -58,13 +58,13 @@ def anim_tessellate_active(self, context):
         try:
             props.generator.name
             props.component.name
-            bpy.ops.object.update_tessellate()
+            bpy.ops.object.tissue_update_tessellate()
         except: pass
 
 def anim_tessellate_object(ob):
     try:
         #bpy.context.view_layer.objects.active = ob
-        bpy.ops.object.update_tessellate()
+        bpy.ops.object.tissue_update_tessellate()
     except:
         return None
 
@@ -99,7 +99,7 @@ def anim_tessellate(scene):
             }
             '''
             print(override)
-            bpy.ops.object.update_tessellate(override)
+            bpy.ops.object.tissue_update_tessellate(override)
     # restore selected objects
     if old_mode != None:
         for o in scene.objects:
@@ -1988,8 +1988,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     return new_ob
 
 
-class tessellate(Operator):
-    bl_idname = "object.tessellate"
+class tissue_tessellate(Operator):
+    bl_idname = "object.tissue_tessellate"
     bl_label = "Tessellate"
     bl_description = ("Create a copy of selected object on the active object's "
                       "faces, adapting the shape to the different faces")
@@ -2696,7 +2696,7 @@ class tessellate(Operator):
                 new_ob = bpy.context.object
                 bool_update = True
             new_ob = store_parameters(self, new_ob)
-            try: bpy.ops.object.update_tessellate()
+            try: bpy.ops.object.tissue_update_tessellate()
             except RuntimeError as e:
                 bpy.data.objects.remove(new_ob)
                 self.report({'ERROR'}, str(e))
@@ -2733,8 +2733,8 @@ def update_dependencies(ob, objects):
     return objects
 
 
-class refresh_tessellate(Operator):
-    bl_idname = "object.refresh_tessellate"
+class tissue_refresh_tessellate(Operator):
+    bl_idname = "object.tissue_refresh_tessellate"
     bl_label = "Refresh"
     bl_description = ("Fast update the tessellated mesh according to base and "
                       "component changes")
@@ -2773,13 +2773,13 @@ class refresh_tessellate(Operator):
             update_objects = [ob]
         for o in update_objects:
             override = {'object': o}
-            bpy.ops.object.update_tessellate(override)
+            bpy.ops.object.tissue_update_tessellate(override)
 
         return {'FINISHED'}
 
 
-class update_tessellate(Operator):
-    bl_idname = "object.update_tessellate"
+class tissue_update_tessellate(Operator):
+    bl_idname = "object.tissue_update_tessellate"
     bl_label = "Refresh"
     bl_description = ("Fast update the tessellated mesh according to base and "
                       "component changes")
@@ -3365,12 +3365,16 @@ class TISSUE_PT_tessellate(Panel):
 
         col = layout.column(align=True)
         col.label(text="Tessellate:")
-        col.operator("object.tessellate")
+        col.operator("object.tissue_tessellate")
         col.operator("object.dual_mesh_tessellated")
         col.separator()
-        col.operator("object.refresh_tessellate", icon='FILE_REFRESH')
+        col.operator("object.tissue_refresh_tessellate", icon='FILE_REFRESH')
 
-        col.operator("mesh.rotate_face", icon='NDOF_TURN')
+        col.separator()
+        col.label(text="Rotate Faces:")
+        row = col.row(align=True)
+        row.operator("mesh.tissue_rotate_face_left", text='Left', icon='LOOP_BACK')
+        row.operator("mesh.tissue_rotate_face_right", text='Right', icon='LOOP_FORWARDS')
 
         col.separator()
         col.label(text="Other:")
@@ -3380,6 +3384,11 @@ class TISSUE_PT_tessellate(Panel):
         act = context.active_object
         if act and act.type == 'MESH':
             col.operator("object.uv_to_mesh", icon="UV")
+
+        if context.object.mode == 'EDIT':
+            col.separator()
+            col.label(text="Weight:")
+            col.operator("object.tissue_weight_distance", icon="TRACKING")
 
 class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'
@@ -3416,7 +3425,7 @@ class TISSUE_PT_tessellate_object(Panel):
 
             set_tessellate_handler(self,context)
             set_animatable_fix_handler(self,context)
-            row.operator("object.refresh_tessellate", icon='FILE_REFRESH')
+            row.operator("object.tissue_refresh_tessellate", icon='FILE_REFRESH')
             lock_icon = 'LOCKED' if props.bool_lock else 'UNLOCKED'
             #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
             deps_icon = 'LINKED' if props.bool_dependencies else 'UNLINKED'
@@ -3931,18 +3940,69 @@ class TISSUE_PT_tessellate_iterations(Panel):
                 slider=False, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
 
-
-class rotate_face(Operator):
-    bl_idname = "mesh.rotate_face"
-    bl_label = "Rotate Faces"
-    bl_description = "Rotate selected faces and update tessellated meshes"
+class tissue_rotate_face_right(Operator):
+    bl_idname = "mesh.tissue_rotate_face_right"
+    bl_label = "Rotate Faces Right"
+    bl_description = "Rotate clockwise selected faces and update tessellated meshes"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         try:
             #bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH'# and bool_tessellated
+            ob = context.object
+            return ob.type == 'MESH' and ob.mode == 'EDIT'# and bool_tessellated
+        except:
+            return False
+
+    def execute(self, context):
+        ob = context.active_object
+        me = ob.data
+
+        bm = bmesh.from_edit_mesh(me)
+        mesh_select_mode = [sm for sm in context.tool_settings.mesh_select_mode]
+
+        for face in bm.faces:
+            if (face.select):
+                vs = face.verts[:]
+                vs2 = vs[-1:]+vs[:-1]
+                material_index = face.material_index
+                bm.faces.remove(face)
+                f2 = bm.faces.new(vs2)
+                f2.select = True
+                f2.material_index = material_index
+                bm.normal_update()
+
+        # trigger UI update
+        bmesh.update_edit_mesh(me)
+        ob.select_set(False)
+
+        # update tessellated meshes
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for o in [obj for obj in bpy.data.objects if
+                  obj.tissue_tessellate.generator == ob and obj.visible_get()]:
+            context.view_layer.objects.active = o
+            bpy.ops.object.tissue_update_tessellate()
+            o.select_set(False)
+        ob.select_set(True)
+        context.view_layer.objects.active = ob
+        bpy.ops.object.mode_set(mode='EDIT')
+        context.tool_settings.mesh_select_mode = mesh_select_mode
+
+        return {'FINISHED'}
+
+class tissue_rotate_face_left(Operator):
+    bl_idname = "mesh.tissue_rotate_face_left"
+    bl_label = "Rotate Faces Left"
+    bl_description = "Rotate counterclockwise selected faces and update tessellated meshes"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            #bool_tessellated = context.object.tissue_tessellate.generator != None
+            ob = context.object
+            return ob.type == 'MESH' and ob.mode == 'EDIT'# and bool_tessellated
         except:
             return False
 
@@ -3973,7 +4033,7 @@ class rotate_face(Operator):
         for o in [obj for obj in bpy.data.objects if
                   obj.tissue_tessellate.generator == ob and obj.visible_get()]:
             context.view_layer.objects.active = o
-            bpy.ops.object.update_tessellate()
+            bpy.ops.object.tissue_update_tessellate()
             o.select_set(False)
         ob.select_set(True)
         context.view_layer.objects.active = ob
