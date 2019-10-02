@@ -33,7 +33,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 31),
+    "version": (0, 3, 34),
     "blender": (2, 80, 0),
     "location": "",
     "description": "Tools for Computational Design",
@@ -51,6 +51,7 @@ if "bpy" in locals():
     importlib.reload(lattice)
     importlib.reload(uv_to_mesh)
     importlib.reload(utils)
+    importlib.reload(gcode_export)
 
 else:
     from . import tessellate_numpy
@@ -59,17 +60,28 @@ else:
     from . import lattice
     from . import uv_to_mesh
     from . import utils
+    from . import gcode_export
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
 
 classes = (
     tessellate_numpy.tissue_tessellate_prop,
-    tessellate_numpy.tessellate,
-    tessellate_numpy.update_tessellate,
+    tessellate_numpy.tissue_tessellate,
+    tessellate_numpy.tissue_update_tessellate,
+    tessellate_numpy.tissue_refresh_tessellate,
     tessellate_numpy.TISSUE_PT_tessellate,
-    tessellate_numpy.rotate_face,
+    tessellate_numpy.tissue_rotate_face_left,
+    tessellate_numpy.tissue_rotate_face_right,
     tessellate_numpy.TISSUE_PT_tessellate_object,
+    tessellate_numpy.TISSUE_PT_tessellate_frame,
+    tessellate_numpy.TISSUE_PT_tessellate_thickness,
+    tessellate_numpy.TISSUE_PT_tessellate_coordinates,
+    tessellate_numpy.TISSUE_PT_tessellate_rotation,
+    tessellate_numpy.TISSUE_PT_tessellate_options,
+    tessellate_numpy.TISSUE_PT_tessellate_selective,
+    tessellate_numpy.TISSUE_PT_tessellate_morphing,
+    tessellate_numpy.TISSUE_PT_tessellate_iterations,
 
     colors_groups_exchanger.face_area_to_vertex_groups,
     colors_groups_exchanger.vertex_colors_to_vertex_groups,
@@ -77,6 +89,7 @@ classes = (
     colors_groups_exchanger.TISSUE_PT_weight,
     colors_groups_exchanger.TISSUE_PT_color,
     colors_groups_exchanger.weight_contour_curves,
+    colors_groups_exchanger.tissue_weight_contour_curves_pattern,
     colors_groups_exchanger.weight_contour_mask,
     colors_groups_exchanger.weight_contour_displace,
     colors_groups_exchanger.harmonic_weight,
@@ -92,13 +105,17 @@ classes = (
     colors_groups_exchanger.weight_formula,
     colors_groups_exchanger.curvature_to_vertex_groups,
     colors_groups_exchanger.weight_formula_wiki,
+    colors_groups_exchanger.tissue_weight_distance,
 
     dual_mesh.dual_mesh,
     dual_mesh.dual_mesh_tessellated,
 
     lattice.lattice_along_surface,
 
-    uv_to_mesh.uv_to_mesh
+    uv_to_mesh.uv_to_mesh,
+    gcode_export.TISSUE_PT_gcode_exporter,
+    gcode_export.tissue_gcode_prop,
+    gcode_export.tissue_gcode_export
 )
 
 def register():
@@ -108,6 +125,9 @@ def register():
     #bpy.utils.register_module(__name__)
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tessellate_numpy.tissue_tessellate_prop
+                                            )
+    bpy.types.Scene.tissue_gcode = PointerProperty(
+                                            type=gcode_export.tissue_gcode_prop
                                             )
     bpy.types.Object.formula_settings = CollectionProperty(
                                             type=colors_groups_exchanger.formula_prop
@@ -123,11 +143,6 @@ def unregister():
     from bpy.utils import unregister_class
     for cls in classes:
         bpy.utils.unregister_class(cls)
-    #tessellate_numpy.unregister()
-    #colors_groups_exchanger.unregister()
-    #dual_mesh.unregister()
-    #lattice.unregister()
-    #uv_to_mesh.unregister()
 
     del bpy.types.Object.tissue_tessellate
 

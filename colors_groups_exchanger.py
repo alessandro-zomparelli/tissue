@@ -42,6 +42,8 @@ from mathutils import Vector
 from numpy import *
 try: from .numba_functions import numba_reaction_diffusion
 except: pass
+try: import numexpr as ne
+except: pass
 
 from bpy.types import (
         Operator,
@@ -1465,6 +1467,115 @@ class weight_contour_mask(bpy.types.Operator):
 
         return {'FINISHED'}
 
+
+class weight_contour_mask_wip(bpy.types.Operator):
+    bl_idname = "object.weight_contour_mask"
+    bl_label = "Contour Mask"
+    bl_description = ("")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    use_modifiers : bpy.props.BoolProperty(
+        name="Use Modifiers", default=True,
+        description="Apply all the modifiers")
+    iso : bpy.props.FloatProperty(
+        name="Iso Value", default=0.5, soft_min=0, soft_max=1,
+        description="Threshold value")
+    bool_solidify : bpy.props.BoolProperty(
+        name="Solidify", default=True, description="Add Solidify Modifier")
+    normalize_weight : bpy.props.BoolProperty(
+        name="Normalize Weight", default=True,
+        description="Normalize weight of remaining vertices")
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
+
+    def execute(self, context):
+        start_time = timeit.default_timer()
+        try:
+            check = bpy.context.object.vertex_groups[0]
+        except:
+            self.report({'ERROR'}, "The object doesn't have Vertex Groups")
+            return {'CANCELLED'}
+
+        ob0 = bpy.context.object
+
+        iso_val = self.iso
+        group_id = ob0.vertex_groups.active_index
+        vertex_group_name = ob0.vertex_groups[group_id].name
+
+        #bpy.ops.object.mode_set(mode='EDIT')
+        #bpy.ops.mesh.select_all(action='SELECT')
+        #bpy.ops.object.mode_set(mode='OBJECT')
+        if self.use_modifiers:
+            me0 = simple_to_mesh(ob0)#ob0.to_mesh(preserve_all_data_layers=True, depsgraph=bpy.context.evaluated_depsgraph_get()).copy()
+        else:
+            me0 = ob0.data.copy()
+
+        # generate new bmesh
+        bm = bmesh.new()
+        bm.from_mesh(me0)
+
+        # store weight values
+        weight = []
+        ob = bpy.data.objects.new("temp", me0)
+        for g in ob0.vertex_groups:
+            ob.vertex_groups.new(name=g.name)
+        weight = get_weight_numpy(ob.vertex_groups[vertex_group_name], len(me0.vertices))
+
+        me0, bm, weight = contour_bmesh(me0, bm, weight, iso_val)
+
+        # Mask geometry
+        mask = weight >= iso_val
+        weight = weight[mask]
+        mask = np.logical_not(mask)
+        delete_verts = np.array(bm.verts)[mask]
+        #for v in delete_verts: bm.verts.remove(v)
+
+        # Create mesh and object
+        name = ob0.name + '_ContourMask_{:.3f}'.format(iso_val)
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        ob = bpy.data.objects.new(name, me)
+
+        # Link object to scene and make active
+        scn = bpy.context.scene
+        bpy.context.collection.objects.link(ob)
+        bpy.context.view_layer.objects.active = ob
+        ob.select_set(True)
+        ob0.select_set(False)
+
+        # generate new vertex group
+        for g in ob0.vertex_groups:
+            ob.vertex_groups.new(name=g.name)
+
+        if iso_val != 1: mult = 1/(1-iso_val)
+        else: mult = 1
+        for id in range(len(weight)):
+            if self.normalize_weight: w = (weight[id]-iso_val)*mult
+            else: w = weight[id]
+            ob.vertex_groups[vertex_group_name].add([id], w, 'REPLACE')
+        ob.vertex_groups.active_index = group_id
+
+        # align new object
+        ob.matrix_world = ob0.matrix_world
+
+        # Add Solidify
+        if self.bool_solidify and True:
+            ob.modifiers.new(type='SOLIDIFY', name='Solidify')
+            ob.modifiers['Solidify'].thickness = 0.05
+            ob.modifiers['Solidify'].offset = 0
+            ob.modifiers['Solidify'].vertex_group = vertex_group_name
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        print("Contour Mask time: " + str(timeit.default_timer() - start_time) + " sec")
+
+        bpy.data.meshes.remove(me0)
+
+        return {'FINISHED'}
+
+
 class weight_contour_curves(bpy.types.Operator):
     bl_idname = "object.weight_contour_curves"
     bl_label = "Contour Curves"
@@ -1486,11 +1597,11 @@ class weight_contour_curves(bpy.types.Operator):
         description="Number of Contour Curves")
 
     min_rad : bpy.props.FloatProperty(
-        name="Min Radius", default=0.25, soft_min=0, soft_max=1,
-        description="Minimum Curve Radius")
+        name="Min Radius", default=1, soft_min=0, soft_max=1,
+        description="Change radius according to Iso Value")
     max_rad : bpy.props.FloatProperty(
-        name="Max Radius", default=0.75, soft_min=0, soft_max=1,
-        description="Maximum Curve Radius")
+        name="Max Radius", default=1, soft_min=0, soft_max=1,
+        description="Change radius according to Iso Value")
 
     @classmethod
     def poll(cls, context):
@@ -1532,19 +1643,23 @@ class weight_contour_curves(bpy.types.Operator):
         ob = bpy.data.objects.new("temp", me0)
         for g in ob0.vertex_groups:
             ob.vertex_groups.new(name=g.name)
-        for v in me0.vertices:
-            try:
-                #weight.append(v.groups[vertex_group_name].weight)
-                weight.append(ob.vertex_groups[vertex_group_name].weight(v.index))
-            except:
-                weight.append(0)
+        weight = get_weight_numpy(ob.vertex_groups[vertex_group_name], len(bm.verts))
 
-        filtered_edges = bm.edges
-        total_verts = []
+        #filtered_edges = bm.edges
+        total_verts = np.zeros((0,3))
         total_segments = []
         radius = []
 
         # start iterate contours levels
+        vertices = get_vertices_numpy(me0)
+        filtered_edges = get_edges_id_numpy(me0)
+
+        faces_weight = [np.array([weight[v] for v in p.vertices]) for p in me0.polygons]
+        fw_min = np.array([np.min(fw) for fw in faces_weight])
+        fw_max = np.array([np.max(fw) for fw in faces_weight])
+
+        bm_faces = np.array(bm.faces)
+
         for c in range(self.n_curves):
             min_iso = min(self.min_iso, self.max_iso)
             max_iso = max(self.min_iso, self.max_iso)
@@ -1553,53 +1668,51 @@ class weight_contour_curves(bpy.types.Operator):
                 if iso_val < 0: iso_val = (min_iso + max_iso)/2
             except:
                 iso_val = (min_iso + max_iso)/2
-            faces_mask = []
-            for f in bm.faces:
-                w_min = 2
-                w_max = 2
-                for v in f.verts:
-                    w = weight[v.index]
-                    if w_min == 2:
-                        w_max = w_min = w
-                    if w > w_max: w_max = w
-                    if w < w_min: w_min = w
-                    if w_min < iso_val and w_max > iso_val:
-                        faces_mask.append(f)
-                        break
 
-            faces_todo = [f.select for f in bm.faces]
-            verts = []
+            # remove passed faces
+            bool_mask = iso_val < fw_max
+            bm_faces = bm_faces[bool_mask]
+            fw_min = fw_min[bool_mask]
+            fw_max = fw_max[bool_mask]
 
-            edges_id = {}
-            _filtered_edges = []
+            # mask faces
+            bool_mask = fw_min < iso_val
+            faces_mask = bm_faces[bool_mask]
+
             n_verts = len(bm.verts)
             count = len(total_verts)
-            for e in filtered_edges:
-                id0 = e.verts[0].index
-                id1 = e.verts[1].index
-                w0 = weight[id0]
-                w1 = weight[id1]
 
-                if w0 == w1: continue
-                elif w0 > iso_val and w1 > iso_val:
-                    _filtered_edges.append(e)
-                    continue
-                elif w0 < iso_val and w1 < iso_val: continue
-                elif w0 == iso_val or w1 == iso_val:
-                    _filtered_edges.append(e)
-                    continue
-                else:
-                    #v0 = me0.vertices[id0].select = True
-                    #v1 = me0.vertices[id1].select = True
-                    v0 = me0.vertices[id0].co
-                    v1 = me0.vertices[id1].co
-                    v = v0.lerp(v1, (iso_val-w0)/(w1-w0))
-                    verts.append(v)
-                    edges_id[e.index] = count
-                    count += 1
-                    _filtered_edges.append(e)
-            filtered_edges = _filtered_edges
+            # vertices indexes
+            id0 = filtered_edges[:,0]
+            id1 = filtered_edges[:,1]
+            # vertices weight
+            w0 = weight[id0]
+            w1 = weight[id1]
+            # weight condition
+            bool_w0 = w0 < iso_val
+            bool_w1 = w1 < iso_val
 
+            # mask all edges that have one weight value below the iso value
+            mask_new_verts = np.logical_xor(bool_w0, bool_w1)
+
+            id0 = id0[mask_new_verts]
+            id1 = id1[mask_new_verts]
+            # filter arrays
+            v0 = vertices[id0]
+            v1 = vertices[id1]
+            w0 = w0[mask_new_verts]
+            w1 = w1[mask_new_verts]
+            param = np.expand_dims((iso_val-w0)/(w1-w0),axis=1)
+            verts = v0 + (v1-v0)*param
+
+            # indexes of edges with new vertices
+            edges_index = filtered_edges[mask_new_verts][:,2]
+            edges_id = {}
+            for i, id in enumerate(edges_index): edges_id[id] = i+len(total_verts)
+
+            # remove all edges completely below the iso value
+            mask_edges = np.logical_not(np.logical_and(bool_w0, bool_w1))
+            filtered_edges = filtered_edges[mask_edges]
             if len(verts) == 0: continue
 
             # finding segments
@@ -1614,18 +1727,19 @@ class weight_contour_curves(bpy.types.Operator):
                             seg = []
                     except: pass
 
+
+            #curves_points_indexes = find_curves(segments)
             total_segments = total_segments + segments
-            total_verts = total_verts + verts
+            total_verts = np.concatenate((total_verts,verts))
 
-            # Radius
-
-            try:
-                iso_rad = c*(self.max_rad-self.min_rad)/(self.n_curves-1)+self.min_rad
-                if iso_rad < 0: iso_rad = (self.min_rad + self.max_rad)/2
-            except:
-                iso_rad = (self.min_rad + self.max_rad)/2
-            radius = radius + [iso_rad]*len(verts)
-
+            if self.min_rad != self.max_rad:
+                try:
+                    iso_rad = c*(self.max_rad-self.min_rad)/(self.n_curves-1)+self.min_rad
+                    if iso_rad < 0: iso_rad = (self.min_rad + self.max_rad)/2
+                except:
+                    iso_rad = (self.min_rad + self.max_rad)/2
+                radius = radius + [iso_rad]*len(verts)
+        print("Contour Curves, computing time: " + str(timeit.default_timer() - start_time) + " sec")
         bm = bmesh.new()
         # adding new vertices
         for v in total_verts: bm.verts.new(v)
@@ -1638,12 +1752,12 @@ class weight_contour_curves(bpy.types.Operator):
                 bm.edges.new(pts)
             except: pass
 
+
         try:
             name = ob0.name + '_ContourCurves'
             me = bpy.data.meshes.new(name)
             bm.to_mesh(me)
             ob = bpy.data.objects.new(name, me)
-
             # Link object to scene and make active
             scn = bpy.context.scene
             bpy.context.collection.objects.link(ob)
@@ -1651,13 +1765,20 @@ class weight_contour_curves(bpy.types.Operator):
             ob.select_set(True)
             ob0.select_set(False)
 
+            print("Contour Curves, bmesh time: " + str(timeit.default_timer() - start_time) + " sec")
             bpy.ops.object.convert(target='CURVE')
             ob = context.object
-            count = 0
-            for s in ob.data.splines:
-                for p in s.points:
-                    p.radius = radius[count]
-                    count += 1
+            if not (self.min_rad == 0 and self.max_rad == 0):
+                if self.min_rad != self.max_rad:
+                    count = 0
+                    for s in ob.data.splines:
+                        for p in s.points:
+                            p.radius = radius[count]
+                            count += 1
+                else:
+                    for s in ob.data.splines:
+                        for p in s.points:
+                            p.radius = self.min_rad
             ob.data.bevel_depth = 0.01
             ob.data.fill_mode = 'FULL'
             ob.data.bevel_resolution = 3
@@ -1672,6 +1793,269 @@ class weight_contour_curves(bpy.types.Operator):
         bpy.data.meshes.remove(me0)
         bpy.data.meshes.remove(me)
 
+        return {'FINISHED'}
+
+class tissue_weight_contour_curves_pattern(bpy.types.Operator):
+    bl_idname = "object.tissue_weight_contour_curves_pattern"
+    bl_label = "Contour Curves Pattern"
+    bl_description = ("")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    use_modifiers : bpy.props.BoolProperty(
+        name="Use Modifiers", default=True,
+        description="Apply all the modifiers")
+
+    min_iso : bpy.props.FloatProperty(
+        name="Min Value", default=0., soft_min=0, soft_max=1,
+        description="Minimum weight value")
+    max_iso : bpy.props.FloatProperty(
+        name="Max Value", default=1, soft_min=0, soft_max=1,
+        description="Maximum weight value")
+    n_curves : bpy.props.IntProperty(
+        name="Curves", default=10, soft_min=1, soft_max=100,
+        description="Number of Contour Curves")
+    min_rad = 1
+    max_rad = 1
+
+    in_displace : bpy.props.FloatProperty(
+        name="In Displace", default=0, soft_min=0, soft_max=10,
+        description="Pattern displace strength")
+    out_displace : bpy.props.FloatProperty(
+        name="Out Displace", default=2, soft_min=0, soft_max=10,
+        description="Pattern displace strength")
+
+    in_steps : bpy.props.IntProperty(
+        name="In Steps", default=1, min=0, soft_max=10,
+        description="Number of layers to move inwards")
+    out_steps : bpy.props.IntProperty(
+        name="Out Steps", default=1, min=0, soft_max=10,
+        description="Number of layers to move outwards")
+    limit_z : bpy.props.BoolProperty(
+        name="Limit Z", default=False,
+        description="Limit Pattern in Z")
+
+    merge : bpy.props.BoolProperty(
+        name="Merge Vertices", default=True,
+        description="Merge points")
+    merge_thres : bpy.props.FloatProperty(
+        name="Merge Threshold", default=0.01, min=0, soft_max=1,
+        description="Minimum Curve Radius")
+
+    bevel_depth : bpy.props.FloatProperty(
+        name="Bevel Depth", default=0, min=0, soft_max=1,
+        description="")
+    remove_open_curves : bpy.props.BoolProperty(
+        name="Remove Open Curves", default=False,
+        description="Remove Open Curves")
+
+    vertex_group_pattern : bpy.props.StringProperty(
+        name="Pattern", default='',
+        description="Vertex Group used for pattern displace")
+
+    object_name : bpy.props.StringProperty(
+        name="Active Object", default='',
+        description="")
+
+    try: vg_name = bpy.context.object.vertex_groups.active.name
+    except: vg_name = ''
+
+    vertex_group_contour : bpy.props.StringProperty(
+        name="Contour", default=vg_name,
+        description="Vertex Group used for contouring")
+    clean_distance : bpy.props.FloatProperty(
+        name="Clean Distance", default=0, min=0, soft_max=10,
+        description="Remove short segments")
+
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.object
+        return len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=350)
+
+    def draw(self, context):
+        if not context.object.type == 'CURVE':
+            self.object_name = context.object.name
+        ob = bpy.data.objects[self.object_name]
+        if self.vertex_group_contour not in [vg.name for vg in ob.vertex_groups]:
+            self.vertex_group_contour = ob.vertex_groups.active.name
+        layout = self.layout
+        col = layout.column(align=True)
+        col.prop(self, "use_modifiers")
+        col.prop_search(self, 'vertex_group_contour', ob, "vertex_groups", text='Contour')
+        row = col.row(align=True)
+        row.prop(self,'min_iso')
+        row.prop(self,'max_iso')
+        col.prop(self,'n_curves')
+        col.separator()
+        col.prop_search(self, 'vertex_group_pattern', ob, "vertex_groups", text='Pattern')
+        if self.vertex_group_pattern != '':
+            row = col.row(align=True)
+            row.prop(self,'in_steps')
+            row.prop(self,'out_steps')
+            row = col.row(align=True)
+            row.prop(self,'in_displace')
+            row.prop(self,'out_displace')
+            col.prop(self,'limit_z')
+        col.separator()
+        col.label(text='Curves:')
+        col.prop(self,'bevel_depth')
+        col.prop(self,'clean_distance')
+        col.prop(self,'remove_open_curves')
+
+
+    def execute(self, context):
+        start_time = timeit.default_timer()
+        try:
+            check = context.object.vertex_groups[0]
+        except:
+            self.report({'ERROR'}, "The object doesn't have Vertex Groups")
+            return {'CANCELLED'}
+        ob0 = bpy.data.objects[self.object_name]
+
+        dg = bpy.context.evaluated_depsgraph_get()
+        ob = ob0.evaluated_get(dg)
+        me0 = ob.data
+
+        # generate new bmesh
+        bm = bmesh.new()
+        bm.from_mesh(me0)
+        n_verts = len(bm.verts)
+
+        # store weight values
+        try:
+            weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_contour], len(me0.vertices))
+        except:
+            self.report({'ERROR'}, "Please select a Vertex Group for contouring")
+            return {'CANCELLED'}
+
+        try:
+            pattern_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_pattern], len(me0.vertices))
+        except:
+            self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
+            pattern_weight = np.zeros(len(me0.vertices))
+
+        #filtered_edges = bm.edges
+        total_verts = np.zeros((0,3))
+        total_segments = []# np.array([])
+        radius = []
+
+        # start iterate contours levels
+        vertices, normals = get_vertices_and_normals_numpy(me0)
+        filtered_edges = get_edges_id_numpy(me0)
+
+        faces_weight = [np.array([weight[v] for v in p.vertices]) for p in me0.polygons]
+        fw_min = np.array([np.min(fw) for fw in faces_weight])
+        fw_max = np.array([np.max(fw) for fw in faces_weight])
+
+        bm_faces = np.array(bm.faces)
+        #bm_faces = np.array([np.array([e.index for e in f.edges]) for f in bm.faces ])
+        #all_edges_by_faces = []
+        #for f in bm.faces:
+        #    all_edges_by_faces += [e.index for e in f.edges]
+        #all_edges_by_faces = np.array(all_edges_by_faces)
+
+        print("Contour Curves, data loaded: " + str(timeit.default_timer() - start_time) + " sec")
+        step_time = timeit.default_timer()
+        for c in range(self.n_curves):
+            min_iso = min(self.min_iso, self.max_iso)
+            max_iso = max(self.min_iso, self.max_iso)
+            try:
+                iso_val = c*(max_iso-min_iso)/(self.n_curves-1)+min_iso
+                if iso_val < 0: iso_val = (min_iso + max_iso)/2
+            except:
+                iso_val = (min_iso + max_iso)/2
+
+            # remove passed faces
+            bool_mask = iso_val < fw_max
+            bm_faces = bm_faces[bool_mask]
+            fw_min = fw_min[bool_mask]
+            fw_max = fw_max[bool_mask]
+
+            # mask faces
+            bool_mask = fw_min < iso_val
+            faces_mask = bm_faces[bool_mask]
+
+            count = len(total_verts)
+
+            new_filtered_edges, edges_index, verts = contour_edges_pattern(self, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight)
+            #new_filtered_edges, edges_index, verts = contour_edges_pattern(self.in_steps, self.out_steps, self.in_displace, self.out_displace, self.limit_z, c, iso_val, vertices, normals, filtered_edges, weight, pattern_weight)
+            if verts[0,0] == None: continue
+            else: filtered_edges = new_filtered_edges
+            edges_id = {}
+            for i, id in enumerate(edges_index): edges_id[id] = i + count
+
+            if len(verts) == 0: continue
+
+            # finding segments
+            segments = []
+            for f in faces_mask:
+                seg = []
+                for e in f.edges:
+                    try:
+                        #seg.append(new_ids[np.where(edges_index == e.index)[0][0]])
+                        seg.append(edges_id[e.index])
+                        if len(seg) == 2:
+                            segments.append(seg)
+                            seg = []
+                    except: pass
+
+            #segments = np.array([])
+            #keys = np.array(edges_id.keys())
+            #verts_id = np.arange(len(edges_index))+len(total_verts)
+
+            #seg_mask = np.in1d(edges_index, all_edges_by_faces)
+            #segments = verts_id[seg_mask]
+
+            #try: segments = segments.reshape((len(segments)//2,2))
+            #except: continue
+            '''
+            for f in faces_mask:
+                #print(f)
+                #print(edges_index)
+                #print(verts_id)
+                seg_mask = np.in1d(edges_index,f)
+                #if not seg_mask.any(): continue
+                seg = verts_id[seg_mask]
+                seg = seg.reshape((len(seg)//2,2))
+                if len(seg)==0: continue
+                segments = seg if len(segments)==0 else np.concatenate((segments ,seg))
+            '''
+            #if len(segments)>0:
+            #    total_segments = segments if len(total_segments)==0 else np.concatenate((total_segments, segments))
+
+
+            total_segments = total_segments + segments
+            total_verts = np.concatenate((total_verts,verts))
+
+            if self.min_rad != self.max_rad:
+                try:
+                    iso_rad = c*(self.max_rad-self.min_rad)/(self.n_curves-1)+self.min_rad
+                    if iso_rad < 0: iso_rad = (self.min_rad + self.max_rad)/2
+                except:
+                    iso_rad = (self.min_rad + self.max_rad)/2
+                radius = radius + [iso_rad]*len(verts)
+        print("Contour Curves, points computing: " + str(timeit.default_timer() - step_time) + " sec")
+        step_time = timeit.default_timer()
+        if len(total_segments) > 0:
+            step_time = timeit.default_timer()
+            ordered_points = find_curves(total_segments, len(total_verts))
+            print("Contour Curves, point ordered in: " + str(timeit.default_timer() - step_time) + " sec")
+            step_time = timeit.default_timer()
+            crv = curve_from_pydata(total_verts,ordered_points,ob0.name + '_ContourCurves', self.remove_open_curves, merge_distance=self.clean_distance)
+            context.view_layer.objects.active = crv
+            crv.data.bevel_depth = self.bevel_depth
+
+            crv.select_set(True)
+            ob0.select_set(False)
+            crv.matrix_world = ob0.matrix_world
+            print("Contour Curves, curves created in: " + str(timeit.default_timer() - step_time) + " sec")
+        else:
+            self.report({'ERROR'}, "There are no values in the chosen range")
+            return {'CANCELLED'}
+        print("Contour Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}
 
 class vertex_colors_to_vertex_groups(bpy.types.Operator):
@@ -2023,6 +2407,64 @@ class harmonic_weight(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class tissue_weight_distance(bpy.types.Operator):
+    bl_idname = "object.tissue_weight_distance"
+    bl_label = "Weight Distance"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = ("Create a weight map according to the distance from the "
+                    "selected vertices along the mesh surface")
+
+    def fill_neighbors(self,verts,weight):
+        neigh = {}
+        for v0 in verts:
+            for f in v0.link_faces:
+                for v1 in f.verts:
+                    dist = weight[v0.index] + (v0.co-v1.co).length
+                    w1 = weight[v1.index]
+                    if w1 == None or w1 > dist:
+                        weight[v1.index] = dist
+                        neigh[v1] = 0
+        if len(neigh) == 0: return weight
+        else: return self.fill_neighbors(neigh.keys(), weight)
+
+    def execute(self, context):
+        ob = context.object
+        old_mode = ob.mode
+        if old_mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        me = ob.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        # store weight values
+        weight = [None]*len(bm.verts)
+
+        selected = [v for v in bm.verts if v.select]
+        if len(selected) == 0:
+            bpy.ops.object.mode_set(mode=old_mode)
+            message = "Please, select one or more vertices"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+        for v in selected: weight[v.index] = 0
+        weight = self.fill_neighbors(selected, weight)
+
+        weight = np.array(weight)
+        max_dist = np.max(weight)
+        if max_dist > 0:
+            weight /= max_dist
+
+        vg = ob.vertex_groups.new(name='Distance: {:.4f}'.format(max_dist))
+        for i, w in enumerate(weight):
+            if w == None: continue
+            vg.add([i], w, 'REPLACE')
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
+
 
 class TISSUE_PT_color(bpy.types.Panel):
     bl_label = "Tissue Tools"
@@ -2058,6 +2500,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         #    "object.vertex_colors_to_vertex_groups", icon="GROUP_VCOL")
         col.operator("object.face_area_to_vertex_groups", icon="FACESEL")
         col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
+        col.operator("object.tissue_weight_distance", icon="TRACKING")
         try: col.operator("object.weight_formula", icon="CON_TRANSFORM")
         except: col.operator("object.weight_formula")#, icon="CON_TRANSFORM")
         #col.label(text="Weight Processing:")
@@ -2076,6 +2519,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         col.separator()
         col.label(text="Weight Contour:")
         col.operator("object.weight_contour_curves", icon="MOD_CURVE")
+        col.operator("object.tissue_weight_contour_curves_pattern", icon="FORCE_TURBULENCE")
         col.operator("object.weight_contour_displace", icon="MOD_DISPLACE")
         col.operator("object.weight_contour_mask", icon="MOD_MASK")
         col.separator()
@@ -2482,3 +2926,310 @@ class TISSUE_PT_reaction_diffusion(Panel):
             row = col.row(align=True)
             row.prop(props, "f")
             row.prop(props, "k")
+
+if False:
+    @jit(["float64[:,:](int32, int32, float64, float64, boolean, int32, float64, float64[:,:], float64[:,:], int32[:,:], float64[:], float64[:])"]) #(nopython=True, parallel=True)
+    def contour_edges_pattern(in_steps, out_steps, in_displace, out_displace, limit_z, c, iso_val, vertices, normals, filtered_edges, weight, pattern_weight):
+        # vertices indexes
+        id0 = filtered_edges[:,0]
+        id1 = filtered_edges[:,1]
+        # vertices weight
+        w0 = weight[id0]
+        w1 = weight[id1]
+        # weight condition
+        bool_w0 = w0 < iso_val
+        bool_w1 = w1 < iso_val
+
+        # mask all edges that have one weight value below the iso value
+        mask_new_verts = np.logical_xor(bool_w0, bool_w1)
+        out_array = np.array([[0]]).astype(type='float64', order='A')
+        if not mask_new_verts.any(): return out_array, out_array, out_array
+
+        id0 = id0[mask_new_verts]
+        id1 = id1[mask_new_verts]
+        # filter arrays
+        v0 = vertices[id0]
+        v1 = vertices[id1]
+        n0 = normals[id0]
+        n1 = normals[id1]
+        w0 = w0[mask_new_verts]
+        w1 = w1[mask_new_verts]
+        pattern0 = pattern_weight[id0]
+        pattern1 = pattern_weight[id1]
+        param = (iso_val-w0)/(w1-w0)
+        # pattern displace
+        #mult = 1 if c%2 == 0 else -1
+        if c%(in_steps + out_steps) < in_steps:
+            mult = -in_displace
+        else:
+            mult = out_displace
+        pattern_value = pattern0 + (pattern1-pattern0)*param
+        disp = pattern_value * mult
+        param2 = np.expand_dims(param,axis=1)
+        #param = param2
+        disp2 = np.expand_dims(disp,axis=1)
+        #disp = disp2
+        verts = v0 + (v1-v0)*param2
+        norm = n0 + (n1-n0)*param2
+        if limit_z:
+            norm2 = np.expand_dims(norm[:,2], axis=1)
+            limit_mult = 1-np.absolute(norm2)
+            disp2 *= limit_mult
+        verts = verts + norm*disp2
+
+        # indexes of edges with new vertices
+        edges_index = filtered_edges[mask_new_verts][:,2]
+
+        # remove all edges completely below the iso value
+        mask_edges = np.logical_not(np.logical_and(bool_w0, bool_w1))
+
+        _filtered_edges = filtered_edges[mask_edges]
+        filtered_edges = _filtered_edges.astype(type='float64', order='A')
+
+        _edges_index = np.expand_dims(edges_index,axis=0)
+        _edges_index = _edges_index.astype(type='float64', order='A')
+
+        _verts = verts.astype(type='float64', order='A')
+        return _filtered_edges, _edges_index, _verts
+
+def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, filtered_edges, weight, pattern_weight):
+    # vertices indexes
+    id0 = filtered_edges[:,0]
+    id1 = filtered_edges[:,1]
+    # vertices weight
+    w0 = weight[id0]
+    w1 = weight[id1]
+    # weight condition
+    bool_w0 = w0 < iso_val
+    bool_w1 = w1 < iso_val
+
+    # mask all edges that have one weight value below the iso value
+    mask_new_verts = np.logical_xor(bool_w0, bool_w1)
+    if not mask_new_verts.any(): return np.array([[None]]), {}, np.array([[None]])
+
+    id0 = id0[mask_new_verts]
+    id1 = id1[mask_new_verts]
+    # filter arrays
+    v0 = vertices[id0]
+    v1 = vertices[id1]
+    n0 = normals[id0]
+    n1 = normals[id1]
+    w0 = w0[mask_new_verts]
+    w1 = w1[mask_new_verts]
+    pattern0 = pattern_weight[id0]
+    pattern1 = pattern_weight[id1]
+    param = (iso_val-w0)/(w1-w0)
+    # pattern displace
+    #mult = 1 if c%2 == 0 else -1
+    if c%(operator.in_steps + operator.out_steps) < operator.in_steps:
+        mult = -operator.in_displace
+    else:
+        mult = operator.out_displace
+    pattern_value = pattern0 + (pattern1-pattern0)*param
+    disp = pattern_value * mult
+    param = np.expand_dims(param,axis=1)
+    disp = np.expand_dims(disp,axis=1)
+    verts = v0 + (v1-v0)*param
+    norm = n0 + (n1-n0)*param
+    if operator.limit_z: disp *= 1-abs(np.expand_dims(norm[:,2], axis=1))
+    verts = verts + norm*disp
+
+    # indexes of edges with new vertices
+    edges_index = filtered_edges[mask_new_verts][:,2]
+
+    # remove all edges completely below the iso value
+    #mask_edges = np.logical_not(np.logical_and(bool_w0, bool_w1))
+    #filtered_edges = filtered_edges[mask_edges]
+    return filtered_edges, edges_index, verts
+
+def contour_edges_pattern_eval(operator, c, verts_count, iso_val, vertices, normals, filtered_edges, weight, pattern_weight):
+    # vertices indexes
+    id0 = eval('filtered_edges[:,0]')
+    id1 = eval('filtered_edges[:,1]')
+    # vertices weight
+    w0 = eval('weight[id0]')
+    w1 = eval('weight[id1]')
+    # weight condition
+    bool_w0 = ne.evaluate('w0 < iso_val')
+    bool_w1 = ne.evaluate('w1 < iso_val')
+
+    # mask all edges that have one weight value below the iso value
+    mask_new_verts = eval('np.logical_xor(bool_w0, bool_w1)')
+    if not mask_new_verts.any(): return np.array([[None]]), {}, np.array([[None]])
+
+    id0 = eval('id0[mask_new_verts]')
+    id1 = eval('id1[mask_new_verts]')
+    # filter arrays
+    v0 = eval('vertices[id0]')
+    v1 = eval('vertices[id1]')
+    n0 = eval('normals[id0]')
+    n1 = eval('normals[id1]')
+    w0 = eval('w0[mask_new_verts]')
+    w1 = eval('w1[mask_new_verts]')
+    pattern0 = eval('pattern_weight[id0]')
+    pattern1 = eval('pattern_weight[id1]')
+    param = ne.evaluate('(iso_val-w0)/(w1-w0)')
+    # pattern displace
+    #mult = 1 if c%2 == 0 else -1
+    if c%(operator.in_steps + operator.out_steps) < operator.in_steps:
+        mult = -operator.in_displace
+    else:
+        mult = operator.out_displace
+    pattern_value = eval('pattern0 + (pattern1-pattern0)*param')
+    disp = ne.evaluate('pattern_value * mult')
+    param = eval('np.expand_dims(param,axis=1)')
+    disp = eval('np.expand_dims(disp,axis=1)')
+    verts = ne.evaluate('v0 + (v1-v0)*param')
+    norm = ne.evaluate('n0 + (n1-n0)*param')
+    if operator.limit_z:
+        mult = eval('1-abs(np.expand_dims(norm[:,2], axis=1))')
+        disp = ne.evaluate('disp * mult')
+    verts = ne.evaluate('verts + norm*disp')
+
+    # indexes of edges with new vertices
+    edges_index = eval('filtered_edges[mask_new_verts][:,2]')
+
+    # remove all edges completely below the iso value
+    mask_edges = eval('np.logical_not(np.logical_and(bool_w0, bool_w1))')
+    filtered_edges = eval('filtered_edges[mask_edges]')
+    return filtered_edges, edges_index, verts
+
+
+def contour_bmesh(me, bm, weight, iso_val):
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    # store weight values
+
+    vertices = get_vertices_numpy(me)
+    faces_mask = np.array(bm.faces)
+    filtered_edges = get_edges_id_numpy(me)
+    n_verts = len(bm.verts)
+
+    #############################
+
+    # vertices indexes
+    id0 = filtered_edges[:,0]
+    id1 = filtered_edges[:,1]
+    # vertices weight
+    w0 = weight[id0]
+    w1 = weight[id1]
+    # weight condition
+    bool_w0 = w0 < iso_val
+    bool_w1 = w1 < iso_val
+
+    # mask all edges that have one weight value below the iso value
+    mask_new_verts = np.logical_xor(bool_w0, bool_w1)
+    if not mask_new_verts.any(): return np.array([[None]]), {}, np.array([[None]])
+
+    id0 = id0[mask_new_verts]
+    id1 = id1[mask_new_verts]
+    # filter arrays
+    v0 = vertices[id0]
+    v1 = vertices[id1]
+    w0 = w0[mask_new_verts]
+    w1 = w1[mask_new_verts]
+    param = (iso_val-w0)/(w1-w0)
+    param = np.expand_dims(param,axis=1)
+    verts = v0 + (v1-v0)*param
+
+    # indexes of edges with new vertices
+    #edges_index = filtered_edges[mask_new_verts][:,2]
+
+    edges_id = {}
+    for i, e in enumerate(filtered_edges):
+        #edges_id[id] = i + n_verts
+        edges_id['{}_{}'.format(e[0],e[1])] = i + n_verts
+        edges_id['{}_{}'.format(e[1],e[0])] = i + n_verts
+
+
+    '''
+    for e in filtered_edges:
+        id0 = e.verts[0].index
+        id1 = e.verts[1].index
+        w0 = weight[id0]
+        w1 = weight[id1]
+
+        if w0 == w1: continue
+        elif w0 > iso_val and w1 > iso_val:
+            continue
+        elif w0 < iso_val and w1 < iso_val: continue
+        elif w0 == iso_val or w1 == iso_val: continue
+        else:
+            v0 = me0.vertices[id0].co
+            v1 = me0.vertices[id1].co
+            v = v0.lerp(v1, (iso_val-w0)/(w1-w0))
+            delete_edges.append(e)
+            verts.append(v)
+            edges_id[str(id0)+"_"+str(id1)] = count
+            edges_id[str(id1)+"_"+str(id0)] = count
+            count += 1
+    '''
+
+    splitted_faces = []
+
+    switch = False
+    # splitting faces
+    for f in faces_mask:
+        # create sub-faces slots. Once a new vertex is reached it will
+        # change slot, storing the next vertices for a new face.
+        build_faces = [[],[]]
+        #switch = False
+        verts0 = list(me.polygons[f.index].vertices)
+        verts1 = list(verts0)
+        verts1.append(verts1.pop(0)) # shift list
+        for id0, id1 in zip(verts0, verts1):
+
+            # add first vertex to active slot
+            build_faces[switch].append(id0)
+
+            # try to split edge
+            try:
+                # check if the edge must be splitted
+                new_vert = edges_id['{}_{}'.format(id0,id1)]
+                # add new vertex
+                build_faces[switch].append(new_vert)
+                # if there is an open face on the other slot
+                if len(build_faces[not switch]) > 0:
+                    # store actual face
+                    splitted_faces.append(build_faces[switch])
+                    # reset actual faces and switch
+                    build_faces[switch] = []
+                    # change face slot
+                switch = not switch
+                # continue previous face
+                build_faces[switch].append(new_vert)
+            except: pass
+        if len(build_faces[not switch]) == 2:
+            build_faces[not switch].append(id0)
+        if len(build_faces[not switch]) > 2:
+            splitted_faces.append(build_faces[not switch])
+        # add last face
+        splitted_faces.append(build_faces[switch])
+
+    # adding new vertices
+    for v in verts: bm.verts.new(v)
+    bm.verts.ensure_lookup_table()
+
+    # deleting old edges/faces
+    bm.edges.ensure_lookup_table()
+    remove_edges = [bm.edges[i] for i in filtered_edges[:,2]]
+    #for e in remove_edges: bm.edges.remove(e)
+    #for e in delete_edges: bm.edges.remove(e)
+
+    bm.verts.ensure_lookup_table()
+    # adding new faces
+    missed_faces = []
+    for f in splitted_faces:
+        try:
+            face_verts = [bm.verts[i] for i in f]
+            bm.faces.new(face_verts)
+        except:
+            missed_faces.append(f)
+
+    #me = bpy.data.meshes.new('_tissue_tmp_')
+    bm.to_mesh(me)
+    weight = np.concatenate((weight, np.ones(len(verts))*iso_val))
+
+    return me, bm, weight
