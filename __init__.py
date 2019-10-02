@@ -51,6 +51,7 @@ if "bpy" in locals():
     importlib.reload(lattice)
     importlib.reload(uv_to_mesh)
     importlib.reload(utils)
+    importlib.reload(gcode_export)
 
 else:
     from . import tessellate_numpy
@@ -59,6 +60,7 @@ else:
     from . import lattice
     from . import uv_to_mesh
     from . import utils
+    from . import gcode_export
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
@@ -87,6 +89,7 @@ classes = (
     colors_groups_exchanger.TISSUE_PT_weight,
     colors_groups_exchanger.TISSUE_PT_color,
     colors_groups_exchanger.weight_contour_curves,
+    colors_groups_exchanger.tissue_weight_contour_curves_pattern,
     colors_groups_exchanger.weight_contour_mask,
     colors_groups_exchanger.weight_contour_displace,
     colors_groups_exchanger.harmonic_weight,
@@ -109,7 +112,10 @@ classes = (
 
     lattice.lattice_along_surface,
 
-    uv_to_mesh.uv_to_mesh
+    uv_to_mesh.uv_to_mesh,
+    gcode_export.TISSUE_PT_gcode_exporter,
+    gcode_export.tissue_gcode_prop,
+    gcode_export.tissue_gcode_export
 )
 
 def register():
@@ -119,6 +125,9 @@ def register():
     #bpy.utils.register_module(__name__)
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tessellate_numpy.tissue_tessellate_prop
+                                            )
+    bpy.types.Scene.tissue_gcode = PointerProperty(
+                                            type=gcode_export.tissue_gcode_prop
                                             )
     bpy.types.Object.formula_settings = CollectionProperty(
                                             type=colors_groups_exchanger.formula_prop
@@ -134,11 +143,6 @@ def unregister():
     from bpy.utils import unregister_class
     for cls in classes:
         bpy.utils.unregister_class(cls)
-    #tessellate_numpy.unregister()
-    #colors_groups_exchanger.unregister()
-    #dual_mesh.unregister()
-    #lattice.unregister()
-    #uv_to_mesh.unregister()
 
     del bpy.types.Object.tissue_tessellate
 

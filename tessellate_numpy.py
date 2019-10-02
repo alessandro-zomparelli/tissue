@@ -2920,6 +2920,22 @@ class tissue_update_tessellate(Operator):
         #new_ob.location = ob.location
         #new_ob.matrix_world = ob.matrix_world
         #bpy.ops.object.select_all(action='DESELECT')
+        if bool_selection:
+            faces = base_ob.data.polygons
+            selections = [False]*len(faces)
+            faces.foreach_get('select',selections)
+            selections = np.array(selections)
+            if not selections.any():
+                message = "There are no faces selected."
+                context.view_layer.objects.active = ob
+                ob.select_set(True)
+                bpy.ops.object.mode_set(mode=starting_mode)
+                bpy.data.objects.remove(base_ob)
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
+
+
+
         iter_objects = [base_ob]
         ob_location = ob.location
         ob_matrix_world = ob.matrix_world
@@ -3065,8 +3081,10 @@ class tissue_update_tessellate(Operator):
 
             if type(new_ob) in (int,str):
                 if iter == 0:
-                    bpy.data.objects.remove(iter_objects[0])
-                    iter_objects = []
+                    try:
+                        bpy.data.objects.remove(iter_objects[0])
+                        iter_objects = []
+                    except: continue
                 continue
 
             # Clean last iteration, needed for combine object
@@ -3381,14 +3399,14 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.dual_mesh")
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
 
-        act = context.active_object
+        act = context.object
         if act and act.type == 'MESH':
             col.operator("object.uv_to_mesh", icon="UV")
 
-        if context.object.mode == 'EDIT':
-            col.separator()
-            col.label(text="Weight:")
-            col.operator("object.tissue_weight_distance", icon="TRACKING")
+            if act.mode == 'EDIT':
+                col.separator()
+                col.label(text="Weight:")
+                col.operator("object.tissue_weight_distance", icon="TRACKING")
 
 class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'
@@ -4052,7 +4070,10 @@ def convert_to_frame(ob, props, use_modifiers):
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
-    original_faces = list(bm.faces)
+    if props.bool_selection:
+        original_faces = [f for f in bm.faces if f.select]
+    else:
+        original_faces = list(bm.faces)
     # detect edge loops
 
     loops = []
@@ -4073,6 +4094,9 @@ def convert_to_frame(ob, props, use_modifiers):
             loop_normals = [face.normal]
             selected_edges = selected_edges[1:]
             if props.bool_vertex_group:
+                n_verts = len(new_ob.data.vertices)
+                base_vg = [get_weight(vg,n_verts) for vg in new_ob.vertex_groups]
+                '''
                 base_vg = []
                 for vg in new_ob.vertex_groups:
                     vertex_group = []
@@ -4082,6 +4106,7 @@ def convert_to_frame(ob, props, use_modifiers):
                         except:
                             vertex_group.append(0)
                     base_vg.append(vertex_group)
+                '''
             while True:
                 new_vert = None
                 face = None
@@ -4121,7 +4146,7 @@ def convert_to_frame(ob, props, use_modifiers):
     vert_ids = []
 
     # append regular faces
-    for f in bm.faces:
+    for f in original_faces:#bm.faces:
         loop = list(f.verts)
         loops.append(loop)
         boundaries_mat.append([f.material_index for v in loop])
@@ -4198,6 +4223,7 @@ def convert_to_frame(ob, props, use_modifiers):
              if mult == -1: face_verts = [v0,v1,v2,v3]
              new_face = bm.faces.new(face_verts)
              new_face.material_index = materials[i+1] + props.frame_boundary_mat
+             new_face.select = True
              new_faces.append(new_face)
         # fill frame
         if props.fill_frame and not is_boundary:
@@ -4212,6 +4238,7 @@ def convert_to_frame(ob, props, use_modifiers):
                 face_verts = [v1,v0,center]
                 new_face = bm.faces.new(face_verts)
                 new_face.material_index = materials[i] + props.frame_boundary_mat
+                new_face.select = True
                 new_faces.append(new_face)
     bpy.ops.object.mode_set(mode='OBJECT')
     #for f in bm.faces: f.select_set(f not in new_faces)
@@ -4246,7 +4273,8 @@ def convert_to_fan(ob, props, use_modifiers):
 
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_mode(type='FACE')
-    bpy.ops.mesh.select_all(action='SELECT')
+    if not props.bool_selection:
+        bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.mesh.poke()
     bpy.ops.object.mode_set(mode='OBJECT')
     return new_ob

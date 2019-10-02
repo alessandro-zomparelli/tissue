@@ -65,14 +65,13 @@ class uv_to_mesh(Operator):
 
     def execute(self, context):
         bpy.ops.object.mode_set(mode='OBJECT')
-        for o in bpy.data.objects and bpy.context.view_layer.objects:
-            o.select_set(False)
-        bpy.context.object.select_set(True)
-
-        if self.apply_modifiers:
-            bpy.ops.object.duplicate_move()
-            bpy.ops.object.convert(target='MESH')
         ob0 = bpy.context.object
+        for o in bpy.context.view_layer.objects: o.select_set(False)
+        ob0.select_set(True)
+
+        #if self.apply_modifiers:
+        #    bpy.ops.object.duplicate_move()
+        #    bpy.ops.object.convert(target='MESH')
 
 #        me0 = ob0.to_mesh(bpy.context.depsgraph, apply_modifiers=self.apply_modifiers)
         #if self.apply_modifiers: me0 = simple_to_mesh(ob0)
@@ -105,7 +104,7 @@ class uv_to_mesh(Operator):
 
                 return {'CANCELLED'}
 
-        name = name0 + 'UV'
+        name = name0 + '_UV'
         # Create mesh and object
         me = bpy.data.meshes.new(name + 'Mesh')
         ob = bpy.data.objects.new(name, me)
