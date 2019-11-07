@@ -33,8 +33,8 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 34),
-    "blender": (2, 80, 0),
+    "version": (0, 3, 35),
+    "blender": (2, 8, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
@@ -106,6 +106,7 @@ classes = (
     colors_groups_exchanger.curvature_to_vertex_groups,
     colors_groups_exchanger.weight_formula_wiki,
     colors_groups_exchanger.tissue_weight_distance,
+    colors_groups_exchanger.random_weight,
 
     dual_mesh.dual_mesh,
     dual_mesh.dual_mesh_tessellated,

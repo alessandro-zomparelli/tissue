@@ -950,7 +950,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 area += f.calc_area()
             area = area/len(faces)*patch_faces/com_area
             #area*=mult*
-            verts_area.append(sqrt(area)*bb[2])
+            verts_area.append(sqrt(area))
 
     random.seed(rand_seed)
     bool_correct = False
@@ -1555,7 +1555,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     vz = co1[2::3].reshape((n_verts1,1))
     min_c = Vector((vx.min(), vy.min(), vz.min()))          # Min BB Corner
     max_c = Vector((vx.max(), vy.max(), vz.max()))          # Max BB Corner
-    bb = max_c - min_c                                      # Bounding Box
+    bb = max_c - min_c                                      # Bounding Box Size
 
     # Component Coordinates
     if mode == 'BOUNDS':
@@ -1646,6 +1646,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     if scale_mode == 'ADAPTIVE':
         com_area = bb[0]*bb[1]
         if mode != 'BOUNDS' or com_area == 0: com_area = 1
+        com_mult = 1/sqrt(com_area)
         verts_area = []
         bm = bmesh.new()
         bm.from_mesh(me0)
@@ -1653,15 +1654,14 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         for v in bm.verts:
             area = 0
             faces = v.link_faces
-            for f in faces:
-                area += f.calc_area()
-            try:
-                area/=len(faces) # average area
-                area/=com_area
-                verts_area.append(sqrt(area)*bb[2])
-                #verts_area.append(area)
-            except:
+            if len(faces) == 0:
                 verts_area.append(1)
+            else:
+                for f in faces:
+                    area += f.calc_area()
+                area/=len(faces) # average area
+                base = sqrt(area)
+                verts_area.append(base*com_mult)
 
     count = 0   # necessary for UV calculation
 
@@ -4000,7 +4000,9 @@ class tissue_rotate_face_right(Operator):
         for o in [obj for obj in bpy.data.objects if
                   obj.tissue_tessellate.generator == ob and obj.visible_get()]:
             context.view_layer.objects.active = o
-            bpy.ops.object.tissue_update_tessellate()
+            #override = {'object': o, 'mode': 'OBJECT', 'selected_objects': [o]}
+            if not o.tissue_tessellate.bool_lock:
+                bpy.ops.object.tissue_update_tessellate()
             o.select_set(False)
         ob.select_set(True)
         context.view_layer.objects.active = ob
@@ -4051,7 +4053,8 @@ class tissue_rotate_face_left(Operator):
         for o in [obj for obj in bpy.data.objects if
                   obj.tissue_tessellate.generator == ob and obj.visible_get()]:
             context.view_layer.objects.active = o
-            bpy.ops.object.tissue_update_tessellate()
+            if not o.tissue_tessellate.bool_lock:
+                bpy.ops.object.tissue_update_tessellate()
             o.select_set(False)
         ob.select_set(True)
         context.view_layer.objects.active = ob
