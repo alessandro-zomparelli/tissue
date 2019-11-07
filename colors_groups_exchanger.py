@@ -100,15 +100,15 @@ class reaction_diffusion_prop(PropertyGroup):
         description="Diffusion B")
 
     f : bpy.props.FloatProperty(
-        name="f", default=0.055, min=0, soft_max=0.5, precision=3,
+        name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4, step=0.05,
         description="Feed Rate")
 
     k : bpy.props.FloatProperty(
-        name="k", default=0.062, min=0, soft_max=0.5, precision=3,
+        name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
         description="Kill Rate")
 
     diff_mult : bpy.props.FloatProperty(
-        name="Scale", default=1, min=0, soft_max=1, max=2, precision=2,
+        name="Scale", default=1, min=0, soft_max=1, max=10, precision=2,
         description="Multiplier for the diffusion of both substances")
 
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
@@ -156,7 +156,7 @@ def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0
             co = [v.co for v in verts]
             global_co = []
             for v in co:
-                global_co.append(mat * v)
+                global_co.append(mat @ v)
             global_co = array(global_co).reshape((n_verts, 3))
             gx, gy, gz = array(global_co).transpose()
     # compute vertex normals
@@ -494,11 +494,11 @@ class weight_laplacian(bpy.types.Operator):
         description="Diffusion B")
 
     f : bpy.props.FloatProperty(
-        name="f", default=0.055, min=0, soft_max=0.5,
+        name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
         description="Feed Rate")
 
     k : bpy.props.FloatProperty(
-        name="k", default=0.062, min=0, soft_max=0.5,
+        name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
         description="Kill Rate")
 
     diff_mult : bpy.props.FloatProperty(
@@ -624,11 +624,11 @@ class reaction_diffusion(bpy.types.Operator):
         description="Diffusion B")
 
     f : bpy.props.FloatProperty(
-        name="f", default=0.055, min=0, soft_max=0.5,
+        name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
         description="Feed Rate")
 
     k : bpy.props.FloatProperty(
-        name="k", default=0.062, min=0, soft_max=0.5,
+        name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
         description="Kill Rate")
 
     bounds_string = ""
@@ -970,6 +970,7 @@ class edges_bending(bpy.types.Operator):
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         bpy.data.meshes.remove(me)
+        return {'FINISHED'}
         return {'FINISHED'}
 
 class weight_contour_displace(bpy.types.Operator):
@@ -2358,6 +2359,43 @@ class face_area_to_vertex_groups(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         return {'FINISHED'}
 
+class random_weight(bpy.types.Operator):
+    bl_idname = "object.random_weight"
+    bl_label = "Random"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = ("Generate a random Vertex Group")
+
+    min_val : bpy.props.FloatProperty(
+        name="Min", default=0, soft_min=0, soft_max=1,
+        description="Minimum Value")
+
+    max_val : bpy.props.FloatProperty(
+        name="Max", default=1, soft_min=0, soft_max=1,
+        description="Maximum Value")
+
+    #def draw(self, context):
+    #    layout = self.layout
+    #    layout.prop(self, "min_area")
+    #    layout.prop(self, "max_area")
+
+    def execute(self, context):
+        try: ob = context.object
+        except:
+            self.report({'ERROR'}, "Please select an Object")
+            return {'CANCELLED'}
+        #ob.vertex_groups.new(name="Random")
+        n_verts = len(ob.data.vertices)
+        weight = np.random.uniform(low=self.min_val, high=self.max_val, size=(n_verts,))
+        np.clip(weight, 0, 1, out=weight)
+
+        group_id = ob.vertex_groups.active_index
+        for i in range(n_verts):
+            ob.vertex_groups[group_id].add([i], weight[i], 'REPLACE')
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
 
 class harmonic_weight(bpy.types.Operator):
     bl_idname = "object.harmonic_weight"
@@ -2512,6 +2550,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
         col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL",
             text="Convert to Colors")
+        col.operator("object.random_weight", icon="RNDCURVE")
         col.separator()
         col.label(text="Deformation Analysis:")
         col.operator("object.edges_deformation", icon="DRIVER_DISTANCE")#FULLSCREEN_ENTER")
@@ -2564,11 +2603,11 @@ class start_reaction_diffusion(bpy.types.Operator):
         description="Diffusion B")
 
     f : bpy.props.FloatProperty(
-        name="f", default=0.055, min=0, soft_max=0.5, precision=4,
+        name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
         description="Feed Rate")
 
     k : bpy.props.FloatProperty(
-        name="k", default=0.062, min=0, soft_max=0.5, precision=4,
+        name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
         description="Kill Rate")
 
     @classmethod
@@ -2816,11 +2855,16 @@ def reaction_diffusion_def(scene):
             #a = read_weight(a, ob.vertex_groups["A"])
             #b = read_weight(b, ob.vertex_groups["B"])
 
+            start = time.time()
             for i in range(n_verts):
                 try: a[i] = ob.vertex_groups["A"].weight(i)
                 except: pass
                 try: b[i] = ob.vertex_groups["B"].weight(i)
                 except: pass
+
+            timeElapsed = time.time() - start
+            print('RD - Read Vertex Groups:',timeElapsed)
+            start = time.time()
 
             props = ob.reaction_diffusion_settings
             dt = props.dt

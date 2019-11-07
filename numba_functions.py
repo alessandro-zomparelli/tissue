@@ -17,9 +17,25 @@
 # ##### END GPL LICENSE BLOCK #####
 
 import numpy as np
+
+
+#print('installing numba...')
+#install_module('numba')
+
 try:
-    from numba import jit
-    print("Tissue: Numba module loaded succesfully")
+
+    try:
+        from numba import jit
+        print('Tissue: Numba module successfully loaded!')
+    except:
+        import sys
+        import subprocess
+        print('Tissue: Installing Numba module...')
+        subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'ensurepip'])
+        subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'pip', 'install', '--no-deps', 'numba', '--user'])
+        from numba import jit
+        print('Tissue: Numba module successfully loaded!')
+
     @jit
     def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps):
         arr = np.arange(n_edges)*2
@@ -50,5 +66,5 @@ try:
         co2 = co0 + (co1 - co0) * vy
         return co2
 except:
-    print("Tissue: Numba not installed")
+    print("Tissue: Numba cannot be installed")
     pass
