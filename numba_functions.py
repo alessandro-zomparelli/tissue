@@ -35,6 +35,11 @@ try:
         subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'ensurepip'])
         subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'pip', 'install', '--no-deps', 'numba', '--user'])
         '''
+        try:
+            import ensurepip
+            ensurepip.bootstrap()
+        except:
+            pass
         from pip._internal import main
         main(args=['install','numba'])
         from numba import jit
