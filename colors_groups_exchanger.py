@@ -2377,6 +2377,9 @@ class random_weight(bpy.types.Operator):
     #    layout = self.layout
     #    layout.prop(self, "min_area")
     #    layout.prop(self, "max_area")
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
 
     def execute(self, context):
         try: ob = context.object
@@ -2547,6 +2550,7 @@ class TISSUE_PT_weight(bpy.types.Panel):
         # TO BE FIXED
         #col.operator("object.weight_laplacian", icon="SMOOTHCURVE")
 
+        col.label(text="Weight Edit:")
         col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
         col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL",
             text="Convert to Colors")

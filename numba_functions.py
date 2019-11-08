@@ -23,25 +23,60 @@ import numpy as np
 #install_module('numba')
 
 try:
-
+    no_numba = True
+    # try to load numba
     try:
         from numba import jit
         print('Tissue: Numba module successfully loaded!')
+        no_numba = False
     except:
-        '''
-        import sys
-        import subprocess
-        print('Tissue: Installing Numba module...')
-        subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'ensurepip'])
-        subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'pip', 'install', '--no-deps', 'numba', '--user'])
-        '''
+        pass
+
+    # try to install for Windows portable versions and Linux
+    if no_numba:
+        # Windows Installed version
+        import platform
+        if platform.system() == 'Windows':
+            try:
+                import sys
+                import subprocess
+                subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'ensurepip'])
+                subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'pip', 'install', 'numba'])
+            except:
+                pass
+
+    # try to load numba
+    if no_numba:
+        try:
+            from numba import jit
+            print('Tissue: Numba module successfully loaded!')
+            no_numba = False
+        except:
+            pass
+
+    if no_numba:
         try:
             import ensurepip
             ensurepip.bootstrap()
         except:
             pass
-        from pip._internal import main
-        main(args=['install','numba'])
+
+        # Portable versions and Linux
+        try:
+            from pip._internal import main
+            main(args=['install','numba'])
+        except:
+            pass
+
+    '''
+    import sys
+    import subprocess
+    print('Tissue: Installing Numba module...')
+    subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'ensurepip'])
+    subprocess.call([sys.exec_prefix + '\\bin\\python.exe', '-m', 'pip', 'install', '--no-deps', 'numba', '--user'])
+    '''
+
+    if no_numba:
         from numba import jit
         print('Tissue: Numba module successfully loaded!')
 
@@ -75,5 +110,5 @@ try:
         co2 = co0 + (co1 - co0) * vy
         return co2
 except:
-    print("Tissue: Numba cannot be installed")
+    print("Tissue: Numba cannot be installed. Try to restart Blender.")
     pass
