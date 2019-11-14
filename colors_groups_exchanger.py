@@ -2929,8 +2929,6 @@ def reaction_diffusion_def(scene):
             diff_b = props.diff_b
             scale = props.diff_mult
 
-            start = time.time()
-
             me = ob.data
             n_edges = len(me.edges)
             n_verts = len(me.vertices)
@@ -2940,10 +2938,6 @@ def reaction_diffusion_def(scene):
             b = np.zeros(n_verts)
             if 'dB' in ob.vertex_groups: db = np.zeros(n_verts)
             if 'grad' in ob.vertex_groups: grad = np.zeros(n_verts)
-            #a = thread_read_weight(a, ob.vertex_groups["A"])
-            #b = thread_read_weight(b, ob.vertex_groups["B"])
-            #a = read_weight(a, ob.vertex_groups["A"])
-            #b = read_weight(b, ob.vertex_groups["B"])
 
             if props.vertex_group_diff_a != '': diff_a = np.zeros(n_verts)
             if props.vertex_group_diff_b != '': diff_b = np.zeros(n_verts)
@@ -2952,62 +2946,68 @@ def reaction_diffusion_def(scene):
             if props.vertex_group_k != '': k = np.zeros(n_verts)
 
             start = time.time()
-            for i in range(n_verts):
-                try: a[i] = ob.vertex_groups["A"].weight(i)
-                except: pass
-                try: b[i] = ob.vertex_groups["B"].weight(i)
-                except: pass
-                '''
-                try: db[i] = ob.vertex_groups["dB"].weight(i)
-                except: pass
-                try: grad[i] = ob.vertex_groups["grad"].weight(i)
-                except: pass
-                '''
+
+            bm = bmesh.new()   # create an empty BMesh
+            bm.from_mesh(me)   # fill it in from a Mesh
+            dvert_lay = bm.verts.layers.deform.active
+
+            group_index = ob.vertex_groups["A"].index
+            a = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            group_index = ob.vertex_groups["B"].index
+            b = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+
             if props.vertex_group_diff_a != '':
-                for i in range(n_verts):
-                    try: diff_a[i] = ob.vertex_groups[props.vertex_group_diff_a].weight(i)
-                    except: pass
+                group_index_diff_a = ob.vertex_groups[props.vertex_group_diff_a].index
+                diff_a = np.zeros(n_verts)
+            if props.vertex_group_diff_b != '':
+                group_index_diff_b = ob.vertex_groups[props.vertex_group_diff_b].index
+                diff_b = np.zeros(n_verts)
+            if props.vertex_group_scale != '':
+                group_index_scale = ob.vertex_groups[props.vertex_group_scale].index
+                scale = np.zeros(n_verts)
+            if props.vertex_group_f != '':
+                group_index_f = ob.vertex_groups[props.vertex_group_f].index
+                f = np.zeros(n_verts)
+            if props.vertex_group_k != '':
+                group_index_k = ob.vertex_groups[props.vertex_group_k].index
+                k = np.zeros(n_verts)
+
+            if props.vertex_group_diff_a != '':
+                group_index = ob.vertex_groups[props.vertex_group_diff_a].index
+                diff_a = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
                 vg_bounds = (1,0) if props.invert_vertex_group_diff_a else (0,1)
                 diff_a = np.interp(diff_a, vg_bounds, (props.min_diff_a, props.max_diff_a))
 
             if props.vertex_group_diff_b != '':
-                for i in range(n_verts):
-                    try: diff_b[i] = ob.vertex_groups[props.vertex_group_diff_b].weight(i)
-                    except: pass
+                group_index = ob.vertex_groups[props.vertex_group_diff_b].index
+                diff_b = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
                 vg_bounds = (1,0) if props.invert_vertex_group_diff_b else (0,1)
                 diff_b = np.interp(diff_b, vg_bounds, (props.min_diff_b, props.max_diff_b))
 
             if props.vertex_group_scale != '':
-                for i in range(n_verts):
-                    try: scale[i] = ob.vertex_groups[props.vertex_group_scale].weight(i)
-                    except: pass
+                group_index = ob.vertex_groups[props.vertex_group_scale].index
+                scale = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
                 vg_bounds = (1,0) if props.invert_vertex_group_scale else (0,1)
                 scale = np.interp(scale, vg_bounds, (props.min_scale, props.max_scale))
 
             if props.vertex_group_f != '':
-                for i in range(n_verts):
-                    try: f[i] = ob.vertex_groups[props.vertex_group_f].weight(i)
-                    except: pass
+                group_index = ob.vertex_groups[props.vertex_group_f].index
+                f = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
                 vg_bounds = (1,0) if props.invert_vertex_group_f else (0,1)
                 f = np.interp(f, vg_bounds, (props.min_f, props.max_f))
 
             if props.vertex_group_k != '':
-                for i in range(n_verts):
-                    try: k[i] = ob.vertex_groups[props.vertex_group_k].weight(i)
-                    except: pass
+                group_index = ob.vertex_groups[props.vertex_group_k].index
+                k = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
                 vg_bounds = (1,0) if props.invert_vertex_group_k else (0,1)
                 k = np.interp(k, vg_bounds, (props.min_k, props.max_k))
-
-            diff_a *= scale
-            diff_b *= scale
-
-            #if 'dB' in ob.vertex_groups: b += db
-            #db *= 0.01
 
             timeElapsed = time.time() - start
             print('RD - Read Vertex Groups:',timeElapsed)
             start = time.time()
 
+            diff_a *= scale
+            diff_b *= scale
 
             edge_verts = [0]*n_edges*2
             me.edges.foreach_get("vertices", edge_verts)

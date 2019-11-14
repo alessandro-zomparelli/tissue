@@ -465,3 +465,12 @@ def get_weight_numpy(vertex_group, n_verts):
         try: weight[i] = vertex_group.weight(i)
         except: pass
     return np.array(weight)
+
+
+def bmesh_get_weight_numpy(group_index, layer, verts):
+    weight = np.zeros(len(verts))
+    for i, v in enumerate(verts):
+        dvert = v[layer]
+        if group_index in dvert:
+            weight[i] = dvert[group_index]
+    return weight
