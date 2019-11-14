@@ -122,12 +122,17 @@ def lerp3(v1, v2, v3, v4, v):
     return loc + nor * v.z
 
 def np_lerp2(v00, v10, v01, v11, vx, vy):
-    #try:
-    #    co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
+    import sys
+    #print(v00.shape)
+    #print(vx.shape)
+    if 'numba' in sys.modules and False:
+        co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
     #except:
-    co0 = v00 + (v10 - v00) * vx
-    co1 = v01 + (v11 - v01) * vx
-    co2 = co0 + (co1 - co0) * vy
+    else:
+        co0 = v00 + (v10 - v00) * vx
+        co1 = v01 + (v11 - v01) * vx
+        co2 = co0 + (co1 - co0) * vy
+    print(co2.shape)
     return co2
 
 

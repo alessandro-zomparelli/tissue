@@ -42,6 +42,7 @@ from mathutils import Vector
 from numpy import *
 try: from .numba_functions import numba_reaction_diffusion
 except: pass
+#from .numba_functions import numba_reaction_diffusion
 try: import numexpr as ne
 except: pass
 
@@ -110,6 +111,81 @@ class reaction_diffusion_prop(PropertyGroup):
     diff_mult : bpy.props.FloatProperty(
         name="Scale", default=1, min=0, soft_max=1, max=10, precision=2,
         description="Multiplier for the diffusion of both substances")
+
+    vertex_group_diff_a : bpy.props.StringProperty(
+        name="Diff A", default='',
+        description="Vertex Group used for A diffusion")
+
+    vertex_group_diff_b : bpy.props.StringProperty(
+        name="Diff B", default='',
+        description="Vertex Group used for B diffusion")
+
+    vertex_group_scale : bpy.props.StringProperty(
+        name="Scale", default='',
+        description="Vertex Group used for Scale value")
+
+    vertex_group_f : bpy.props.StringProperty(
+        name="f", default='',
+        description="Vertex Group used for Feed value (f)")
+
+    vertex_group_k : bpy.props.StringProperty(
+        name="k", default='',
+        description="Vertex Group used for Kill value (k)")
+
+    invert_vertex_group_diff_a : BoolProperty(default=False,
+        description='Inverte the value of the Vertex Group Diff A')
+
+    invert_vertex_group_diff_b : BoolProperty(default=False,
+        description='Inverte the value of the Vertex Group Diff B')
+
+    invert_vertex_group_scale : BoolProperty(default=False,
+        description='Inverte the value of the Vertex Group Scale')
+
+    invert_vertex_group_f : BoolProperty(default=False,
+        description='Inverte the value of the Vertex Group f')
+
+    invert_vertex_group_k : BoolProperty(default=False,
+        description='Inverte the value of the Vertex Group k')
+
+    min_diff_a : bpy.props.FloatProperty(
+        name="Min Diff A", default=0.1, min=0, soft_max=2, precision=3,
+        description="Min Diff A")
+
+    max_diff_a : bpy.props.FloatProperty(
+        name="Max Diff A", default=0.1, min=0, soft_max=2, precision=3,
+        description="Max Diff A")
+
+    min_diff_b : bpy.props.FloatProperty(
+        name="Min Diff B", default=0.1, min=0, soft_max=2, precision=3,
+        description="Min Diff B")
+
+    max_diff_b : bpy.props.FloatProperty(
+        name="Max Diff B", default=0.1, min=0, soft_max=2, precision=3,
+        description="Max Diff B")
+
+    min_scale : bpy.props.FloatProperty(
+        name="Scale", default=0.35, min=0, soft_max=1, max=10, precision=2,
+        description="Min Scale Value")
+
+    max_scale : bpy.props.FloatProperty(
+        name="Scale", default=1, min=0, soft_max=1, max=10, precision=2,
+        description="Max Scale value")
+
+    min_f : bpy.props.FloatProperty(
+        name="Min f", default=0.02, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4, step=0.05,
+        description="Min Feed Rate")
+
+    max_f : bpy.props.FloatProperty(
+        name="Max f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4, step=0.05,
+        description="Max Feed Rate")
+
+    min_k : bpy.props.FloatProperty(
+        name="Min k", default=0.035, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
+        description="Min Kill Rate")
+
+    max_k : bpy.props.FloatProperty(
+        name="Max k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
+        description="Max Kill Rate")
 
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
     verts = ob.data.vertices
@@ -2844,6 +2920,14 @@ def reaction_diffusion_def_(scene):
 def reaction_diffusion_def(scene):
     for ob in scene.objects:
         if ob.reaction_diffusion_settings.run:
+            props = ob.reaction_diffusion_settings
+            dt = props.dt
+            time_steps = props.time_steps
+            f = props.f
+            k = props.k
+            diff_a = props.diff_a
+            diff_b = props.diff_b
+            scale = props.diff_mult
 
             start = time.time()
 
@@ -2854,10 +2938,18 @@ def reaction_diffusion_def(scene):
             # store weight values
             a = np.zeros(n_verts)
             b = np.zeros(n_verts)
+            if 'dB' in ob.vertex_groups: db = np.zeros(n_verts)
+            if 'grad' in ob.vertex_groups: grad = np.zeros(n_verts)
             #a = thread_read_weight(a, ob.vertex_groups["A"])
             #b = thread_read_weight(b, ob.vertex_groups["B"])
             #a = read_weight(a, ob.vertex_groups["A"])
             #b = read_weight(b, ob.vertex_groups["B"])
+
+            if props.vertex_group_diff_a != '': diff_a = np.zeros(n_verts)
+            if props.vertex_group_diff_b != '': diff_b = np.zeros(n_verts)
+            if props.vertex_group_scale != '': scale = np.zeros(n_verts)
+            if props.vertex_group_f != '': f = np.zeros(n_verts)
+            if props.vertex_group_k != '': k = np.zeros(n_verts)
 
             start = time.time()
             for i in range(n_verts):
@@ -2865,18 +2957,57 @@ def reaction_diffusion_def(scene):
                 except: pass
                 try: b[i] = ob.vertex_groups["B"].weight(i)
                 except: pass
+                '''
+                try: db[i] = ob.vertex_groups["dB"].weight(i)
+                except: pass
+                try: grad[i] = ob.vertex_groups["grad"].weight(i)
+                except: pass
+                '''
+            if props.vertex_group_diff_a != '':
+                for i in range(n_verts):
+                    try: diff_a[i] = ob.vertex_groups[props.vertex_group_diff_a].weight(i)
+                    except: pass
+                vg_bounds = (1,0) if props.invert_vertex_group_diff_a else (0,1)
+                diff_a = np.interp(diff_a, vg_bounds, (props.min_diff_a, props.max_diff_a))
+
+            if props.vertex_group_diff_b != '':
+                for i in range(n_verts):
+                    try: diff_b[i] = ob.vertex_groups[props.vertex_group_diff_b].weight(i)
+                    except: pass
+                vg_bounds = (1,0) if props.invert_vertex_group_diff_b else (0,1)
+                diff_b = np.interp(diff_b, vg_bounds, (props.min_diff_b, props.max_diff_b))
+
+            if props.vertex_group_scale != '':
+                for i in range(n_verts):
+                    try: scale[i] = ob.vertex_groups[props.vertex_group_scale].weight(i)
+                    except: pass
+                vg_bounds = (1,0) if props.invert_vertex_group_scale else (0,1)
+                scale = np.interp(scale, vg_bounds, (props.min_scale, props.max_scale))
+
+            if props.vertex_group_f != '':
+                for i in range(n_verts):
+                    try: f[i] = ob.vertex_groups[props.vertex_group_f].weight(i)
+                    except: pass
+                vg_bounds = (1,0) if props.invert_vertex_group_f else (0,1)
+                f = np.interp(f, vg_bounds, (props.min_f, props.max_f))
+
+            if props.vertex_group_k != '':
+                for i in range(n_verts):
+                    try: k[i] = ob.vertex_groups[props.vertex_group_k].weight(i)
+                    except: pass
+                vg_bounds = (1,0) if props.invert_vertex_group_k else (0,1)
+                k = np.interp(k, vg_bounds, (props.min_k, props.max_k))
+
+            diff_a *= scale
+            diff_b *= scale
+
+            #if 'dB' in ob.vertex_groups: b += db
+            #db *= 0.01
 
             timeElapsed = time.time() - start
             print('RD - Read Vertex Groups:',timeElapsed)
             start = time.time()
 
-            props = ob.reaction_diffusion_settings
-            dt = props.dt
-            time_steps = props.time_steps
-            f = props.f
-            k = props.k
-            diff_a = props.diff_a * props.diff_mult
-            diff_b = props.diff_b * props.diff_mult
 
             edge_verts = [0]*n_edges*2
             me.edges.foreach_get("vertices", edge_verts)
@@ -2887,10 +3018,17 @@ def reaction_diffusion_def(scene):
 
             try:
                 edge_verts = np.array(edge_verts)
-                a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps)
+                _f = f if type(f) is np.ndarray else np.array((f,))
+                _k = k if type(k) is np.ndarray else np.array((k,))
+                _diff_a = diff_a if type(diff_a) is np.ndarray else np.array((diff_a,))
+                _diff_b = diff_b if type(diff_b) is np.ndarray else np.array((diff_b,))
+                numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _diff_a, _diff_b, _f, _k, dt, time_steps)
+                #a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps, db)
                 a = nan_to_num(a)
                 b = nan_to_num(b)
+
             except:
+                print('Not using Numba! The simulation could be slow.')
                 edge_verts = np.array(edge_verts)
                 arr = np.arange(n_edges)*2
                 id0 = edge_verts[arr]     # first vertex indices for each edge
@@ -2929,7 +3067,7 @@ def reaction_diffusion_def(scene):
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
 
             timeElapsed = time.time() - start
-            print('RD - Closing Time:',timeElapsed)
+            print('RD - Writing Vertex Groups Time:',timeElapsed)
 
 class TISSUE_PT_reaction_diffusion(Panel):
     bl_space_type = 'PROPERTIES'
@@ -2966,14 +3104,72 @@ class TISSUE_PT_reaction_diffusion(Panel):
             row.prop(props, "dt")
             col.separator()
             row = col.row(align=True)
-            row.prop(props, "diff_a")
-            row.prop(props, "diff_b")
+            col1 = row.column(align=True)
+            col1.prop(props, "diff_a")
+            col1.enabled = props.vertex_group_diff_a == ''
+            col1 = row.column(align=True)
+            col1.prop(props, "diff_b")
+            col1.enabled = props.vertex_group_diff_b == ''
             row = col.row(align=True)
             row.prop(props, "diff_mult")
+            row.enabled = props.vertex_group_scale == ''
             #col.separator()
             row = col.row(align=True)
-            row.prop(props, "f")
-            row.prop(props, "k")
+            col1 = row.column(align=True)
+            col1.prop(props, "f")
+            col1.enabled = props.vertex_group_f == ''
+            col1 = row.column(align=True)
+            col1.prop(props, "k")
+            col1.enabled = props.vertex_group_k == ''
+
+            #col.prop_search(props, 'vertex_group_diff_a', ob, "vertex_groups", text='Diff A')
+            #col.prop_search(props, 'vertex_group_diff_b', ob, "vertex_groups", text='Diff B')
+            #col.prop_search(props, 'vertex_group_scale', ob, "vertex_groups", text='Scale')
+            #col.prop_search(props, 'vertex_group_f', ob, "vertex_groups", text='f')
+            #col.prop_search(props, 'vertex_group_k', ob, "vertex_groups", text='k')
+
+
+class TISSUE_PT_reaction_diffusion_weight(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_parent_id = "TISSUE_PT_reaction_diffusion"
+    bl_label = "Vertex Groups"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        return 'A' and 'B' in context.object.vertex_groups
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.reaction_diffusion_settings
+        layout = self.layout
+        #layout.use_property_split = True
+        col = layout.column(align=True)
+
+        insert_weight_parameter(col, ob, 'diff_a', text='Diff A:')
+        insert_weight_parameter(col, ob, 'diff_b', text='Diff B:')
+        insert_weight_parameter(col, ob, 'scale', text='Scale:')
+        insert_weight_parameter(col, ob, 'f', text='f:')
+        insert_weight_parameter(col, ob, 'k', text='k:')
+
+def insert_weight_parameter(col, ob, name, text=''):
+    props = ob.reaction_diffusion_settings
+    split = col.split(factor=0.25, align=True)
+    col2 = split.column(align=True)
+    col2.label(text=text)
+    col2 = split.column(align=True)
+    row2 = col2.row(align=True)
+    row2.prop_search(props, 'vertex_group_' + name, ob, "vertex_groups", text='')
+    row2.prop(props, "invert_vertex_group_" + name, text="", toggle=True, icon='ARROW_LEFTRIGHT')
+    if 'vertex_group_' + name in props:
+        if props['vertex_group_' + name] != '':
+            row2 = col2.row(align=True)
+            row2.prop(props, "min_" + name, text="Min")
+            row2 = col2.row(align=True)
+            row2.prop(props, "max_" + name, text="Max")
+    col.separator()
 
 if False:
     @jit(["float64[:,:](int32, int32, float64, float64, boolean, int32, float64, float64[:,:], float64[:,:], int32[:,:], float64[:], float64[:])"]) #(nopython=True, parallel=True)
