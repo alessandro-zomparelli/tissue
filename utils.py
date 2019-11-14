@@ -473,4 +473,12 @@ def bmesh_get_weight_numpy(group_index, layer, verts):
         dvert = v[layer]
         if group_index in dvert:
             weight[i] = dvert[group_index]
+            dvert[group_index] = 0.5
     return weight
+
+def bmesh_set_weight_numpy(group_index, layer, verts, weight):
+    for i, v in enumerate(verts):
+        dvert = v[layer]
+        if group_index in dvert:
+            dvert[group_index] = weight[i]
+    return verts

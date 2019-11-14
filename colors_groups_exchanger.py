@@ -2917,7 +2917,13 @@ def reaction_diffusion_def_(scene):
             #except:
             #    pass
 
+
+def reaction_diffusion_def_test(scene):
+    override = {'mode': 'EDIT', 'scene': scene}
+    reaction_diffusion_def2(override, scene)
+
 def reaction_diffusion_def(scene):
+    bpy.context.mode == 'EDIT'
     for ob in scene.objects:
         if ob.reaction_diffusion_settings.run:
             props = ob.reaction_diffusion_settings
@@ -2948,13 +2954,15 @@ def reaction_diffusion_def(scene):
             start = time.time()
 
             bm = bmesh.new()   # create an empty BMesh
+            override = {'mode': 'OBJECT'}
+            #bm = bmesh.from_edit_mesh(contextx=override,me)
             bm.from_mesh(me)   # fill it in from a Mesh
             dvert_lay = bm.verts.layers.deform.active
 
-            group_index = ob.vertex_groups["A"].index
-            a = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-            group_index = ob.vertex_groups["B"].index
-            b = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            group_index_a = ob.vertex_groups["A"].index
+            a = bmesh_get_weight_numpy(group_index_a, dvert_lay, bm.verts)
+            group_index_b = ob.vertex_groups["B"].index
+            b = bmesh_get_weight_numpy(group_index_b, dvert_lay, bm.verts)
 
             if props.vertex_group_diff_a != '':
                 group_index_diff_a = ob.vertex_groups[props.vertex_group_diff_a].index
@@ -3057,9 +3065,20 @@ def reaction_diffusion_def(scene):
             print('RD - Simulation Time:',timeElapsed)
             start = time.time()
 
-            for i in range(n_verts):
-                ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
-                ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
+            if ob.mode == 'WEIGHT_PAINT':
+                for i in range(n_verts):
+                    ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
+                    ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
+            else:
+                for i, v in enumerate(bm.verts):
+                    dvert = v[dvert_lay]
+                    dvert[group_index_a] = a[i]
+                    dvert[group_index_b] = b[i]
+                #bm.verts.ensure_lookup_table()
+                bm.to_mesh(me)
+                #me.update()
+                #bmesh.update_edit_mesh(me, False, False)
+                #bpy.context.mode == 'PAINT_WEIGHT'
 
             for ps in ob.particle_systems:
                 if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
