@@ -33,7 +33,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 37),
+    "version": (0, 3, 38),
     "blender": (2, 80, 0),
     "location": "",
     "description": "Tools for Computational Design",
@@ -99,6 +99,7 @@ classes = (
     colors_groups_exchanger.reaction_diffusion,
     colors_groups_exchanger.start_reaction_diffusion,
     colors_groups_exchanger.TISSUE_PT_reaction_diffusion,
+    colors_groups_exchanger.TISSUE_PT_reaction_diffusion_weight,
     colors_groups_exchanger.reset_reaction_diffusion_weight,
     colors_groups_exchanger.formula_prop,
     colors_groups_exchanger.reaction_diffusion_prop,

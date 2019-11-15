@@ -122,12 +122,17 @@ def lerp3(v1, v2, v3, v4, v):
     return loc + nor * v.z
 
 def np_lerp2(v00, v10, v01, v11, vx, vy):
-    #try:
-    #    co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
+    import sys
+    #print(v00.shape)
+    #print(vx.shape)
+    if 'numba' in sys.modules and False:
+        co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
     #except:
-    co0 = v00 + (v10 - v00) * vx
-    co1 = v01 + (v11 - v01) * vx
-    co2 = co0 + (co1 - co0) * vy
+    else:
+        co0 = v00 + (v10 - v00) * vx
+        co1 = v01 + (v11 - v01) * vx
+        co2 = co0 + (co1 - co0) * vy
+    print(co2.shape)
     return co2
 
 
@@ -460,3 +465,38 @@ def get_weight_numpy(vertex_group, n_verts):
         try: weight[i] = vertex_group.weight(i)
         except: pass
     return np.array(weight)
+
+
+def bmesh_get_weight_numpy(group_index, layer, verts):
+    weight = np.zeros(len(verts))
+    for i, v in enumerate(verts):
+        dvert = v[layer]
+        if group_index in dvert:
+            weight[i] = dvert[group_index]
+            #dvert[group_index] = 0.5
+    return weight
+
+def bmesh_set_weight_numpy(group_index, layer, verts, weight):
+    for i, v in enumerate(verts):
+        dvert = v[layer]
+        if group_index in dvert:
+            dvert[group_index] = weight[i]
+    return verts
+
+### MODIFIERS ###
+def mod_preserve_topology(mod):
+    same_topology_modifiers = ('DATA_TRANSFER','NORMAL_EDIT','WEIGHTED_NORMAL',
+        'UV_PROJECT','UV_WARP','VERTEX_WEIGHT_EDIT','VERTEX_WEIGHT_MIX',
+        'VERTEX_WEIGHT_PROXIMITY','ARMATURE','CAST','CURVE','DISPLACE','HOOK',
+        'LAPLACIANDEFORM','LATTICE','MESH_DEFORM','SHRINKWRAP','SIMPLE_DEFORM',
+        'SMOOTH','CORRECTIVE_SMOOTH','LAPLACIANSMOOTH','SURFACE_DEFORM','WARP',
+        'WAVE','CLOTH','COLLISION','DYNAMIC_PAINT','SOFT_BODY'
+        )
+    return mod.type in same_topology_modifiers
+
+def mod_preserve_shape(mod):
+    same_shape_modifiers = ('DATA_TRANSFER','NORMAL_EDIT','WEIGHTED_NORMAL',
+        'UV_PROJECT','UV_WARP','VERTEX_WEIGHT_EDIT','VERTEX_WEIGHT_MIX',
+        'VERTEX_WEIGHT_PROXIMITY','DYNAMIC_PAINT'
+        )
+    return mod.type in same_shape_modifiers
