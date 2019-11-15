@@ -42,7 +42,7 @@ if bool_numba:
     #from numba import jit, njit, guvectorize, float64, int32, prange
 
     @njit(parallel=True)
-    def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps):
+    def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps):
         arr = np.arange(n_edges)*2
         id0 = edge_verts[arr]
         id1 = edge_verts[arr+1]
@@ -50,6 +50,8 @@ if bool_numba:
             lap_a, lap_b = rd_init_laplacian(n_verts)
             numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b)
             numba_rd_core(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt)
+            numba_set_ab(a,b,brush)
+        return a,b
 
     #@guvectorize(['(float64[:] ,float64[:] , float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64)'],'(n),(n),(n),(n),(n),(n),(n),(n),()',target='parallel')
     @njit(parallel=True)
@@ -74,6 +76,17 @@ if bool_numba:
         ab2 = a*b**2
         a += (diff_a*lap_a - ab2 + f*(1-a))*dt
         b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
+
+    @njit(parallel=True)
+    def numba_set_ab(a, b, brush):
+        n = len(a)
+        _brush = np.full(n, brush[0]) if len(brush) == 1 else brush
+        for i in prange(len(b)):
+            b[i] += _brush[i]
+            if b[i] < 0: b[i] = 0
+            elif b[i] > 1: b[i] = 1
+            if a[i] < 0: a[i] = 0
+            elif a[i] > 1: a[i] = 1
 
 
     #@guvectorize(['(float64[:] ,float64[:] ,float64[:] , float64[:], float64[:], float64[:])'],'(m),(m),(n),(n),(n),(n)',target='parallel')

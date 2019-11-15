@@ -99,13 +99,21 @@ class reaction_diffusion_prop(PropertyGroup):
     diff_b : bpy.props.FloatProperty(
         name="Diff B", default=0.05, min=0, soft_max=2, precision=3,
         description="Diffusion B")
-
+    '''
     f : bpy.props.FloatProperty(
         name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4, step=0.05,
         description="Feed Rate")
 
     k : bpy.props.FloatProperty(
         name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
+        description="Kill Rate")
+    '''
+    f : bpy.props.FloatProperty(
+        name="f", default=0.055, soft_min=0.01, soft_max=0.06, precision=4, step=0.05,
+        description="Feed Rate")
+
+    k : bpy.props.FloatProperty(
+        name="k", default=0.062, soft_min=0.035, soft_max=0.065, precision=4, step=0.05,
         description="Kill Rate")
 
     diff_mult : bpy.props.FloatProperty(
@@ -131,6 +139,10 @@ class reaction_diffusion_prop(PropertyGroup):
     vertex_group_k : bpy.props.StringProperty(
         name="k", default='',
         description="Vertex Group used for Kill value (k)")
+
+    vertex_group_brush : bpy.props.StringProperty(
+        name="Brush", default='',
+        description="Vertex Group used for adding/removing B")
 
     invert_vertex_group_diff_a : BoolProperty(default=False,
         description='Inverte the value of the Vertex Group Diff A')
@@ -186,6 +198,14 @@ class reaction_diffusion_prop(PropertyGroup):
     max_k : bpy.props.FloatProperty(
         name="Max k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
         description="Max Kill Rate")
+
+    brush_mult : bpy.props.FloatProperty(
+        name="Mult", default=0.5, min=-1, max=1, precision=3, step=0.05,
+        description="Multiplier for brush value")
+
+    bool_mod : bpy.props.BoolProperty(
+        name="Use Modifiers", default=False,
+        description="Read modifiers affect the vertex groups")
 
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
     verts = ob.data.vertices
@@ -2769,163 +2789,11 @@ class reset_reaction_diffusion_weight(bpy.types.Operator):
 
 from bpy.app.handlers import persistent
 
-@persistent
-def reaction_diffusion_def_blur(scene):
-    for ob in scene.objects:
-        if ob.reaction_diffusion_settings.run:
-            #try:
-            me = ob.data
-            bm = bmesh.new()
-            bm.from_mesh(me)
-            bm.edges.ensure_lookup_table()
-
-            # store weight values
-            a = []
-            b = []
-            for v in me.vertices:
-                try:
-                    a.append(ob.vertex_groups["A"].weight(v.index))
-                except:
-                    a.append(0)
-                try:
-                    b.append(ob.vertex_groups["B"].weight(v.index))
-                except:
-                    b.append(0)
-
-            a = array(a)
-            b = array(b)
-            props = ob.reaction_diffusion_settings
-            dt = props.dt
-            time_steps = props.time_steps
-            f = props.f
-            k = props.k
-            diff_a = props.diff_a * props.diff_mult
-            diff_b = props.diff_b * props.diff_mult
-
-            n_verts = len(bm.verts)
-            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-            #ob.data.use_paint_mask_vertex = True
-
-            for i in range(time_steps):
-                ab2 = a*b**2
-                ob.vertex_groups.active = ob.vertex_groups['A']
-                bpy.ops.object.vertex_group_smooth(group_select_mode='ACTIVE', factor=diff_a)
-                ob.vertex_groups.active = ob.vertex_groups['B']
-                bpy.ops.object.vertex_group_smooth(group_select_mode='ACTIVE', factor=diff_b)
-
-                a = []
-                b = []
-                for v in me.vertices:
-                    a.append(ob.vertex_groups["A"].weight(v.index))
-                    b.append(ob.vertex_groups["B"].weight(v.index))
-                a = array(a)
-                b = array(b)
-
-                a += - (ab2 + f*(1-a))*dt
-                b += (ab2 - (k+f)*b)*dt
-
-            a = nan_to_num(a)
-            b = nan_to_num(b)
-
-            for i in range(n_verts):
-                ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
-                ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
-            ob.vertex_groups.update()
-            ob.data.update()
-            #bpy.ops.object.mode_set(mode='EDIT')
-            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT
-            #bpy.ops.paint.weight_paint_toggle()
-            #bpy.ops.paint.weight_paint_toggle()
-
-            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-            #except:
-            #    pass
-
-def reaction_diffusion_def_(scene):
-    for ob in scene.objects:
-        if ob.reaction_diffusion_settings.run:
-            #try:
-            me = ob.data
-            bm = bmesh.new()
-            bm.from_mesh(me)
-            bm.edges.ensure_lookup_table()
-
-            # store weight values
-            a = []
-            b = []
-            for v in me.vertices:
-                try:
-                    a.append(ob.vertex_groups["A"].weight(v.index))
-                except:
-                    a.append(0)
-                try:
-                    b.append(ob.vertex_groups["B"].weight(v.index))
-                except:
-                    b.append(0)
-
-            a = array(a)
-            b = array(b)
-            props = ob.reaction_diffusion_settings
-            dt = props.dt
-            time_steps = props.time_steps
-            f = props.f
-            k = props.k
-            diff_a = props.diff_a * props.diff_mult
-            diff_b = props.diff_b * props.diff_mult
-
-            n_verts = len(bm.verts)
-            for i in range(time_steps):
-                lap_a = zeros((n_verts))#[0]*n_verts
-                lap_b = zeros((n_verts))#[0]*n_verts
-                if i == 0:
-                    lap_map = [[] for i in range(n_verts)]
-                    lap_mult = []
-                    for e in bm.edges:
-                        id0 = e.verts[0].index
-                        id1 = e.verts[1].index
-                        lap_map[id0].append(id1)
-                        lap_map[id1].append(id0)
-                    for id in range(n_verts):
-                         lap_mult.append(len(lap_map[id]))
-                    lap_mult = array(lap_mult)
-                    lap_map = array(lap_map)
-                for id in range(n_verts):
-                    map = lap_map[id]
-                    lap_a[id] = a[lap_map[id]].sum()
-                    lap_b[id] = b[lap_map[id]].sum()
-                lap_a -= a*lap_mult
-                lap_b -= b*lap_mult
-                ab2 = a*b**2
-
-                a += (diff_a*lap_a - ab2 + f*(1-a))*dt
-                b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
-
-            a = nan_to_num(a)
-            b = nan_to_num(b)
-
-            for i in range(n_verts):
-                ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
-                ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
-            ob.vertex_groups.update()
-            ob.data.update()
-            #bpy.ops.object.mode_set(mode='EDIT')
-            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-            bpy.ops.paint.weight_paint_toggle()
-            bpy.ops.paint.weight_paint_toggle()
-
-            #bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-            #except:
-            #    pass
-
-
-def reaction_diffusion_def_test(scene):
-    override = {'mode': 'EDIT', 'scene': scene}
-    reaction_diffusion_def2(override, scene)
-
 def reaction_diffusion_def(scene):
     bpy.context.mode == 'EDIT'
     for ob in scene.objects:
         if ob.reaction_diffusion_settings.run:
+            start = time.time()
             props = ob.reaction_diffusion_settings
             dt = props.dt
             time_steps = props.time_steps
@@ -2935,7 +2803,32 @@ def reaction_diffusion_def(scene):
             diff_b = props.diff_b
             scale = props.diff_mult
 
-            me = ob.data
+            brush_mult = props.brush_mult
+
+            #me = ob.data
+            #me = simple_to_mesh(ob)
+
+            if props.bool_mod:
+                # hide deforming modifiers
+                mod_visibility = []
+                for m in ob.modifiers:
+                    mod_visibility.append(m.show_viewport)
+                    if not mod_preserve_shape(m):
+                        print(m)
+                        m.show_viewport = False
+
+                # evaluated mesh
+                dg = bpy.context.evaluated_depsgraph_get()
+                ob_eval = ob.evaluated_get(dg)
+                me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
+
+                # set original visibility
+                for v, m in zip(mod_visibility, ob.modifiers):
+                    m.show_viewport = v
+                ob.modifiers.update()
+            else:
+                me = ob.data
+
             n_edges = len(me.edges)
             n_verts = len(me.vertices)
 
@@ -2950,12 +2843,11 @@ def reaction_diffusion_def(scene):
             if props.vertex_group_scale != '': scale = np.zeros(n_verts)
             if props.vertex_group_f != '': f = np.zeros(n_verts)
             if props.vertex_group_k != '': k = np.zeros(n_verts)
+            if props.vertex_group_brush != '': brush = np.zeros(n_verts)
+            else: brush = 0
 
-            start = time.time()
 
             bm = bmesh.new()   # create an empty BMesh
-            override = {'mode': 'OBJECT'}
-            #bm = bmesh.from_edit_mesh(contextx=override,me)
             bm.from_mesh(me)   # fill it in from a Mesh
             dvert_lay = bm.verts.layers.deform.active
 
@@ -2963,22 +2855,6 @@ def reaction_diffusion_def(scene):
             a = bmesh_get_weight_numpy(group_index_a, dvert_lay, bm.verts)
             group_index_b = ob.vertex_groups["B"].index
             b = bmesh_get_weight_numpy(group_index_b, dvert_lay, bm.verts)
-
-            if props.vertex_group_diff_a != '':
-                group_index_diff_a = ob.vertex_groups[props.vertex_group_diff_a].index
-                diff_a = np.zeros(n_verts)
-            if props.vertex_group_diff_b != '':
-                group_index_diff_b = ob.vertex_groups[props.vertex_group_diff_b].index
-                diff_b = np.zeros(n_verts)
-            if props.vertex_group_scale != '':
-                group_index_scale = ob.vertex_groups[props.vertex_group_scale].index
-                scale = np.zeros(n_verts)
-            if props.vertex_group_f != '':
-                group_index_f = ob.vertex_groups[props.vertex_group_f].index
-                f = np.zeros(n_verts)
-            if props.vertex_group_k != '':
-                group_index_k = ob.vertex_groups[props.vertex_group_k].index
-                k = np.zeros(n_verts)
 
             if props.vertex_group_diff_a != '':
                 group_index = ob.vertex_groups[props.vertex_group_diff_a].index
@@ -3010,9 +2886,14 @@ def reaction_diffusion_def(scene):
                 vg_bounds = (1,0) if props.invert_vertex_group_k else (0,1)
                 k = np.interp(k, vg_bounds, (props.min_k, props.max_k))
 
-            timeElapsed = time.time() - start
-            print('RD - Read Vertex Groups:',timeElapsed)
-            start = time.time()
+            if props.vertex_group_brush != '':
+                group_index = ob.vertex_groups[props.vertex_group_brush].index
+                brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                brush *= brush_mult
+
+            #timeElapsed = time.time() - start
+            #print('RD - Read Vertex Groups:',timeElapsed)
+            #start = time.time()
 
             diff_a *= scale
             diff_b *= scale
@@ -3030,10 +2911,8 @@ def reaction_diffusion_def(scene):
                 _k = k if type(k) is np.ndarray else np.array((k,))
                 _diff_a = diff_a if type(diff_a) is np.ndarray else np.array((diff_a,))
                 _diff_b = diff_b if type(diff_b) is np.ndarray else np.array((diff_b,))
-                numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _diff_a, _diff_b, _f, _k, dt, time_steps)
-                #a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps, db)
-                a = nan_to_num(a)
-                b = nan_to_num(b)
+                _brush = brush if type(brush) is np.ndarray else np.array((brush,))
+                a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
 
             except:
                 print('Not using Numba! The simulation could be slow.')
@@ -3042,6 +2921,7 @@ def reaction_diffusion_def(scene):
                 id0 = edge_verts[arr]     # first vertex indices for each edge
                 id1 = edge_verts[arr+1]   # second vertex indices for each edge
                 for i in range(time_steps):
+                    b += brush
                     lap_a = np.zeros(n_verts)
                     lap_b = np.zeros(n_verts)
                     lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
@@ -3066,27 +2946,31 @@ def reaction_diffusion_def(scene):
             start = time.time()
 
             if ob.mode == 'WEIGHT_PAINT':
+                # slower, but prevent crashes
                 for i in range(n_verts):
                     ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
                     ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
             else:
+                if props.bool_mod:
+                    bm = bmesh.new()        # create an empty BMesh
+                    bm.from_mesh(ob.data)   # fill it in from a Mesh
+                    dvert_lay = bm.verts.layers.deform.active
+                # faster, but can cause crashes while painting weight
                 for i, v in enumerate(bm.verts):
                     dvert = v[dvert_lay]
                     dvert[group_index_a] = a[i]
                     dvert[group_index_b] = b[i]
-                #bm.verts.ensure_lookup_table()
-                bm.to_mesh(me)
-                #me.update()
-                #bmesh.update_edit_mesh(me, False, False)
-                #bpy.context.mode == 'PAINT_WEIGHT'
+                bm.to_mesh(ob.data)
 
             for ps in ob.particle_systems:
                 if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
 
+            if props.bool_mod: bpy.data.meshes.remove(me)
+
             timeElapsed = time.time() - start
-            print('RD - Writing Vertex Groups Time:',timeElapsed)
+            print('RD - Closing Time:',timeElapsed)
 
 class TISSUE_PT_reaction_diffusion(Panel):
     bl_space_type = 'PROPERTIES'
@@ -3166,6 +3050,9 @@ class TISSUE_PT_reaction_diffusion_weight(Panel):
         layout = self.layout
         #layout.use_property_split = True
         col = layout.column(align=True)
+        col.prop(props, "bool_mod")
+        col.separator()
+        insert_weight_parameter(col, ob, 'brush', text='Brush:')
 
         insert_weight_parameter(col, ob, 'diff_a', text='Diff A:')
         insert_weight_parameter(col, ob, 'diff_b', text='Diff B:')
@@ -3181,13 +3068,17 @@ def insert_weight_parameter(col, ob, name, text=''):
     col2 = split.column(align=True)
     row2 = col2.row(align=True)
     row2.prop_search(props, 'vertex_group_' + name, ob, "vertex_groups", text='')
-    row2.prop(props, "invert_vertex_group_" + name, text="", toggle=True, icon='ARROW_LEFTRIGHT')
+    if name != 'brush':
+        row2.prop(props, "invert_vertex_group_" + name, text="", toggle=True, icon='ARROW_LEFTRIGHT')
     if 'vertex_group_' + name in props:
         if props['vertex_group_' + name] != '':
-            row2 = col2.row(align=True)
-            row2.prop(props, "min_" + name, text="Min")
-            row2 = col2.row(align=True)
-            row2.prop(props, "max_" + name, text="Max")
+            if name == 'brush':
+                col2.prop(props, "brush_mult")
+            else:
+                row2 = col2.row(align=True)
+                row2.prop(props, "min_" + name, text="Min")
+                row2 = col2.row(align=True)
+                row2.prop(props, "max_" + name, text="Max")
     col.separator()
 
 if False:

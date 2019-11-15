@@ -473,7 +473,7 @@ def bmesh_get_weight_numpy(group_index, layer, verts):
         dvert = v[layer]
         if group_index in dvert:
             weight[i] = dvert[group_index]
-            dvert[group_index] = 0.5
+            #dvert[group_index] = 0.5
     return weight
 
 def bmesh_set_weight_numpy(group_index, layer, verts, weight):
@@ -482,3 +482,21 @@ def bmesh_set_weight_numpy(group_index, layer, verts, weight):
         if group_index in dvert:
             dvert[group_index] = weight[i]
     return verts
+
+### MODIFIERS ###
+def mod_preserve_topology(mod):
+    same_topology_modifiers = ('DATA_TRANSFER','NORMAL_EDIT','WEIGHTED_NORMAL',
+        'UV_PROJECT','UV_WARP','VERTEX_WEIGHT_EDIT','VERTEX_WEIGHT_MIX',
+        'VERTEX_WEIGHT_PROXIMITY','ARMATURE','CAST','CURVE','DISPLACE','HOOK',
+        'LAPLACIANDEFORM','LATTICE','MESH_DEFORM','SHRINKWRAP','SIMPLE_DEFORM',
+        'SMOOTH','CORRECTIVE_SMOOTH','LAPLACIANSMOOTH','SURFACE_DEFORM','WARP',
+        'WAVE','CLOTH','COLLISION','DYNAMIC_PAINT','SOFT_BODY'
+        )
+    return mod.type in same_topology_modifiers
+
+def mod_preserve_shape(mod):
+    same_shape_modifiers = ('DATA_TRANSFER','NORMAL_EDIT','WEIGHTED_NORMAL',
+        'UV_PROJECT','UV_WARP','VERTEX_WEIGHT_EDIT','VERTEX_WEIGHT_MIX',
+        'VERTEX_WEIGHT_PROXIMITY','DYNAMIC_PAINT'
+        )
+    return mod.type in same_shape_modifiers
