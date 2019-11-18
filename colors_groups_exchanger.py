@@ -2830,17 +2830,12 @@ def reaction_diffusion_def(scene):
 
             brush_mult = props.brush_mult
 
-            #me = ob.data
-            #me = simple_to_mesh(ob)
-
             if props.bool_mod:
                 # hide deforming modifiers
                 mod_visibility = []
                 for m in ob.modifiers:
                     mod_visibility.append(m.show_viewport)
-                    if not mod_preserve_shape(m):
-                        print(m)
-                        m.show_viewport = False
+                    if not mod_preserve_shape(m): m.show_viewport = False
 
                 # evaluated mesh
                 dg = bpy.context.evaluated_depsgraph_get()
@@ -2870,7 +2865,6 @@ def reaction_diffusion_def(scene):
             if props.vertex_group_k != '': k = np.zeros(n_verts)
             if props.vertex_group_brush != '': brush = np.zeros(n_verts)
             else: brush = 0
-
 
             bm = bmesh.new()   # create an empty BMesh
             bm.from_mesh(me)   # fill it in from a Mesh
@@ -2988,6 +2982,21 @@ def reaction_diffusion_def(scene):
                     dvert[group_index_a] = a[i]
                     dvert[group_index_b] = b[i]
                 bm.to_mesh(ob.data)
+
+            if 'A' in ob.data.vertex_colors or 'B' in ob.data.vertex_colors:
+                v_id = np.array([v for p in ob.data.polygons for v in p.vertices])
+
+                if 'B' in ob.data.vertex_colors:
+                    c_val = b[v_id]
+                    c_val = np.repeat(c_val, 4, axis=0)
+                    vc = ob.data.vertex_colors['B']
+                    vc.data.foreach_set('color',c_val.tolist())
+
+                if 'A' in ob.data.vertex_colors:
+                    c_val = a[v_id]
+                    c_val = np.repeat(c_val, 4, axis=0)
+                    vc = ob.data.vertex_colors['A']
+                    vc.data.foreach_set('color',c_val.tolist())
 
             for ps in ob.particle_systems:
                 if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
