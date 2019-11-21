@@ -695,7 +695,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
         if len(v.link_faces) == 0:
             error = "verts_error"
             break
-    
+
     before_bm.free()
     if error != "":
         bpy.data.meshes.remove(ob0.data)
@@ -954,7 +954,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             #area*=mult*
             verts_area.append(sqrt(area))
         bm.free()
-        
+
     random.seed(rand_seed)
     bool_correct = False
 
