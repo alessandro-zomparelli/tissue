@@ -171,7 +171,7 @@ if bool_numba:
         return a, b
     '''
     @njit(parallel=True)
-    def numba_lerp2(v00, v10, v01, v11, vx, vy):
+    def numba_lerp2_(v00, v10, v01, v11, vx, vy):
         sh = v00.shape
         co2 = np.zeros((sh[0],len(vx),sh[-1]))
         for i in prange(len(v00)):
@@ -181,6 +181,32 @@ if bool_numba:
                     co1 = v01[i][0][k] + (v11[i][0][k] - v01[i][0][k]) * vx[j][0]
                     co2[i][j][k] = co0 + (co1 - co0) * vy[j][0]
         return co2
+
+
+    @njit(parallel=True)
+    def numba_lerp2_vec(v0, vx, vy):
+        n_faces = v0.shape[0]
+        co2 = np.zeros((n_faces,len(vx),3))
+        for i in prange(n_faces):
+            for j in prange(len(vx)):
+                for k in prange(3):
+                    co0 = v0[i][0][k] + (v0[i][1][k] - v0[i][0][k]) * vx[j][0]
+                    co1 = v0[i][3][k] + (v0[i][2][k] - v0[i][3][k]) * vx[j][0]
+                    co2[i][j][k] = co0 + (co1 - co0) * vy[j][0]
+        return co2
+
+    @njit(parallel=True)
+    def numba_lerp2(val, vx, vy):
+        n_faces = len(val)
+        co2 = np.zeros((n_faces,len(vx),1))
+        for i in prange(n_faces):
+            for j in prange(len(vx)):
+                co0 = val[i][0] + (val[i][1] - val[i][0]) * val[j][0]
+                co1 = val[i][3] + (val[i][2] - val[i][3]) * val[j][0]
+                co2[i][j][0] = co0 + (co1 - co0) * vy[j][0]
+        return co2
+
+    
 #except:
 #    print("Tissue: Numba cannot be installed. Try to restart Blender.")
 #    pass

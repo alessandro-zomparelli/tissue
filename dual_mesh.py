@@ -121,7 +121,7 @@ class dual_mesh_tessellated(Operator):
         ob.tissue_tessellate.merge = True
         ob.tissue_tessellate.bool_dissolve_seams = True
         if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'FAN'
-        bpy.ops.object.update_tessellate()
+        bpy.ops.object.tissue_update_tessellate()
         ob.location = ob0.location
         ob.matrix_world = ob0.matrix_world
         return {'FINISHED'}
