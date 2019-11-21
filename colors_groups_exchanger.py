@@ -2958,7 +2958,7 @@ def reaction_diffusion_def(scene):
 
             if 'A' in ob.data.vertex_colors or 'B' in ob.data.vertex_colors:
                 v_id = np.array([v for p in ob.data.polygons for v in p.vertices])
-                
+
                 if 'B' in ob.data.vertex_colors:
                     c_val = b[v_id]
                     c_val = np.repeat(c_val, 4, axis=0)
