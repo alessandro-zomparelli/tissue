@@ -48,7 +48,7 @@ class ThreadVertexGroup(threading.Thread):
 def thread_read_weight(_weight, vertex_group):
     global weight
     global n_threads
-    print(n_threads)
+    #print(n_threads)
     weight = _weight
     n_verts = len(weight)
     threads = [ThreadVertexGroup(i, vertex_group, n_verts) for i in range(n_threads)]
@@ -70,7 +70,7 @@ def process_read_weight(id, vertex_group, n_verts):
 def read_weight(_weight, vertex_group):
     global weight
     global n_threads
-    print(n_threads)
+    #print(n_threads)
     weight = _weight
     n_verts = len(weight)
     n_cores = multiprocessing.cpu_count()
@@ -123,8 +123,6 @@ def lerp3(v1, v2, v3, v4, v):
 
 def np_lerp2(v00, v10, v01, v11, vx, vy):
     import sys
-    #print(v00.shape)
-    #print(vx.shape)
     if 'numba' in sys.modules and False:
         co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
     #except:
@@ -132,7 +130,6 @@ def np_lerp2(v00, v10, v01, v11, vx, vy):
         co0 = v00 + (v10 - v00) * vx
         co1 = v01 + (v11 - v01) * vx
         co2 = co0 + (co1 - co0) * vy
-    print(co2.shape)
     return co2
 
 
@@ -234,6 +231,15 @@ def join_objects(objects, link_to_scene=True, make_active=False):
     # add materials
     for m in materials.keys(): ob.data.materials.append(m)
     return ob
+
+def array_mesh(ob, n):
+    arr = ob.modifiers.new('Repeat','ARRAY')
+    arr.relative_offset_displace[0] = 0
+    arr.count = n
+    ob.modifiers.update()
+    me = simple_to_mesh(ob)
+    ob.modifiers.remove(arr)
+    return me
 
 ### MESH FUNCTIONS
 
@@ -482,6 +488,14 @@ def bmesh_set_weight_numpy(group_index, layer, verts, weight):
         if group_index in dvert:
             dvert[group_index] = weight[i]
     return verts
+
+def bmesh_set_weight_numpy(bm, group_index, weight):
+    layer = bm.verts.layers.deform.verify()
+    for i, v in enumerate(bm.verts):
+        dvert = v[layer]
+        #if group_index in dvert:
+        dvert[group_index] = weight[i]
+    return bm
 
 ### MODIFIERS ###
 def mod_preserve_topology(mod):
