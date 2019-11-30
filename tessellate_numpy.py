@@ -695,6 +695,8 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
         if len(v.link_faces) == 0:
             error = "verts_error"
             break
+    
+    before_bm.free()
     if error != "":
         bpy.data.meshes.remove(ob0.data)
         #bpy.data.meshes.remove(me0)
@@ -951,7 +953,8 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             area = area/len(faces)*patch_faces/com_area
             #area*=mult*
             verts_area.append(sqrt(area))
-
+        bm.free()
+        
     random.seed(rand_seed)
     bool_correct = False
 
@@ -1407,7 +1410,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                 planes_co = ((0,0,0),(1,1,1))
                 plane_no = (1,0,0)
             if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((1,0,0)))
+                planes_co = (ob1.matrix_world.translation, ob1.matrix_world @ Vector((1,0,0)))
                 plane_no = planes_co[0]-planes_co[1]
             bpy.ops.object.mode_set(mode='EDIT')
             for co in planes_co:
@@ -1440,7 +1443,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                 planes_co = ((0,0,0),(1,1,1))
                 plane_no = (0,1,0)
             if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((0,1,0)))
+                planes_co = (ob1.matrix_world.translation, ob1.matrix_world @ Vector((0,1,0)))
                 plane_no = planes_co[0]-planes_co[1]
             bpy.ops.object.mode_set(mode='EDIT')
             for co in planes_co:
@@ -3108,6 +3111,7 @@ class tissue_update_tessellate(Operator):
                     remove_faces = [f for f in bm.faces if f.material_index in remove_materials]
                 bmesh.ops.delete(bm, geom=remove_faces, context='FACES')
                 bm.to_mesh(last_mesh)
+                bm.free()
                 last_mesh.update()
                 last_mesh.name = '_tissue_tmp_previous_unused'
 
@@ -3993,6 +3997,7 @@ class tissue_rotate_face_right(Operator):
 
         # trigger UI update
         bmesh.update_edit_mesh(me)
+        bm.free()
         ob.select_set(False)
 
         # update tessellated meshes
@@ -4046,6 +4051,7 @@ class tissue_rotate_face_left(Operator):
 
         # trigger UI update
         bmesh.update_edit_mesh(me)
+        bm.free()
         ob.select_set(False)
 
         # update tessellated meshes
@@ -4247,6 +4253,7 @@ def convert_to_frame(ob, props, use_modifiers):
     #for f in bm.faces: f.select_set(f not in new_faces)
     for f in original_faces: bm.faces.remove(f)
     bm.to_mesh(new_ob.data)
+    bm.free()
     # propagate vertex groups
     if props.bool_vertex_group:
         base_vg = []
