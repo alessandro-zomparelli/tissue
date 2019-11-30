@@ -84,63 +84,63 @@ class reaction_diffusion_prop(PropertyGroup):
     run : BoolProperty(default=False, update = reaction_diffusion_add_handler,
         description='Compute a new iteration on frame changes. Currently is not working during  Render Animation')
 
-    time_steps : bpy.props.IntProperty(
+    time_steps : IntProperty(
         name="Steps", default=10, min=0, soft_max=50,
         description="Number of Steps")
 
-    dt : bpy.props.FloatProperty(
+    dt : FloatProperty(
         name="dt", default=1, min=0, soft_max=0.2,
         description="Time Step")
 
-    diff_a : bpy.props.FloatProperty(
+    diff_a : FloatProperty(
         name="Diff A", default=0.1, min=0, soft_max=2, precision=3,
         description="Diffusion A")
 
-    diff_b : bpy.props.FloatProperty(
+    diff_b : FloatProperty(
         name="Diff B", default=0.05, min=0, soft_max=2, precision=3,
         description="Diffusion B")
     '''
-    f : bpy.props.FloatProperty(
+    f : FloatProperty(
         name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4, step=0.05,
         description="Feed Rate")
 
-    k : bpy.props.FloatProperty(
+    k : FloatProperty(
         name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
         description="Kill Rate")
     '''
-    f : bpy.props.FloatProperty(
+    f : FloatProperty(
         name="f", default=0.055, soft_min=0.01, soft_max=0.06, precision=4, step=0.05,
         description="Feed Rate")
 
-    k : bpy.props.FloatProperty(
+    k : FloatProperty(
         name="k", default=0.062, soft_min=0.035, soft_max=0.065, precision=4, step=0.05,
         description="Kill Rate")
 
-    diff_mult : bpy.props.FloatProperty(
+    diff_mult : FloatProperty(
         name="Scale", default=1, min=0, soft_max=1, max=10, precision=2,
         description="Multiplier for the diffusion of both substances")
 
-    vertex_group_diff_a : bpy.props.StringProperty(
+    vertex_group_diff_a : StringProperty(
         name="Diff A", default='',
         description="Vertex Group used for A diffusion")
 
-    vertex_group_diff_b : bpy.props.StringProperty(
+    vertex_group_diff_b : StringProperty(
         name="Diff B", default='',
         description="Vertex Group used for B diffusion")
 
-    vertex_group_scale : bpy.props.StringProperty(
+    vertex_group_scale : StringProperty(
         name="Scale", default='',
         description="Vertex Group used for Scale value")
 
-    vertex_group_f : bpy.props.StringProperty(
+    vertex_group_f : StringProperty(
         name="f", default='',
         description="Vertex Group used for Feed value (f)")
 
-    vertex_group_k : bpy.props.StringProperty(
+    vertex_group_k : StringProperty(
         name="k", default='',
         description="Vertex Group used for Kill value (k)")
 
-    vertex_group_brush : bpy.props.StringProperty(
+    vertex_group_brush : StringProperty(
         name="Brush", default='',
         description="Vertex Group used for adding/removing B")
 
@@ -159,51 +159,51 @@ class reaction_diffusion_prop(PropertyGroup):
     invert_vertex_group_k : BoolProperty(default=False,
         description='Inverte the value of the Vertex Group k')
 
-    min_diff_a : bpy.props.FloatProperty(
+    min_diff_a : FloatProperty(
         name="Min Diff A", default=0.1, min=0, soft_max=2, precision=3,
         description="Min Diff A")
 
-    max_diff_a : bpy.props.FloatProperty(
+    max_diff_a : FloatProperty(
         name="Max Diff A", default=0.1, min=0, soft_max=2, precision=3,
         description="Max Diff A")
 
-    min_diff_b : bpy.props.FloatProperty(
+    min_diff_b : FloatProperty(
         name="Min Diff B", default=0.1, min=0, soft_max=2, precision=3,
         description="Min Diff B")
 
-    max_diff_b : bpy.props.FloatProperty(
+    max_diff_b : FloatProperty(
         name="Max Diff B", default=0.1, min=0, soft_max=2, precision=3,
         description="Max Diff B")
 
-    min_scale : bpy.props.FloatProperty(
+    min_scale : FloatProperty(
         name="Scale", default=0.35, min=0, soft_max=1, max=10, precision=2,
         description="Min Scale Value")
 
-    max_scale : bpy.props.FloatProperty(
+    max_scale : FloatProperty(
         name="Scale", default=1, min=0, soft_max=1, max=10, precision=2,
         description="Max Scale value")
 
-    min_f : bpy.props.FloatProperty(
+    min_f : FloatProperty(
         name="Min f", default=0.02, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4, step=0.05,
         description="Min Feed Rate")
 
-    max_f : bpy.props.FloatProperty(
+    max_f : FloatProperty(
         name="Max f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4, step=0.05,
         description="Max Feed Rate")
 
-    min_k : bpy.props.FloatProperty(
+    min_k : FloatProperty(
         name="Min k", default=0.035, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
         description="Min Kill Rate")
 
-    max_k : bpy.props.FloatProperty(
+    max_k : FloatProperty(
         name="Max k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
         description="Max Kill Rate")
 
-    brush_mult : bpy.props.FloatProperty(
+    brush_mult : FloatProperty(
         name="Mult", default=0.5, min=-1, max=1, precision=3, step=0.05,
         description="Multiplier for brush value")
 
-    bool_mod : bpy.props.BoolProperty(
+    bool_mod : BoolProperty(
         name="Use Modifiers", default=False,
         description="Read modifiers affect the vertex groups")
 
@@ -269,7 +269,7 @@ def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0
         return "There is something wrong"
     print("Weight Formula: " + str(timeit.default_timer() - start_time))
 
-class weight_formula_wiki(bpy.types.Operator):
+class weight_formula_wiki(Operator):
     bl_idname = "scene.weight_formula_wiki"
     bl_label = "Online Documentation"
     bl_options = {'REGISTER', 'UNDO'}
@@ -278,7 +278,7 @@ class weight_formula_wiki(bpy.types.Operator):
         bpy.ops.wm.url_open(url="https://github.com/alessandro-zomparelli/tissue/wiki/Weight-Tools#weight-formula")
         return {'FINISHED'}
 
-class weight_formula(bpy.types.Operator):
+class weight_formula(Operator):
     bl_idname = "object.weight_formula"
     bl_label = "Weight Formula"
     bl_options = {'REGISTER', 'UNDO'}
@@ -302,43 +302,43 @@ class weight_formula(bpy.types.Operator):
     ex_items = list((s,s,"") for s in ex)
     ex_items.append(('CUSTOM', "User Formula", ""))
 
-    examples : bpy.props.EnumProperty(
+    examples : EnumProperty(
         items = ex_items, default='CUSTOM', name="Examples")
 
     old_ex = ""
 
-    formula : bpy.props.StringProperty(
+    formula : StringProperty(
         name="Formula", default="", description="Formula to Evaluate")
     bl_description = ("Generate a Vertex Group based on the given formula")
 
-    slider_f01 : bpy.props.FloatProperty(
+    slider_f01 : FloatProperty(
         name="f1", default=1, description="Slider")
     bl_description = ("Slider Float 1")
-    slider_f02 : bpy.props.FloatProperty(
+    slider_f02 : FloatProperty(
         name="f2", default=1, description="Slider")
     bl_description = ("Slider Float 2")
-    slider_f03 : bpy.props.FloatProperty(
+    slider_f03 : FloatProperty(
         name="f3", default=1, description="Slider")
     bl_description = ("Slider Float 3")
-    slider_f04 : bpy.props.FloatProperty(
+    slider_f04 : FloatProperty(
         name="f4", default=1, description="Slider")
     bl_description = ("Slider Float 4")
-    slider_f05 : bpy.props.FloatProperty(
+    slider_f05 : FloatProperty(
         name="f5", default=1, description="Slider")
     bl_description = ("Slider Float 5")
-    slider_i01 : bpy.props.IntProperty(
+    slider_i01 : IntProperty(
         name="i1", default=1, description="Slider")
     bl_description = ("Slider Integer 1")
-    slider_i02 : bpy.props.IntProperty(
+    slider_i02 : IntProperty(
         name="i2", default=1, description="Slider")
     bl_description = ("Slider Integer 2")
-    slider_i03 : bpy.props.IntProperty(
+    slider_i03 : IntProperty(
         name="i3", default=1, description="Slider")
     bl_description = ("Slider Integer 3")
-    slider_i04 : bpy.props.IntProperty(
+    slider_i04 : IntProperty(
         name="i4", default=1, description="Slider")
     bl_description = ("Slider Integer 4")
-    slider_i05 : bpy.props.IntProperty(
+    slider_i05 : IntProperty(
         name="i5", default=1, description="Slider")
     bl_description = ("Slider Integer 5")
 
@@ -390,7 +390,7 @@ class weight_formula(bpy.types.Operator):
         #layout.label(text="(where 'i' is the index of the Vertex Group)")
 
     def execute(self, context):
-        ob = bpy.context.active_object
+        ob = context.active_object
         n_verts = len(ob.data.vertices)
         #if self.examples == 'CUSTOM':
         #    formula = self.formula
@@ -441,29 +441,29 @@ class weight_formula(bpy.types.Operator):
         #    print(f.name, f.formula, f.int_var, f.float_var)
         return {'FINISHED'}
 
-class _weight_laplacian(bpy.types.Operator):
+class _weight_laplacian(Operator):
     bl_idname = "object._weight_laplacian"
     bl_label = "Weight Laplacian"
     bl_description = ("Compute the Vertex Group Laplacian")
     bl_options = {'REGISTER', 'UNDO'}
 
-    bounds : bpy.props.EnumProperty(
+    bounds : EnumProperty(
         items=(('MANUAL', "Manual Bounds", ""),
             ('POSITIVE', "Positive Only", ""),
             ('NEGATIVE', "Negative Only", ""),
             ('AUTOMATIC', "Automatic Bounds", "")),
         default='AUTOMATIC', name="Bounds")
 
-    mode : bpy.props.EnumProperty(
+    mode : EnumProperty(
         items=(('LENGTH', "Length Weight", ""),
             ('SIMPLE', "Simple", "")),
         default='SIMPLE', name="Evaluation Mode")
 
-    min_def : bpy.props.FloatProperty(
+    min_def : FloatProperty(
         name="Min", default=0, soft_min=-1, soft_max=0,
         description="Laplacian value with 0 weight")
 
-    max_def : bpy.props.FloatProperty(
+    max_def : FloatProperty(
         name="Max", default=0.5, soft_min=0, soft_max=5,
         description="Laplacian value with 1 weight")
 
@@ -565,39 +565,40 @@ class _weight_laplacian(bpy.types.Operator):
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        bm.free()
         return {'FINISHED'}
 
-class weight_laplacian(bpy.types.Operator):
+class weight_laplacian(Operator):
     bl_idname = "object.weight_laplacian"
     bl_label = "Weight Laplacian"
     bl_description = ("Compute the Vertex Group Laplacian")
     bl_options = {'REGISTER', 'UNDO'}
 
-    steps : bpy.props.IntProperty(
+    steps : IntProperty(
         name="Steps", default=10, min=0, soft_max=50,
         description="Number of Steps")
 
-    dt : bpy.props.FloatProperty(
+    dt : FloatProperty(
         name="dt", default=0.2, min=0, soft_max=0.2,
         description="Time Step")
 
-    diff_a : bpy.props.FloatProperty(
+    diff_a : FloatProperty(
         name="Diff A", default=1, min=0, soft_max=2,
         description="Diffusion A")
 
-    diff_b : bpy.props.FloatProperty(
+    diff_b : FloatProperty(
         name="Diff B", default=0.5, min=0, soft_max=2,
         description="Diffusion B")
 
-    f : bpy.props.FloatProperty(
+    f : FloatProperty(
         name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
         description="Feed Rate")
 
-    k : bpy.props.FloatProperty(
+    k : FloatProperty(
         name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
         description="Kill Rate")
 
-    diff_mult : bpy.props.FloatProperty(
+    diff_mult : FloatProperty(
         name="Scale", default=1, min=0, soft_max=1, max=2, precision=2,
         description="Multiplier for the diffusion of both substances")
 
@@ -694,36 +695,37 @@ class weight_laplacian(bpy.types.Operator):
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        bm.free()
         return {'FINISHED'}
 
 
-class reaction_diffusion(bpy.types.Operator):
+class reaction_diffusion(Operator):
     bl_idname = "object.reaction_diffusion"
     bl_label = "Reaction Diffusion"
     bl_description = ("Run a Reaction-Diffusion based on existing Vertex Groups: A and B")
     bl_options = {'REGISTER', 'UNDO'}
 
-    steps : bpy.props.IntProperty(
+    steps : IntProperty(
         name="Steps", default=10, min=0, soft_max=50,
         description="Number of Steps")
 
-    dt : bpy.props.FloatProperty(
+    dt : FloatProperty(
         name="dt", default=0.2, min=0, soft_max=0.2,
         description="Time Step")
 
-    diff_a : bpy.props.FloatProperty(
+    diff_a : FloatProperty(
         name="Diff A", default=1, min=0, soft_max=2,
         description="Diffusion A")
 
-    diff_b : bpy.props.FloatProperty(
+    diff_b : FloatProperty(
         name="Diff B", default=0.5, min=0, soft_max=2,
         description="Diffusion B")
 
-    f : bpy.props.FloatProperty(
+    f : FloatProperty(
         name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
         description="Feed Rate")
 
-    k : bpy.props.FloatProperty(
+    k : FloatProperty(
         name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
         description="Kill Rate")
 
@@ -796,33 +798,34 @@ class reaction_diffusion(bpy.types.Operator):
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        bm.free()
         return {'FINISHED'}
 
 
-class edges_deformation(bpy.types.Operator):
+class edges_deformation(Operator):
     bl_idname = "object.edges_deformation"
     bl_label = "Edges Deformation"
     bl_description = ("Compute Weight based on the deformation of edges"+
         "according to visible modifiers.")
     bl_options = {'REGISTER', 'UNDO'}
 
-    bounds : bpy.props.EnumProperty(
+    bounds : EnumProperty(
         items=(('MANUAL', "Manual Bounds", ""),
             ('COMPRESSION', "Compressed Only", ""),
             ('TENSION', "Extended Only", ""),
             ('AUTOMATIC', "Automatic Bounds", "")),
         default='AUTOMATIC', name="Bounds")
 
-    mode : bpy.props.EnumProperty(
+    mode : EnumProperty(
         items=(('MAX', "Max Deformation", ""),
             ('MEAN', "Average Deformation", "")),
         default='MEAN', name="Evaluation Mode")
 
-    min_def : bpy.props.FloatProperty(
+    min_def : FloatProperty(
         name="Min", default=0, soft_min=-1, soft_max=0,
         description="Deformations with 0 weight")
 
-    max_def : bpy.props.FloatProperty(
+    max_def : FloatProperty(
         name="Max", default=0.5, soft_min=0, soft_max=5,
         description="Deformations with 1 weight")
 
@@ -939,16 +942,18 @@ class edges_deformation(bpy.types.Operator):
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         bpy.data.meshes.remove(me)
+        bm.free()
+        bm0.free()
         return {'FINISHED'}
 
-class edges_bending(bpy.types.Operator):
+class edges_bending(Operator):
     bl_idname = "object.edges_bending"
     bl_label = "Edges Bending"
     bl_description = ("Compute Weight based on the bending of edges"+
         "according to visible modifiers.")
     bl_options = {'REGISTER', 'UNDO'}
 
-    bounds : bpy.props.EnumProperty(
+    bounds : EnumProperty(
         items=(('MANUAL', "Manual Bounds", ""),
             ('POSITIVE', "Positive Only", ""),
             ('NEGATIVE', "Negative Only", ""),
@@ -956,11 +961,11 @@ class edges_bending(bpy.types.Operator):
             ('AUTOMATIC', "Signed Bending", "")),
         default='AUTOMATIC', name="Bounds")
 
-    min_def : bpy.props.FloatProperty(
+    min_def : FloatProperty(
         name="Min", default=-10, soft_min=-45, soft_max=45,
         description="Deformations with 0 weight")
 
-    max_def : bpy.props.FloatProperty(
+    max_def : FloatProperty(
         name="Max", default=10, soft_min=-45, soft_max=45,
         description="Deformations with 1 weight")
 
@@ -1066,33 +1071,34 @@ class edges_bending(bpy.types.Operator):
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         bpy.data.meshes.remove(me)
-        return {'FINISHED'}
+        bm0.free()
+        bm.free()
         return {'FINISHED'}
 
-class weight_contour_displace(bpy.types.Operator):
+class weight_contour_displace(Operator):
     bl_idname = "object.weight_contour_displace"
     bl_label = "Contour Displace"
     bl_description = ("")
     bl_options = {'REGISTER', 'UNDO'}
 
-    use_modifiers : bpy.props.BoolProperty(
+    use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
-    min_iso : bpy.props.FloatProperty(
+    min_iso : FloatProperty(
         name="Min Iso Value", default=0.49, min=0, max=1,
         description="Threshold value")
-    max_iso : bpy.props.FloatProperty(
+    max_iso : FloatProperty(
         name="Max Iso Value", default=0.51, min=0, max=1,
         description="Threshold value")
-    n_cuts : bpy.props.IntProperty(
+    n_cuts : IntProperty(
         name="Cuts", default=2, min=1, soft_max=10,
         description="Number of cuts in the selected range of values")
-    bool_displace : bpy.props.BoolProperty(
+    bool_displace : BoolProperty(
         name="Add Displace", default=True, description="Add Displace Modifier")
-    bool_flip : bpy.props.BoolProperty(
+    bool_flip : BoolProperty(
         name="Flip", default=False, description="Flip Output Weight")
 
-    weight_mode : bpy.props.EnumProperty(
+    weight_mode : EnumProperty(
         items=[('Remapped', 'Remapped', 'Remap values'),
                ('Alternate', 'Alternate', 'Alternate 0 and 1'),
                ('Original', 'Original', 'Keep original Vertex Group')],
@@ -1109,12 +1115,12 @@ class weight_contour_displace(bpy.types.Operator):
     def execute(self, context):
         start_time = timeit.default_timer()
         try:
-            check = bpy.context.object.vertex_groups[0]
+            check = context.object.vertex_groups[0]
         except:
             self.report({'ERROR'}, "The object doesn't have Vertex Groups")
             return {'CANCELLED'}
 
-        ob0 = bpy.context.object
+        ob0 = context.object
 
         group_id = ob0.vertex_groups.active_index
         vertex_group_name = ob0.vertex_groups[group_id].name
@@ -1257,16 +1263,18 @@ class weight_contour_displace(bpy.types.Operator):
                 #del_faces.append(f.index)
 
             # adding new vertices
-            for v in verts: new_vert = bm.verts.new(v)
+            _new_vert = bm.verts.new
+            for v in verts: new_vert = _new_vert(v)
             bm.verts.index_update()
             bm.verts.ensure_lookup_table()
             # adding new faces
+            _new_face = bm.faces.new
             missed_faces = []
             added_faces = []
             for f in splitted_faces:
                 try:
                     face_verts = [bm.verts[i] for i in f]
-                    new_face = bm.faces.new(face_verts)
+                    new_face = _new_face(face_verts)
                     for e in new_face.edges:
                         filtered_edges.append(e)
                 except:
@@ -1277,9 +1285,10 @@ class weight_contour_displace(bpy.types.Operator):
             weight = weight + [iso_val]*len(verts)
 
             # deleting old edges/faces
+            _remove_edge = bm.edges.remove
             bm.edges.ensure_lookup_table()
             for e in delete_edges:
-                bm.edges.remove(e)
+                _remove_edge(e)
             _filtered_edges = []
             for e in filtered_edges:
                 if e not in delete_edges: _filtered_edges.append(e)
@@ -1288,12 +1297,13 @@ class weight_contour_displace(bpy.types.Operator):
         name = ob0.name + '_ContourDisp'
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
+        bm.free()
         ob = bpy.data.objects.new(name, me)
 
         # Link object to scene and make active
-        scn = bpy.context.scene
-        bpy.context.collection.objects.link(ob)
-        bpy.context.view_layer.objects.active = ob
+        scn = context.scene
+        context.collection.objects.link(ob)
+        context.view_layer.objects.active = ob
         ob.select_set(True)
         ob0.select_set(False)
 
@@ -1346,21 +1356,21 @@ class weight_contour_displace(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class weight_contour_mask(bpy.types.Operator):
+class weight_contour_mask(Operator):
     bl_idname = "object.weight_contour_mask"
     bl_label = "Contour Mask"
     bl_description = ("")
     bl_options = {'REGISTER', 'UNDO'}
 
-    use_modifiers : bpy.props.BoolProperty(
+    use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
-    iso : bpy.props.FloatProperty(
+    iso : FloatProperty(
         name="Iso Value", default=0.5, soft_min=0, soft_max=1,
         description="Threshold value")
-    bool_solidify : bpy.props.BoolProperty(
+    bool_solidify : BoolProperty(
         name="Solidify", default=True, description="Add Solidify Modifier")
-    normalize_weight : bpy.props.BoolProperty(
+    normalize_weight : BoolProperty(
         name="Normalize Weight", default=True,
         description="Normalize weight of remaining vertices")
 
@@ -1371,7 +1381,7 @@ class weight_contour_mask(bpy.types.Operator):
     def execute(self, context):
         start_time = timeit.default_timer()
         try:
-            check = bpy.context.object.vertex_groups[0]
+            check = context.object.vertex_groups[0]
         except:
             self.report({'ERROR'}, "The object doesn't have Vertex Groups")
             return {'CANCELLED'}
@@ -1495,42 +1505,47 @@ class weight_contour_mask(bpy.types.Operator):
             splitted_faces.append(build_faces[switch])
 
         # adding new vertices
-        for v in verts: bm.verts.new(v)
+        _new_vert = bm.verts.new
+        for v in verts: _new_vert(v)
         bm.verts.ensure_lookup_table()
 
         # deleting old edges/faces
+        _remove_edge = bm.edges.remove
         bm.edges.ensure_lookup_table()
         remove_edges = []
-        for e in delete_edges: bm.edges.remove(e)
+        for e in delete_edges: _remove_edge(e)
 
         bm.verts.ensure_lookup_table()
         # adding new faces
+        _new_face = bm.faces.new
         missed_faces = []
         for f in splitted_faces:
             try:
                 face_verts = [bm.verts[i] for i in f]
-                bm.faces.new(face_verts)
+                _new_face(face_verts)
             except:
                 missed_faces.append(f)
 
         # Mask geometry
         if(True):
+            _remove_vert = bm.verts.remove
             all_weight = weight + [iso_val+0.0001]*len(verts)
             weight = []
             for w, v in zip(all_weight, bm.verts):
-                if w < iso_val: bm.verts.remove(v)
+                if w < iso_val: _remove_vert(v)
                 else: weight.append(w)
 
         # Create mesh and object
         name = ob0.name + '_ContourMask_{:.3f}'.format(iso_val)
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
+        bm.free()
         ob = bpy.data.objects.new(name, me)
 
         # Link object to scene and make active
-        scn = bpy.context.scene
-        bpy.context.collection.objects.link(ob)
-        bpy.context.view_layer.objects.active = ob
+        scn = context.scene
+        context.collection.objects.link(ob)
+        context.view_layer.objects.active = ob
         ob.select_set(True)
         ob0.select_set(False)
 
@@ -1565,21 +1580,21 @@ class weight_contour_mask(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class weight_contour_mask_wip(bpy.types.Operator):
+class weight_contour_mask_wip(Operator):
     bl_idname = "object.weight_contour_mask"
     bl_label = "Contour Mask"
     bl_description = ("")
     bl_options = {'REGISTER', 'UNDO'}
 
-    use_modifiers : bpy.props.BoolProperty(
+    use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
-    iso : bpy.props.FloatProperty(
+    iso : FloatProperty(
         name="Iso Value", default=0.5, soft_min=0, soft_max=1,
         description="Threshold value")
-    bool_solidify : bpy.props.BoolProperty(
+    bool_solidify : BoolProperty(
         name="Solidify", default=True, description="Add Solidify Modifier")
-    normalize_weight : bpy.props.BoolProperty(
+    normalize_weight : BoolProperty(
         name="Normalize Weight", default=True,
         description="Normalize weight of remaining vertices")
 
@@ -1590,7 +1605,7 @@ class weight_contour_mask_wip(bpy.types.Operator):
     def execute(self, context):
         start_time = timeit.default_timer()
         try:
-            check = bpy.context.object.vertex_groups[0]
+            check = context.object.vertex_groups[0]
         except:
             self.report({'ERROR'}, "The object doesn't have Vertex Groups")
             return {'CANCELLED'}
@@ -1633,12 +1648,13 @@ class weight_contour_mask_wip(bpy.types.Operator):
         name = ob0.name + '_ContourMask_{:.3f}'.format(iso_val)
         me = bpy.data.meshes.new(name)
         bm.to_mesh(me)
+        bm.free()
         ob = bpy.data.objects.new(name, me)
 
         # Link object to scene and make active
-        scn = bpy.context.scene
-        bpy.context.collection.objects.link(ob)
-        bpy.context.view_layer.objects.active = ob
+        scn = context.scene
+        context.collection.objects.link(ob)
+        context.view_layer.objects.active = ob
         ob.select_set(True)
         ob0.select_set(False)
 
@@ -1673,30 +1689,30 @@ class weight_contour_mask_wip(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class weight_contour_curves(bpy.types.Operator):
+class weight_contour_curves(Operator):
     bl_idname = "object.weight_contour_curves"
     bl_label = "Contour Curves"
     bl_description = ("")
     bl_options = {'REGISTER', 'UNDO'}
 
-    use_modifiers : bpy.props.BoolProperty(
+    use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
 
-    min_iso : bpy.props.FloatProperty(
+    min_iso : FloatProperty(
         name="Min Value", default=0., soft_min=0, soft_max=1,
         description="Minimum weight value")
-    max_iso : bpy.props.FloatProperty(
+    max_iso : FloatProperty(
         name="Max Value", default=1, soft_min=0, soft_max=1,
         description="Maximum weight value")
-    n_curves : bpy.props.IntProperty(
+    n_curves : IntProperty(
         name="Curves", default=3, soft_min=1, soft_max=10,
         description="Number of Contour Curves")
 
-    min_rad : bpy.props.FloatProperty(
+    min_rad : FloatProperty(
         name="Min Radius", default=1, soft_min=0, soft_max=1,
         description="Change radius according to Iso Value")
-    max_rad : bpy.props.FloatProperty(
+    max_rad : FloatProperty(
         name="Max Radius", default=1, soft_min=0, soft_max=1,
         description="Change radius according to Iso Value")
 
@@ -1711,11 +1727,11 @@ class weight_contour_curves(bpy.types.Operator):
     def execute(self, context):
         start_time = timeit.default_timer()
         try:
-            check = bpy.context.object.vertex_groups[0]
+            check = context.object.vertex_groups[0]
         except:
             self.report({'ERROR'}, "The object doesn't have Vertex Groups")
             return {'CANCELLED'}
-        ob0 = bpy.context.object
+        ob0 = context.object
 
         group_id = ob0.vertex_groups.active_index
         vertex_group_name = ob0.vertex_groups[group_id].name
@@ -1837,16 +1853,19 @@ class weight_contour_curves(bpy.types.Operator):
                     iso_rad = (self.min_rad + self.max_rad)/2
                 radius = radius + [iso_rad]*len(verts)
         print("Contour Curves, computing time: " + str(timeit.default_timer() - start_time) + " sec")
+        bm.free()
         bm = bmesh.new()
-        # adding new vertices
-        for v in total_verts: bm.verts.new(v)
+        # adding new vertices  _local for fast access
+        _new_vert = bm.verts.new
+        for v in total_verts: _new_vert(v)
         bm.verts.ensure_lookup_table()
 
         # adding new edges
+        _new_edge = bm.edges.new
         for s in total_segments:
             try:
                 pts = [bm.verts[i] for i in s]
-                bm.edges.new(pts)
+                _new_edge(pts)
             except: pass
 
 
@@ -1854,11 +1873,12 @@ class weight_contour_curves(bpy.types.Operator):
             name = ob0.name + '_ContourCurves'
             me = bpy.data.meshes.new(name)
             bm.to_mesh(me)
+            bm.free()
             ob = bpy.data.objects.new(name, me)
             # Link object to scene and make active
-            scn = bpy.context.scene
-            bpy.context.collection.objects.link(ob)
-            bpy.context.view_layer.objects.active = ob
+            scn = context.scene
+            context.collection.objects.link(ob)
+            context.view_layer.objects.active = ob
             ob.select_set(True)
             ob0.select_set(False)
 
@@ -1892,74 +1912,74 @@ class weight_contour_curves(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class tissue_weight_contour_curves_pattern(bpy.types.Operator):
+class tissue_weight_contour_curves_pattern(Operator):
     bl_idname = "object.tissue_weight_contour_curves_pattern"
     bl_label = "Contour Curves Pattern"
     bl_description = ("")
     bl_options = {'REGISTER', 'UNDO'}
 
-    use_modifiers : bpy.props.BoolProperty(
+    use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
 
-    min_iso : bpy.props.FloatProperty(
+    min_iso : FloatProperty(
         name="Min Value", default=0., soft_min=0, soft_max=1,
         description="Minimum weight value")
-    max_iso : bpy.props.FloatProperty(
+    max_iso : FloatProperty(
         name="Max Value", default=1, soft_min=0, soft_max=1,
         description="Maximum weight value")
-    n_curves : bpy.props.IntProperty(
+    n_curves : IntProperty(
         name="Curves", default=10, soft_min=1, soft_max=100,
         description="Number of Contour Curves")
     min_rad = 1
     max_rad = 1
 
-    in_displace : bpy.props.FloatProperty(
+    in_displace : FloatProperty(
         name="In Displace", default=0, soft_min=0, soft_max=10,
         description="Pattern displace strength")
-    out_displace : bpy.props.FloatProperty(
+    out_displace : FloatProperty(
         name="Out Displace", default=2, soft_min=0, soft_max=10,
         description="Pattern displace strength")
 
-    in_steps : bpy.props.IntProperty(
+    in_steps : IntProperty(
         name="In Steps", default=1, min=0, soft_max=10,
         description="Number of layers to move inwards")
-    out_steps : bpy.props.IntProperty(
+    out_steps : IntProperty(
         name="Out Steps", default=1, min=0, soft_max=10,
         description="Number of layers to move outwards")
-    limit_z : bpy.props.BoolProperty(
+    limit_z : BoolProperty(
         name="Limit Z", default=False,
         description="Limit Pattern in Z")
 
-    merge : bpy.props.BoolProperty(
+    merge : BoolProperty(
         name="Merge Vertices", default=True,
         description="Merge points")
-    merge_thres : bpy.props.FloatProperty(
+    merge_thres : FloatProperty(
         name="Merge Threshold", default=0.01, min=0, soft_max=1,
         description="Minimum Curve Radius")
 
-    bevel_depth : bpy.props.FloatProperty(
+    bevel_depth : FloatProperty(
         name="Bevel Depth", default=0, min=0, soft_max=1,
         description="")
-    remove_open_curves : bpy.props.BoolProperty(
+    remove_open_curves : BoolProperty(
         name="Remove Open Curves", default=False,
         description="Remove Open Curves")
 
-    vertex_group_pattern : bpy.props.StringProperty(
+    vertex_group_pattern : StringProperty(
         name="Pattern", default='',
         description="Vertex Group used for pattern displace")
 
-    object_name : bpy.props.StringProperty(
+    object_name : StringProperty(
         name="Active Object", default='',
         description="")
 
     try: vg_name = bpy.context.object.vertex_groups.active.name
     except: vg_name = ''
 
-    vertex_group_contour : bpy.props.StringProperty(
+    vertex_group_contour : StringProperty(
         name="Contour", default=vg_name,
         description="Vertex Group used for contouring")
-    clean_distance : bpy.props.FloatProperty(
+    clean_distance : FloatProperty(
         name="Clean Distance", default=0, min=0, soft_max=10,
         description="Remove short segments")
 
@@ -1967,7 +1987,7 @@ class tissue_weight_contour_curves_pattern(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         ob = context.object
-        return len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
+        return ob and len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=350)
@@ -2012,7 +2032,7 @@ class tissue_weight_contour_curves_pattern(bpy.types.Operator):
             return {'CANCELLED'}
         ob0 = bpy.data.objects[self.object_name]
 
-        dg = bpy.context.evaluated_depsgraph_get()
+        dg = context.evaluated_depsgraph_get()
         ob = ob0.evaluated_get(dg)
         me0 = ob.data
 
@@ -2025,12 +2045,14 @@ class tissue_weight_contour_curves_pattern(bpy.types.Operator):
         try:
             weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_contour], len(me0.vertices))
         except:
+            bm.free()
             self.report({'ERROR'}, "Please select a Vertex Group for contouring")
             return {'CANCELLED'}
 
         try:
             pattern_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_pattern], len(me0.vertices))
         except:
+            bm.free()
             self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
             pattern_weight = np.zeros(len(me0.vertices))
 
@@ -2136,6 +2158,7 @@ class tissue_weight_contour_curves_pattern(bpy.types.Operator):
                 radius = radius + [iso_rad]*len(verts)
         print("Contour Curves, points computing: " + str(timeit.default_timer() - step_time) + " sec")
         step_time = timeit.default_timer()
+
         if len(total_segments) > 0:
             step_time = timeit.default_timer()
             ordered_points = find_curves(total_segments, len(total_verts))
@@ -2150,27 +2173,29 @@ class tissue_weight_contour_curves_pattern(bpy.types.Operator):
             crv.matrix_world = ob0.matrix_world
             print("Contour Curves, curves created in: " + str(timeit.default_timer() - step_time) + " sec")
         else:
+            bm.free()
             self.report({'ERROR'}, "There are no values in the chosen range")
             return {'CANCELLED'}
+        bm.free()
         print("Contour Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}
 
-class vertex_colors_to_vertex_groups(bpy.types.Operator):
+class vertex_colors_to_vertex_groups(Operator):
     bl_idname = "object.vertex_colors_to_vertex_groups"
     bl_label = "Vertex Color"
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = ("Convert the active Vertex Color into a Vertex Group.")
 
-    red : bpy.props.BoolProperty(
+    red : BoolProperty(
         name="red channel", default=False, description="convert red channel")
-    green : bpy.props.BoolProperty(
+    green : BoolProperty(
         name="green channel", default=False,
         description="convert green channel")
-    blue : bpy.props.BoolProperty(
+    blue : BoolProperty(
         name="blue channel", default=False, description="convert blue channel")
-    value : bpy.props.BoolProperty(
+    value : BoolProperty(
         name="value channel", default=True, description="convert value channel")
-    invert : bpy.props.BoolProperty(
+    invert : BoolProperty(
          name="invert", default=False, description="invert all color channels")
 
     @classmethod
@@ -2178,7 +2203,7 @@ class vertex_colors_to_vertex_groups(bpy.types.Operator):
         return len(context.object.data.vertex_colors) > 0
 
     def execute(self, context):
-        obj = bpy.context.active_object
+        obj = context.active_object
         id = len(obj.vertex_groups)
         id_red = id
         id_green = id
@@ -2247,13 +2272,13 @@ class vertex_colors_to_vertex_groups(bpy.types.Operator):
             bpy.ops.paint.weight_paint_toggle()
         return {'FINISHED'}
 
-class vertex_group_to_vertex_colors(bpy.types.Operator):
+class vertex_group_to_vertex_colors(Operator):
     bl_idname = "object.vertex_group_to_vertex_colors"
     bl_label = "Vertex Group"
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = ("Convert the active Vertex Group into a Vertex Color.")
 
-    channel : bpy.props.EnumProperty(
+    channel : EnumProperty(
         items=[('Blue', 'Blue Channel', 'Convert to Blue Channel'),
                ('Green', 'Green Channel', 'Convert to Green Channel'),
                ('Red', 'Red Channel', 'Convert to Red Channel'),
@@ -2262,7 +2287,7 @@ class vertex_group_to_vertex_colors(bpy.types.Operator):
         name="Convert to", description="Choose how to convert vertex group",
         default="Value", options={'LIBRARY_EDITABLE'})
 
-    invert : bpy.props.BoolProperty(
+    invert : BoolProperty(
         name="invert", default=False, description="invert color channel")
 
     @classmethod
@@ -2270,7 +2295,7 @@ class vertex_group_to_vertex_colors(bpy.types.Operator):
         return len(context.object.vertex_groups) > 0
 
     def execute(self, context):
-        obj = bpy.context.active_object
+        obj = context.active_object
         group_id = obj.vertex_groups.active_index
         if (group_id == -1):
             return {'FINISHED'}
@@ -2286,7 +2311,7 @@ class vertex_group_to_vertex_colors(bpy.types.Operator):
         elif(self.channel == 'Red'):  colors_name += "_red"
         elif(self.channel == 'Green'):  colors_name += "_green"
         elif(self.channel == 'Blue'):  colors_name += "_blue"
-        bpy.context.object.data.vertex_colors[colors_id].name = colors_name
+        context.object.data.vertex_colors[colors_id].name = colors_name
 
         v_colors = obj.data.vertex_colors.active.data
 
@@ -2331,43 +2356,43 @@ class vertex_group_to_vertex_colors(bpy.types.Operator):
                                 0,0, self.invert + mult * w,1)
                 i+=1
         bpy.ops.paint.vertex_paint_toggle()
-        bpy.context.object.data.vertex_colors[colors_id].active_render = True
+        context.object.data.vertex_colors[colors_id].active_render = True
         return {'FINISHED'}
 
-class curvature_to_vertex_groups(bpy.types.Operator):
+class curvature_to_vertex_groups(Operator):
     bl_idname = "object.curvature_to_vertex_groups"
     bl_label = "Curvature"
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = ("Generate a Vertex Group based on the curvature of the"
                       "mesh. Is based on Dirty Vertex Color.")
 
-    invert : bpy.props.BoolProperty(
+    invert : BoolProperty(
         name="invert", default=False, description="invert values")
 
-    blur_strength : bpy.props.FloatProperty(
+    blur_strength : FloatProperty(
       name="Blur Strength", default=1, min=0.001,
       max=1, description="Blur strength per iteration")
 
-    blur_iterations : bpy.props.IntProperty(
+    blur_iterations : IntProperty(
       name="Blur Iterations", default=1, min=0,
       max=40, description="Number of times to blur the values")
 
-    min_angle : bpy.props.FloatProperty(
+    min_angle : FloatProperty(
       name="Min Angle", default=0, min=0,
       max=pi/2, subtype='ANGLE', description="Minimum angle")
 
-    max_angle : bpy.props.FloatProperty(
+    max_angle : FloatProperty(
       name="Max Angle", default=pi, min=pi/2,
       max=pi, subtype='ANGLE', description="Maximum angle")
 
-    invert : bpy.props.BoolProperty(
+    invert : BoolProperty(
         name="Invert", default=False,
         description="Invert the curvature map")
 
     def execute(self, context):
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.mesh.vertex_color_add()
-        vertex_colors = bpy.context.active_object.data.vertex_colors
+        vertex_colors = context.active_object.data.vertex_colors
         vertex_colors[-1].active = True
         vertex_colors[-1].active_render = True
         vertex_colors[-1].name = "Curvature"
@@ -2382,25 +2407,25 @@ class curvature_to_vertex_groups(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class face_area_to_vertex_groups(bpy.types.Operator):
+class face_area_to_vertex_groups(Operator):
     bl_idname = "object.face_area_to_vertex_groups"
     bl_label = "Area"
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = ("Generate a Vertex Group based on the area of individual"
                       "faces.")
 
-    invert : bpy.props.BoolProperty(
+    invert : BoolProperty(
         name="invert", default=False, description="invert values")
-    bounds : bpy.props.EnumProperty(
+    bounds : EnumProperty(
         items=(('MANUAL', "Manual Bounds", ""),
             ('AUTOMATIC', "Automatic Bounds", "")),
         default='AUTOMATIC', name="Bounds")
 
-    min_area : bpy.props.FloatProperty(
+    min_area : FloatProperty(
         name="Min", default=0.01, soft_min=0, soft_max=1,
         description="Faces with 0 weight")
 
-    max_area : bpy.props.FloatProperty(
+    max_area : FloatProperty(
         name="Max", default=0.1, soft_min=0, soft_max=1,
         description="Faces with 1 weight")
 
@@ -2455,17 +2480,17 @@ class face_area_to_vertex_groups(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         return {'FINISHED'}
 
-class random_weight(bpy.types.Operator):
+class random_weight(Operator):
     bl_idname = "object.random_weight"
     bl_label = "Random"
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = ("Generate a random Vertex Group")
 
-    min_val : bpy.props.FloatProperty(
+    min_val : FloatProperty(
         name="Min", default=0, soft_min=0, soft_max=1,
         description="Minimum Value")
 
-    max_val : bpy.props.FloatProperty(
+    max_val : FloatProperty(
         name="Max", default=1, soft_min=0, soft_max=1,
         description="Maximum Value")
 
@@ -2496,29 +2521,29 @@ class random_weight(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class harmonic_weight(bpy.types.Operator):
+class harmonic_weight(Operator):
     bl_idname = "object.harmonic_weight"
     bl_label = "Harmonic"
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = ("Create an harmonic variation of the active Vertex Group")
 
-    freq : bpy.props.FloatProperty(
+    freq : FloatProperty(
         name="Frequency", default=20, soft_min=0,
         soft_max=100, description="Wave frequency")
 
-    amp : bpy.props.FloatProperty(
+    amp : FloatProperty(
         name="Amplitude", default=1, soft_min=0,
         soft_max=10, description="Wave amplitude")
 
-    midlevel : bpy.props.FloatProperty(
+    midlevel : FloatProperty(
         name="Midlevel", default=0, min=-1,
         max=1, description="Midlevel")
 
-    add : bpy.props.FloatProperty(
+    add : FloatProperty(
         name="Add", default=0, min=-1,
         max=1, description="Add to the Weight")
 
-    mult : bpy.props.FloatProperty(
+    mult : FloatProperty(
         name="Multiply", default=0, min=0,
         max=1, description="Multiply for he Weight")
 
@@ -2527,7 +2552,7 @@ class harmonic_weight(bpy.types.Operator):
         return len(context.object.vertex_groups) > 0
 
     def execute(self, context):
-        ob = bpy.context.active_object
+        ob = context.active_object
         if len(ob.vertex_groups) > 0:
             group_id = ob.vertex_groups.active_index
             ob.vertex_groups.new(name="Harmonic")
@@ -2544,7 +2569,7 @@ class harmonic_weight(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class tissue_weight_distance(bpy.types.Operator):
+class tissue_weight_distance(Operator):
     bl_idname = "object.tissue_weight_distance"
     bl_label = "Weight Distance"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2599,11 +2624,12 @@ class tissue_weight_distance(bpy.types.Operator):
             if w == None: continue
             vg.add([i], w, 'REPLACE')
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        bm.free()
         return {'FINISHED'}
 
 
 
-class TISSUE_PT_color(bpy.types.Panel):
+class TISSUE_PT_color(Panel):
     bl_label = "Tissue Tools"
     bl_category = "Tissue"
     bl_space_type = "VIEW_3D"
@@ -2617,7 +2643,7 @@ class TISSUE_PT_color(bpy.types.Panel):
         col.operator("object.vertex_colors_to_vertex_groups",
             icon="GROUP_VERTEX", text="Convert to Weight")
 
-class TISSUE_PT_weight(bpy.types.Panel):
+class TISSUE_PT_weight(Panel):
     bl_label = "Tissue Tools"
     bl_category = "Tissue"
     bl_space_type = "VIEW_3D"
@@ -2677,36 +2703,36 @@ class TISSUE_PT_weight(bpy.types.Panel):
 
 
 
-class start_reaction_diffusion(bpy.types.Operator):
+class start_reaction_diffusion(Operator):
     bl_idname = "object.start_reaction_diffusion"
     bl_label = "Start Reaction Diffusion"
     bl_description = ("Run a Reaction-Diffusion based on existing Vertex Groups: A and B")
     bl_options = {'REGISTER', 'UNDO'}
 
-    run : bpy.props.BoolProperty(
+    run : BoolProperty(
         name="Run Reaction-Diffusion", default=True, description="Compute a new iteration on frame changes")
 
-    time_steps : bpy.props.IntProperty(
+    time_steps : IntProperty(
         name="Steps", default=10, min=0, soft_max=50,
         description="Number of Steps")
 
-    dt : bpy.props.FloatProperty(
+    dt : FloatProperty(
         name="dt", default=1, min=0, soft_max=0.2,
         description="Time Step")
 
-    diff_a : bpy.props.FloatProperty(
+    diff_a : FloatProperty(
         name="Diff A", default=0.18, min=0, soft_max=2,
         description="Diffusion A")
 
-    diff_b : bpy.props.FloatProperty(
+    diff_b : FloatProperty(
         name="Diff B", default=0.09, min=0, soft_max=2,
         description="Diffusion B")
 
-    f : bpy.props.FloatProperty(
+    f : FloatProperty(
         name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
         description="Feed Rate")
 
-    k : bpy.props.FloatProperty(
+    k : FloatProperty(
         name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
         description="Kill Rate")
 
@@ -2750,7 +2776,7 @@ class start_reaction_diffusion(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class reset_reaction_diffusion_weight(bpy.types.Operator):
+class reset_reaction_diffusion_weight(Operator):
     bl_idname = "object.reset_reaction_diffusion_weight"
     bl_label = "Reset Reaction Diffusion Weight"
     bl_description = ("Set A and B weight to default values")
@@ -2890,7 +2916,8 @@ def reaction_diffusion_def(scene):
                 group_index = ob.vertex_groups[props.vertex_group_brush].index
                 brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
                 brush *= brush_mult
-
+            
+            
             #timeElapsed = time.time() - start
             #print('RD - Read Vertex Groups:',timeElapsed)
             #start = time.time()
@@ -2952,6 +2979,7 @@ def reaction_diffusion_def(scene):
                     ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
             else:
                 if props.bool_mod:
+                    bm.free()               # release old bmesh
                     bm = bmesh.new()        # create an empty BMesh
                     bm.from_mesh(ob.data)   # fill it in from a Mesh
                     dvert_lay = bm.verts.layers.deform.active
@@ -2961,14 +2989,14 @@ def reaction_diffusion_def(scene):
                     dvert[group_index_a] = a[i]
                     dvert[group_index_b] = b[i]
                 bm.to_mesh(ob.data)
-
+                
             for ps in ob.particle_systems:
                 if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
 
             if props.bool_mod: bpy.data.meshes.remove(me)
-
+            bm.free()
             timeElapsed = time.time() - start
             print('RD - Closing Time:',timeElapsed)
 
@@ -3362,8 +3390,9 @@ def contour_bmesh(me, bm, weight, iso_val):
         # add last face
         splitted_faces.append(build_faces[switch])
 
-    # adding new vertices
-    for v in verts: bm.verts.new(v)
+    # adding new vertices use fast local method access
+    _new_vert = bm.verts.new
+    for v in verts: _new_vert(v)
     bm.verts.ensure_lookup_table()
 
     # deleting old edges/faces
@@ -3373,12 +3402,13 @@ def contour_bmesh(me, bm, weight, iso_val):
     #for e in delete_edges: bm.edges.remove(e)
 
     bm.verts.ensure_lookup_table()
-    # adding new faces
+    # adding new faces use fast local method access
+    _new_face = bm.faces.new
     missed_faces = []
     for f in splitted_faces:
         try:
             face_verts = [bm.verts[i] for i in f]
-            bm.faces.new(face_verts)
+            _new_face(face_verts)
         except:
             missed_faces.append(f)
 
