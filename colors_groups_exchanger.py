@@ -2052,7 +2052,6 @@ class tissue_weight_contour_curves_pattern(Operator):
         try:
             pattern_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_pattern], len(me0.vertices))
         except:
-            bm.free()
             self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
             pattern_weight = np.zeros(len(me0.vertices))
 
@@ -2916,8 +2915,8 @@ def reaction_diffusion_def(scene):
                 group_index = ob.vertex_groups[props.vertex_group_brush].index
                 brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
                 brush *= brush_mult
-            
-            
+
+
             #timeElapsed = time.time() - start
             #print('RD - Read Vertex Groups:',timeElapsed)
             #start = time.time()
@@ -2989,7 +2988,7 @@ def reaction_diffusion_def(scene):
                     dvert[group_index_a] = a[i]
                     dvert[group_index_b] = b[i]
                 bm.to_mesh(ob.data)
-                
+
             for ps in ob.particle_systems:
                 if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
                     ps.invert_vertex_group_density = not ps.invert_vertex_group_density
