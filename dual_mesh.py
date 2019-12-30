@@ -335,7 +335,8 @@ class dual_mesh(Operator):
 
             for o in clones:
                 o.data = ob.data
-
+            bm.free()
+        
         for o in sel:
             o.select_set(True)
 
