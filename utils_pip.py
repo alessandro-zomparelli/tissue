@@ -26,8 +26,6 @@
 # ----------------------------------------------------------
 import bpy
 import subprocess
-from bpy.types import Operator
-from bpy.props import StringProperty
 
 
 PYPATH = bpy.app.binary_path_python
