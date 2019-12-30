@@ -147,7 +147,7 @@ def grid_from_mesh(mesh, swap_uv):
 
         if len(faces_loop) == 0:
             running_grid = False
-
+    bm.free()
     return verts_grid, edges_grid, faces_grid
 
 
@@ -245,7 +245,7 @@ class lattice_along_surface(Operator):
 
     @classmethod
     def poll(cls, context):
-        try: return bpy.context.object.mode == 'OBJECT'
+        try: return context.object.mode == 'OBJECT'
         except: return False
 
     def draw(self, context):
@@ -292,16 +292,16 @@ class lattice_along_surface(Operator):
 
     def execute(self, context):
         if self.source_object == self.grid_object == "" or True:
-            if len(bpy.context.selected_objects) != 2:
+            if len(context.selected_objects) != 2:
                 self.report({'ERROR'}, "Please, select two objects")
                 return {'CANCELLED'}
-            grid_obj = bpy.context.object
+            grid_obj = context.object
             if grid_obj.type not in ('MESH', 'CURVE', 'SURFACE'):
                 self.report({'ERROR'}, "The surface object is not valid. Only Mesh,"
                             "Curve and Surface objects are allowed.")
                 return {'CANCELLED'}
             obj = None
-            for o in bpy.context.selected_objects:
+            for o in context.selected_objects:
                 if o.name != grid_obj.name and o.type in \
                         ('MESH', 'CURVE', 'SURFACE', 'FONT'):
                     obj = o
@@ -320,9 +320,9 @@ class lattice_along_surface(Operator):
             grid_obj = bpy.data.objects[self.grid_object]
             obj = bpy.data.objects[self.source_object]
             obj_me = simple_to_mesh(obj)# obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
-            for o in bpy.context.selected_objects: o.select_set(False)
+            for o in context.selected_objects: o.select_set(False)
             grid_obj.select_set(True)
-            bpy.context.view_layer.objects.active = grid_obj
+            context.view_layer.objects.active = grid_obj
 
         temp_grid_obj = grid_obj.copy()
         temp_grid_obj.data = simple_to_mesh(grid_obj)
@@ -333,7 +333,7 @@ class lattice_along_surface(Operator):
 
         if len(grid_mesh.polygons) > 64 * 64:
             bpy.data.objects.remove(temp_grid_obj)
-            bpy.context.view_layer.objects.active = obj
+            context.view_layer.objects.active = obj
             obj.select_set(True)
             self.report({'ERROR'}, "Maximum resolution allowed for Lattice is 64")
             return {'CANCELLED'}
@@ -362,7 +362,7 @@ class lattice_along_surface(Operator):
         bb = max - min
         lattice_loc = (max + min) / 2
         bpy.ops.object.add(type='LATTICE')
-        lattice = bpy.context.active_object
+        lattice = context.active_object
         lattice.location = lattice_loc
         lattice.scale = Vector((bb.x / self.scale_x, bb.y / self.scale_y,
                                 bb.z / self.scale_z))
@@ -374,7 +374,7 @@ class lattice_along_surface(Operator):
         if bb.z == 0:
             lattice.scale.z = 1
 
-        bpy.context.view_layer.objects.active = obj
+        context.view_layer.objects.active = obj
         bpy.ops.object.modifier_add(type='LATTICE')
         obj.modifiers[-1].object = lattice
 
@@ -382,7 +382,7 @@ class lattice_along_surface(Operator):
         if self.set_parent:
             obj.select_set(True)
             lattice.select_set(True)
-            bpy.context.view_layer.objects.active = lattice
+            context.view_layer.objects.active = lattice
             bpy.ops.object.parent_set(type='LATTICE')
 
         # reading grid structure
@@ -433,7 +433,7 @@ class lattice_along_surface(Operator):
             lattice.select_set(True)
             obj.select_set(False)
             bpy.ops.object.delete(use_global=False)
-            bpy.context.view_layer.objects.active = obj
+            context.view_layer.objects.active = obj
             obj.select_set(True)
             bpy.ops.object.modifier_remove(modifier=obj.modifiers[-1].name)
             if nu > 64 or nv > 64:
@@ -448,18 +448,18 @@ class lattice_along_surface(Operator):
         #lattice.select_set(False)
         obj.select_set(False)
         #bpy.ops.object.delete(use_global=False)
-        bpy.context.view_layer.objects.active = lattice
+        context.view_layer.objects.active = lattice
         lattice.select_set(True)
 
         if self.high_quality_lattice:
-            bpy.context.object.data.points_w = 8
+            context.object.data.points_w = 8
         else:
-            bpy.context.object.data.use_outside = True
+            context.object.data.use_outside = True
 
         if self.hide_lattice:
             bpy.ops.object.hide_view_set(unselected=False)
 
-        bpy.context.view_layer.objects.active = obj
+        context.view_layer.objects.active = obj
         obj.select_set(True)
         lattice.select_set(False)
 
