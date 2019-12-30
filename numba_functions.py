@@ -20,8 +20,6 @@ import numpy as np
 import time
 import sys
 
-from .utils_pip import Pip
-
 bool_numba = False
 
 try:
@@ -29,6 +27,7 @@ try:
     bool_numba = True
 except:
     try:
+        from .utils_pip import Pip
         #Pip.upgrade_pip()
         Pip.install('llvmlite')
         Pip.install('numba')
