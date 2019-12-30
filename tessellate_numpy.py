@@ -837,8 +837,11 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             vert = v.co - min_c  # (ob1.matrix_world * v.co) - min_c
             vert[0] = vert[0] / bb[0] if bb[0] != 0 else 0.5
             vert[1] = vert[1] / bb[1] if bb[1] != 0 else 0.5
-            vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
-            vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
+            if scale_mode == 'CONSTANT':
+                vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
+                vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
+            else:
+                vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
         elif mode == 'LOCAL':
             vert = v.co.xyz
             vert[2] *= zscale
@@ -1003,8 +1006,11 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                     sk_vert = sk_v.co - min_c
                     sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
                     sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
-                    sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
-                    sk_vert[2] = (sk_vert[2] - 0.5 + offset * 0.5) * zscale
+                    if scale_mode == 'CONSTANT':
+                        sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
+                        sk_vert[2] = (sk_vert[2] - 0.5 + offset * 0.5) * zscale
+                    else:
+                        sk_vert[2] = (sk_vert[2] + (- 0.5 + offset * 0.5) * bb[2]) * zscale
                 elif mode == 'LOCAL':
                     sk_vert = sk_v.co
                     sk_vert[2] *= zscale
@@ -1331,6 +1337,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     bpy.data.objects.remove(before)
     bpy.data.objects.remove(ob0)
     bpy.data.objects.remove(ob1)
+    new_patch.data.update() # solve normals issues if Smooth Shading is on
     return new_patch
 
 def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
@@ -1575,8 +1582,11 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     if mode == 'BOUNDS':
         vx = (vx - min_c[0]) / bb[0] if bb[0] != 0 else 0.5
         vy = (vy - min_c[1]) / bb[1] if bb[1] != 0 else 0.5
-        vz = (vz - min_c[2]) / bb[2] if bb[2] != 0 else 0
-        vz = (vz - 0.5 + offset * 0.5) * zscale
+        if scale_mode == 'CONSTANT':
+            vz = (vz - min_c[2]) / bb[2] if bb[2] != 0 else 0
+            vz = (vz - 0.5 + offset * 0.5) * zscale
+        else:
+            vz = (vz + (- 0.5 + offset * 0.5) * bb[2]) * zscale
         #vz = ((vz - min_c[2]) + (-0.5 + offset * 0.5) * bb[2]) * zscale
     else:
         vz *= zscale
@@ -1621,8 +1631,11 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                     vert = v.co - min_c
                     vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
                     vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
-                    vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
-                    vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
+                    if scale_mode == 'CONSTANT':
+                        vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
+                        vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
+                    else:
+                        vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
                 elif mode == 'LOCAL':
                     vert = v.co.xyz
                     vert[2] *= zscale
@@ -1980,6 +1993,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     bpy.data.meshes.remove(me0)
     bpy.data.objects.remove(ob1)
     bpy.data.meshes.remove(me1)
+
+    new_ob.data.update() # solve normals issues if Smooth Shading is on
 
     return new_ob
 
