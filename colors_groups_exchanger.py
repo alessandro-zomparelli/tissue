@@ -2052,7 +2052,6 @@ class tissue_weight_contour_curves_pattern(Operator):
         try:
             pattern_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_pattern], len(me0.vertices))
         except:
-            bm.free()
             self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
             pattern_weight = np.zeros(len(me0.vertices))
 
