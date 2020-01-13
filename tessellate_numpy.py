@@ -1582,8 +1582,9 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     if mode == 'BOUNDS':
         vx = (vx - min_c[0]) / bb[0] if bb[0] != 0 else 0.5
         vy = (vy - min_c[1]) / bb[1] if bb[1] != 0 else 0.5
+        vz = vz - min_c[2]
         if scale_mode == 'CONSTANT':
-            vz = (vz - min_c[2]) / bb[2] if bb[2] != 0 else 0
+            vz = vz / bb[2] if bb[2] != 0 else 0
             vz = (vz - 0.5 + offset * 0.5) * zscale
         else:
             vz = (vz + (- 0.5 + offset * 0.5) * bb[2]) * zscale
@@ -2827,6 +2828,7 @@ class tissue_update_tessellate(Operator):
             offset = ob.tissue_tessellate.offset
             merge = ob.tissue_tessellate.merge
             merge_thres = ob.tissue_tessellate.merge_thres
+            mode = ob.tissue_tessellate.mode
             gen_modifiers = ob.tissue_tessellate.gen_modifiers
             com_modifiers = ob.tissue_tessellate.com_modifiers
             bool_random = ob.tissue_tessellate.bool_random
@@ -2835,7 +2837,6 @@ class tissue_update_tessellate(Operator):
             bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
             bool_selection = ob.tissue_tessellate.bool_selection
             bool_shapekeys = ob.tissue_tessellate.bool_shapekeys
-            mode = ob.tissue_tessellate.mode
             bool_smooth = ob.tissue_tessellate.bool_smooth
             bool_materials = ob.tissue_tessellate.bool_materials
             bool_dissolve_seams = ob.tissue_tessellate.bool_dissolve_seams
@@ -2981,11 +2982,12 @@ class tissue_update_tessellate(Operator):
                 n_edges1 = len(data1.edges)
                 bpy.data.meshes.remove(data1)
 
-                if iter != 0: gen_modifiers = True
+                #if iter != 0: gen_modifiers = True
 
                 if fill_mode == 'PATCH':
                     # patch subdivisions for additional iterations
                     if iter > 0:
+                        #if len(same_iteration) > 1: gen_modifiers = False
                         base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
                         base_ob.modifiers['Tissue_Subsurf'].levels = patch_subs
                         temp_mod = base_ob.modifiers['Tissue_Subsurf']
@@ -2999,6 +3001,7 @@ class tissue_update_tessellate(Operator):
                     if iter > 0:
                         base_ob.modifiers.remove(temp_mod)
                 else:
+                    if iter != 0: gen_modifiers = True
                     ### FRAME and FAN ###
                     if fill_mode in ('FRAME','FAN'):
 
@@ -3051,7 +3054,13 @@ class tissue_update_tessellate(Operator):
                     continue
 
                 # prepare base object
-                if iter == 0 and gen_modifiers:
+                if fill_mode == 'PATCH':
+                    if bool_multi_components:
+                        subdivide_base = m_id == mat_iter-1
+                    else: subdivide_base = True
+                else:
+                    subdivide_base = iter == 0 and gen_modifiers
+                if subdivide_base:
                     temp_base_ob = convert_object_to_mesh(base_ob, True, True)
                     bpy.data.objects.remove(base_ob)
                     base_ob = temp_base_ob
@@ -3102,7 +3111,10 @@ class tissue_update_tessellate(Operator):
             if (bool_selection or bool_material_id) and combine_mode == 'UNUSED':
                 # remove faces from last mesh
                 bm = bmesh.new()
-                last_mesh = iter_objects[-1].data.copy()
+                if fill_mode == 'PATCH' and iter == 0:
+                    last_mesh = simple_to_mesh(ob0)
+                else:
+                    last_mesh = iter_objects[-1].data.copy()
                 bm.from_mesh(last_mesh)
                 bm.faces.ensure_lookup_table()
                 if bool_multi_components:
@@ -3244,7 +3256,7 @@ class tissue_update_tessellate(Operator):
         ob.select_set(True)
         context.view_layer.objects.active = ob
 
-        is_multiple = iterations > 1 or combine_mode != 'LAST' or bool_multi_components
+        is_multiple = iterations > 1 or combine_mode != 'LAST'# or bool_multi_components
         if merge and is_multiple:
             merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
 
