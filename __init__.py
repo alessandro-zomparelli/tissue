@@ -52,6 +52,7 @@ if "bpy" in locals():
     importlib.reload(uv_to_mesh)
     importlib.reload(utils)
     importlib.reload(gcode_export)
+    importlib.reload(preferences)
 
 else:
     from . import tessellate_numpy
@@ -61,11 +62,15 @@ else:
     from . import uv_to_mesh
     from . import utils
     from . import gcode_export
+    from . import preferences
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
 
 classes = (
+    preferences.tissuePreferences,
+    preferences.tissue_install_numba,
+
     tessellate_numpy.tissue_tessellate_prop,
     tessellate_numpy.tissue_tessellate,
     tessellate_numpy.tissue_update_tessellate,

@@ -2785,7 +2785,10 @@ class tissue_refresh_tessellate(Operator):
             update_objects = [ob]
         for o in update_objects:
             override = {'object': o}
-            bpy.ops.object.tissue_update_tessellate(override)
+            try:
+                bpy.ops.object.tissue_update_tessellate(override)
+            except:
+                self.report({'ERROR'}, "Can't Tessellate :-(")
 
         return {'FINISHED'}
 
@@ -3172,7 +3175,20 @@ class tissue_update_tessellate(Operator):
                 iter_objects = [new_ob]
 
             if merge:
-                merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
+                merged = merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
+                if merged == 'bridge_error':
+                    for o in iter_objects:
+                        try: bpy.data.objects.remove(o)
+                        except: pass
+                    try: bpy.data.meshes.remove(data1)
+                    except: pass
+                    context.view_layer.objects.active = ob
+                    ob.select_set(True)
+                    message = "Can't make the bridge!"
+                    ob.tissue_tessellate.error_message = message
+                    #bpy.ops.object.mode_set(mode=starting_mode)
+                    self.report({'ERROR'}, message)
+                    return {'CANCELLED'}
 
             base_ob = context.view_layer.objects.active
 
@@ -3207,7 +3223,8 @@ class tissue_update_tessellate(Operator):
         errors["topology_error"] = "Make sure that the topology of the mesh before \n" \
                                     "the last Subsurf (or Multires) is quads only."
         errors["wires_error"] = "Please remove all wire edges in the base object."
-        errors["verts_error"] = "Please remove all floating vertices in the base object"
+        errors["verts_error"] = "Please remove all floating vertices in the base object."
+        errors["bridge_error"] = "Can't make the bridge."
         if new_ob in errors:
             for o in iter_objects:
                 try: bpy.data.objects.remove(o)
@@ -4236,7 +4253,10 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
         for e in boundary_edges:
             e[crease_layer] = open_edges_crease
         if close_mesh == 'BRIDGE':
-            closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
+            try:
+                closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
+            except:
+                return 'bridge_error'
         if close_mesh == 'CAP':
             closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
         for f in closed['faces']: f.material_index = cap_material_index

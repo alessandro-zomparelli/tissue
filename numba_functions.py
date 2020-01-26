@@ -26,6 +26,8 @@ try:
     from numba import jit, njit, guvectorize, float64, int32, prange
     bool_numba = True
 except:
+    pass
+    '''
     try:
         from .utils_pip import Pip
         #Pip.upgrade_pip()
@@ -36,6 +38,7 @@ except:
         print('Tissue: Numba successfully installed!')
     except:
         print('Tissue: Numba not loaded correctly. Try restarting Blender')
+    '''
 
 if bool_numba:
     #from numba import jit, njit, guvectorize, float64, int32, prange
@@ -206,7 +209,7 @@ if bool_numba:
                 co2[i][j][0] = co0 + (co1 - co0) * vy[j][0]
         return co2
 
-    
+
 #except:
 #    print("Tissue: Numba cannot be installed. Try to restart Blender.")
 #    pass
