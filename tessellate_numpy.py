@@ -1004,10 +1004,10 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             for i, sk_v in enumerate(source):
                 if mode == 'BOUNDS':
                     sk_vert = sk_v.co - min_c
-                    sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
-                    sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
+                    sk_vert[0] = sk_vert[0] / bb[0] if bb[0] != 0 else 0.5
+                    sk_vert[1] = sk_vert[1] / bb[1] if bb[1] != 0 else 0.5
                     if scale_mode == 'CONSTANT':
-                        sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
+                        sk_vert[2] = sk_vert[2] / bb[2] if bb[2] != 0 else 0 #sk_vert[2]
                         sk_vert[2] = (sk_vert[2] - 0.5 + offset * 0.5) * zscale
                     else:
                         sk_vert[2] = (sk_vert[2] + (- 0.5 + offset * 0.5) * bb[2]) * zscale
@@ -1023,19 +1023,19 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 v = int(sk_vert[1]//step)
                 u1 = min(u+1, sides)
                 v1 = min(v+1, sides)
-                if mode != 'BOUNDS':
-                    if u > sides-1:
-                        u = sides-1
-                        u1 = sides
-                    if u < 0:
-                        u = 0
-                        u1 = 1
-                    if v > sides-1:
-                        v = sides-1
-                        v1 = sides
-                    if v < 0:
-                        v = 0
-                        v1 = 1
+
+                if u > sides-1:
+                    u = sides-1
+                    u1 = sides
+                if u < 0:
+                    u = 0
+                    u1 = 1
+                if v > sides-1:
+                    v = sides-1
+                    v1 = sides
+                if v < 0:
+                    v = 0
+                    v1 = 1
                 _sk_uv_quads[i] = (u,v,u1,v1)
                 # factor coordinates
                 fu = (sk_vert[0]-u*step)/step
