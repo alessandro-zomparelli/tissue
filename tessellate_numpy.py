@@ -728,9 +728,9 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
 
     ob1 = convert_object_to_mesh(_ob1, com_modifiers, False)
     me1 = ob1.data
+    #ob1.active_shape_key_index = 0
 
     if mode != 'BOUNDS':
-        ob1.active_shape_key_index = 0
         # Bound X
         if bounds_x != 'EXTEND':
             if mode == 'GLOBAL':
@@ -838,7 +838,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             vert[0] = vert[0] / bb[0] if bb[0] != 0 else 0.5
             vert[1] = vert[1] / bb[1] if bb[1] != 0 else 0.5
             if scale_mode == 'CONSTANT':
-                vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
+                vert[2] = vert[2] / bb[2] if bb[2] != 0 else vert[2]
                 vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
             else:
                 vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
@@ -997,7 +997,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     sk_uv_quads = []
     sk_uv = []
     if bool_shapekeys:
-        for sk in ob1.data.shape_keys.key_blocks:
+        for sk in _ob1.data.shape_keys.key_blocks:
             source = sk.data
             _sk_uv_quads = [0]*len(verts1)
             _sk_uv = [0]*len(verts1)
@@ -1007,7 +1007,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                     sk_vert[0] = sk_vert[0] / bb[0] if bb[0] != 0 else 0.5
                     sk_vert[1] = sk_vert[1] / bb[1] if bb[1] != 0 else 0.5
                     if scale_mode == 'CONSTANT':
-                        sk_vert[2] = sk_vert[2] / bb[2] if bb[2] != 0 else 0 #sk_vert[2]
+                        sk_vert[2] = sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2]
                         sk_vert[2] = (sk_vert[2] - 0.5 + offset * 0.5) * zscale
                     else:
                         sk_vert[2] = (sk_vert[2] + (- 0.5 + offset * 0.5) * bb[2]) * zscale
@@ -1044,7 +1044,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 _sk_uv[i] = Vector((fu,fv,fw))
             sk_uv_quads.append(_sk_uv_quads)
             sk_uv.append(_sk_uv)
-        store_sk_coordinates = [[] for t in ob1.data.shape_keys.key_blocks]       # [[None for k in range(n_patches)] for t in ob1.data.shape_keys.key_blocks]
+        store_sk_coordinates = [[] for t in _ob1.data.shape_keys.key_blocks]       # [[None for k in range(n_patches)] for t in ob1.data.shape_keys.key_blocks]
 
     '''
     #coordinates = []
@@ -1225,7 +1225,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 store_weight[vg.index].append(np_lerp2(w00,w10,w01,w11,vx,vy))
 
         if bool_shapekeys:
-            for i_sk, sk in enumerate(ob1.data.shape_keys.key_blocks):
+            for i_sk, sk in enumerate(_ob1.data.shape_keys.key_blocks):
                 np_verts1_uv = np.array(sk_uv[i_sk])
                 np_sk_uv_quads = np.array(sk_uv_quads[i_sk])
                 u = np_sk_uv_quads[:,0]
@@ -1258,56 +1258,59 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 #new_patch.data.shape_keys.key_blocks[sk.name].data.foreach_set('co', coordinates)
                 #####new_patch.data.shape_keys.key_blocks[sk.name].data[i_vert].co = sk_co
 
+    #if ob0.type == 'MESH': ob0.data = old_me0
+    if not bool_correct: return 0
+
+    # create array for tessellation
     new_me = array_mesh(ob1, n_patches_count)
     new_patch = bpy.data.objects.new("tessellate_temp", new_me)
+    bpy.ops.object.select_all(action='DESELECT')
     bpy.context.collection.objects.link(new_patch)
     new_patch.select_set(True)
     bpy.context.view_layer.objects.active = new_patch
+    #bpy.ops.object.editmode_toggle()
+    #bpy.ops.object.editmode_toggle()
 
     for area in bpy.context.screen.areas:
         for space in area.spaces:
             try: new_patch.local_view_set(space, True)
             except: pass
 
+    # set coordinates
+    co = np.concatenate(store_coordinates, axis=0)
+    co = co.flatten().tolist()
+    print(len(co))
+    new_me.vertices.foreach_set('co',co)
+
     # Vertex Group
     if bool_vertex_group:
         for vg in ob0.vertex_groups:
             new_patch.vertex_groups.new(name=vg.name)
 
-    coordinates = np.concatenate(store_coordinates, axis=0)
-    coordinates = coordinates.flatten().tolist()
-    new_me.vertices.foreach_set('co',coordinates)
-
-    if bool_vertex_group:
         bm = bmesh.new()
         bm.from_mesh(new_me)
         for i in range(len(store_weight)):
             np_weight = np.concatenate(store_weight[i], axis=0).flatten()
             bm = bmesh_set_weight_numpy(bm, i, np_weight)
         bm.to_mesh(new_me)
-        new_me.update()
+        bm.free()
+
+
 
     if bool_shapekeys:
+        new_patch.shape_key_clear()
+        new_patch.data.update()
         for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
             sk.value = val
             new_patch.shape_key_add(name=sk.name, from_mix=False)
             new_patch.data.shape_keys.key_blocks[sk.name].value = val
         for i in range(len(store_sk_coordinates)):
-            coordinates = np.concatenate(store_sk_coordinates[i], axis=0)
-            coordinates = coordinates.flatten().tolist()
-            new_patch.data.shape_keys.key_blocks[i].data.foreach_set('co', coordinates)
-
-    #if ob0.type == 'MESH': ob0.data = old_me0
-    if not bool_correct: return 0
-
-    #bpy.ops.object.join()
-
-
-    if bool_shapekeys:
-        # set original values and combine Shape Keys and Vertex Groups
-        for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
-            sk.value = val
-            new_patch.data.shape_keys.key_blocks[sk.name].value = val
+            sk_co = np.concatenate(store_sk_coordinates[i], axis=0)
+            print(sk_co.shape)
+            sk_co = sk_co.flatten().tolist()
+            sk_data = new_patch.data.shape_keys.key_blocks[i].data
+            sk_data.foreach_set('co', sk_co)
+        # assign groups to shape keys
         if bool_vertex_group:
             for sk in new_patch.data.shape_keys.key_blocks:
                 for vg in new_patch.vertex_groups:
@@ -1348,6 +1351,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
     random.seed(rand_seed)
 
+    # set Shape Keys to zero
     if bool_shapekeys:
         try:
             original_key_values = []
@@ -1608,10 +1612,10 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         vy_key = []
         vz_key = []
         sk_np = []
-        for sk in ob1.data.shape_keys.key_blocks:
+        for sk in _ob1.data.shape_keys.key_blocks:
             do_shapekeys = True
             # set all keys to 0
-            for _sk in ob1.data.shape_keys.key_blocks: _sk.value = 0
+            for _sk in _ob1.data.shape_keys.key_blocks: _sk.value = 0
             sk.value = 1
 
             if basis:
@@ -1633,7 +1637,7 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                     vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
                     vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
                     if scale_mode == 'CONSTANT':
-                        vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
+                        vert[2] = vert[2] / bb[2] if bb[2] != 0 else vert[2]
                         vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
                     else:
                         vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
@@ -1924,35 +1928,29 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         return 0
 
     new_name = ob0.name + "_" + ob1.name
-    if True:
-        new_me = array_mesh(ob1, len(base_polygons))
-        new_me.name = new_name
-        new_verts = new_verts_np.flatten().tolist()
-        new_me.vertices.foreach_set('co', new_verts)
-    else:
-        # build edges list
-        n_edges1 = new_edges.shape[0]       # (n edges, n verts: 2)
-        new_edges = new_edges.reshape((1, n_edges1, 2))
-        new_edges = new_edges.repeat(n_faces,axis=0)
-        new_edges = new_edges.reshape((n_edges1*n_faces, 2))
-        increment = np.arange(n_faces)*n_verts1
-        increment = increment.repeat(n_edges1, axis=0)
-        increment = increment.reshape((n_faces*n_edges1,1))
-        new_edges = new_edges + increment
 
-        new_verts = new_verts_np.tolist()
-        new_me = bpy.data.meshes.new(new_name)
-
-        new_me.from_pydata(new_verts, new_edges.tolist(), new_faces)
-        new_me.update(calc_edges=True)
+    # create array for tessellation
+    new_me = array_mesh(ob1, len(base_polygons))
+    new_me.name = new_name
     new_ob = bpy.data.objects.new("tessellate_temp", new_me)
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.collection.objects.link(new_ob)
+    new_ob.select_set(True)
+    bpy.context.view_layer.objects.active = new_ob
 
+    # set coordinates
+    new_verts = new_verts_np.flatten().tolist()
+    new_me.vertices.foreach_set('co', new_verts)
+
+
+    '''
     # vertex group
     if bool_vertex_group and False:
         for vg in ob0.vertex_groups:
             new_ob.vertex_groups.new(name=vg.name)
             for i in range(len(vg_np[vg.index])):
                 new_ob.vertex_groups[vg.name].add([i], vg_np[vg.index][i],"REPLACE")
+    '''
     # vertex group
     if bool_vertex_group:
         for vg in ob0.vertex_groups:
@@ -1969,22 +1967,18 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
             new_ob.data.shape_keys.key_blocks[sk.name].value = val
             # set shape keys vertices
             sk_data = new_ob.data.shape_keys.key_blocks[sk.name].data
-            if sk_count == 0:
+            if sk_count == 0:           # skip the basis
                 sk_count += 1
                 continue
             for id in range(len(sk_data)):
                 sk_data[id].co = sk_np[sk_count-1][id]
             sk_count += 1
+        # assign groups to shape keys
         if bool_vertex_group:
             for sk in new_ob.data.shape_keys.key_blocks:
                 for vg in new_ob.vertex_groups:
                     if sk.name == vg.name:
                         sk.vertex_group = vg.name
-
-    bpy.ops.object.select_all(action='DESELECT')
-    bpy.context.collection.objects.link(new_ob)
-    new_ob.select_set(True)
-    bpy.context.view_layer.objects.active = new_ob
 
     try:
         bpy.data.objects.remove(new_ob1)
@@ -3175,7 +3169,18 @@ class tissue_update_tessellate(Operator):
                 iter_objects = [new_ob]
 
             if merge:
-                merged = merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
+                # prevents Shape Keys null pointer bug
+                if fill_mode == 'PATCH' and bool_shapekeys:
+                    for sk in new_ob.data.shape_keys.key_blocks:
+                        sk.mute = True
+                    new_ob.active_shape_key_index = 0
+                    new_ob.data.update()
+                    merged = merge_components_old(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
+                    for sk in new_ob.data.shape_keys.key_blocks:
+                        sk.mute = False
+                # optimized way, not working with patch and shape keys
+                else:
+                    merged = merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
                 if merged == 'bridge_error':
                     for o in iter_objects:
                         try: bpy.data.objects.remove(o)
@@ -4200,7 +4205,6 @@ def convert_to_frame(ob, props, use_modifiers):
     #for f in bm.faces: f.select_set(f not in new_faces)
     for f in original_faces: bm.faces.remove(f)
     bm.to_mesh(new_ob.data)
-    bm.free()
     # propagate vertex groups
     if props.bool_vertex_group:
         base_vg = []
@@ -4217,6 +4221,7 @@ def convert_to_frame(ob, props, use_modifiers):
             for ii, jj in zip(vert_ids, new_vert_ids):
                 vg.add([jj], base_vg[vg_id][ii], 'REPLACE')
     new_ob.data.update()
+    bm.free()
     return new_ob
 
 def convert_to_fan(ob, props, use_modifiers):
@@ -4237,6 +4242,9 @@ def convert_to_fan(ob, props, use_modifiers):
     return new_ob
 
 def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index):
+    ob.active_shape_key_index = 0
+    ob.data.update()
+
     bm = bmesh.new()
     bm.from_mesh(ob.data)
     boundary_verts = [v for v in bm.verts if v.is_boundary]
@@ -4261,3 +4269,50 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
             closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
         for f in closed['faces']: f.material_index = cap_material_index
     bm.to_mesh(ob.data)
+    bm.free()
+
+def merge_components_old(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index):
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(
+        use_extend=False, use_expand=False, type='VERT')
+    bpy.ops.mesh.select_non_manifold(
+        extend=False, use_wire=True, use_boundary=True,
+        use_multi_face=False, use_non_contiguous=False, use_verts=False)
+
+    bpy.ops.mesh.remove_doubles(
+        threshold=merge_thres, use_unselected=False)
+
+    if bool_dissolve_seams:
+        bpy.ops.mesh.select_mode(type='EDGE')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for e in new_ob.data.edges:
+            e.select = e.use_seam
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.dissolve_edges()
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    if close_mesh != 'NONE':
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(
+            use_extend=False, use_expand=False, type='EDGE')
+        bpy.ops.mesh.select_non_manifold(
+            extend=False, use_wire=False, use_boundary=True,
+            use_multi_face=False, use_non_contiguous=False, use_verts=False)
+        if open_edges_crease != 0:
+            bpy.ops.transform.edge_crease(value=open_edges_crease)
+        if close_mesh == 'CAP':
+            bpy.ops.mesh.edge_face_add()
+        if close_mesh == 'BRIDGE':
+            try:
+                bpy.ops.mesh.bridge_edge_loops(
+                    type='PAIRS',
+                    number_cuts=bridge_cuts,
+                    interpolation='SURFACE',
+                    smoothness=bridge_smoothness)
+            except:
+                return 'bridge_error'
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for f in new_ob.data.polygons:
+            if f.select: f.material_index = cap_material_index
+    bpy.ops.object.mode_set(mode='OBJECT')

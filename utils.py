@@ -186,6 +186,8 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         for o in bpy.context.view_layer.objects: o.select_set(False)
         new_ob.select_set(True)
         bpy.context.view_layer.objects.active = new_ob
+    new_ob.shape_key_clear()
+    new_ob.data.update()
     return new_ob
 
 def simple_to_mesh(ob):
@@ -496,6 +498,7 @@ def bmesh_set_weight_numpy(bm, group_index, weight):
         #if group_index in dvert:
         dvert[group_index] = weight[i]
     return bm
+
 
 ### MODIFIERS ###
 def mod_preserve_topology(mod):
