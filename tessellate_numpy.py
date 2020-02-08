@@ -4305,14 +4305,10 @@ def merge_components_old(ob, merge_thres, bool_dissolve_seams, close_mesh, open_
             bpy.ops.mesh.edge_face_add()
         if close_mesh == 'BRIDGE':
             try:
-                bpy.ops.mesh.bridge_edge_loops(
-                    type='PAIRS',
-                    number_cuts=bridge_cuts,
-                    interpolation='SURFACE',
-                    smoothness=bridge_smoothness)
+                bpy.ops.mesh.bridge_edge_loops(type='PAIRS')
             except:
                 return 'bridge_error'
         bpy.ops.object.mode_set(mode='OBJECT')
-        for f in new_ob.data.polygons:
+        for f in ob.data.polygons:
             if f.select: f.material_index = cap_material_index
     bpy.ops.object.mode_set(mode='OBJECT')
