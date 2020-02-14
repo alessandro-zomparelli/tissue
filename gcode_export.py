@@ -323,6 +323,15 @@ class tissue_gcode_export(Operator):
                             co_find = vertices[j-1][-1]
                     co, index, dist = kd.find(co_find)
                     vertices[j] = vertices[j][index:]+vertices[j][:index+1]
+                    
+                    # auto flip direction
+                    if props.gcode_mode != 'RETR':
+                        try:
+                            dir0 = vertices[j-1][-1] - vertices[j-1][-3]
+                            dir1 = vertices[j][3] - vertices[j][0]
+                            if dir0.dot(dir1) < 0: vertices[j].reverse()
+                        except: pass
+
                 else:
                     if j > 0:
                         p0 = curve[0]
