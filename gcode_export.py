@@ -141,6 +141,10 @@ class tissue_gcode_prop(PropertyGroup):
         name="Animate", default=False,
         description = 'Show print progression according to current frame'
         )
+    use_curve_thickness : BoolProperty(
+        name="Use Curve Thickness", default=False,
+        description = 'Layer height depends on radius and bevel of the curve'
+        )
 
 
 class TISSUE_PT_gcode_exporter(Panel):
@@ -176,7 +180,14 @@ class TISSUE_PT_gcode_exporter(Panel):
         #col.prop(self, 'esteps')
         col.prop(props, 'filament')
         col.prop(props, 'nozzle')
-        col.prop(props, 'layer_height')
+        if context.object.type == 'CURVE' and props.use_curve_thickness:
+            row = col.row(align=True)
+            row.prop(props, 'layer_height')
+            row.enabled = False
+        else:
+            col.prop(props, 'layer_height')
+        if context.object.type == 'CURVE':
+            col.prop(props, 'use_curve_thickness')
         col.separator()
         col.label(text="Speed (Feed Rate F):", icon='DRIVER')
         col.prop(props, 'speed_mode', text='')
@@ -241,6 +252,8 @@ class tissue_gcode_export(Operator):
         feed_h = props.feed_horizontal
         layer = props.layer_height
         flow_mult = props.flow_mult
+        use_curve_thickness = props.use_curve_thickness
+        if context.object.type != 'CURVE': use_curve_thickness = False
         #if context.object.type != 'CURVE':
         #    self.report({'ERROR'}, 'Please select a Curve object')
         #    return {'CANCELLED'}
@@ -255,6 +268,9 @@ class tissue_gcode_export(Operator):
             ob = curve_from_pydata(verts, ordered_verts, name='__temp_curve__', merge_distance=0.1, set_active=False)
 
         vertices = [[matr @ p.co.xyz for p in s.points] for s in ob.data.splines]
+        if use_curve_thickness:
+            bevel_depth = ob.data.bevel_depth
+            var_height = [[p.radius * bevel_depth for p in s.points] for s in ob.data.splines]
         cyclic_u = [s.use_cyclic_u for s in ob.data.splines]
 
         if ob.name == '__temp_curve__': bpy.data.objects.remove(ob)
@@ -282,13 +298,19 @@ class tissue_gcode_export(Operator):
         # sort layers (Z)
         if props.auto_sort_layers:
             sorted_verts = []
-            for curve in vertices:
+            if use_curve_thickness:
+                sorted_height = []
+            for i, curve in enumerate(vertices):
                 # mean z
                 listz = [v[2] for v in curve]
                 meanz = np.mean(listz)
                 # store curve and meanz
                 sorted_verts.append((curve, meanz))
+                if use_curve_thickness:
+                    sorted_height.append((var_height[i], meanz))
             vertices = [data[0] for data in sorted(sorted_verts, key=lambda height: height[1])]
+            if use_curve_thickness:
+                var_height = [data[0] for data in sorted(sorted_height, key=lambda height: height[1])]
 
         # sort vertices (XY)
         if props.auto_sort_points:
@@ -323,15 +345,8 @@ class tissue_gcode_export(Operator):
                             co_find = vertices[j-1][-1]
                     co, index, dist = kd.find(co_find)
                     vertices[j] = vertices[j][index:]+vertices[j][:index+1]
-                    
-                    # auto flip direction
-                    if props.gcode_mode != 'RETR':
-                        try:
-                            dir0 = vertices[j-1][-1] - vertices[j-1][-3]
-                            dir1 = vertices[j][3] - vertices[j][0]
-                            if dir0.dot(dir1) < 0: vertices[j].reverse()
-                        except: pass
-
+                    if use_curve_thickness:
+                        var_height[j] = var_height[j][index:]+var_height[j][:index+1]
                 else:
                     if j > 0:
                         p0 = curve[0]
@@ -380,6 +395,8 @@ class tissue_gcode_export(Operator):
                 v = curve[j]
                 v_flow_mult = flow_mult#[i][j]
                 v_layer = layer#[i][j]
+                if use_curve_thickness:
+                    v_layer = var_height[i][j]*2
 
                 # record max z
                 maxz = np.max((maxz,v[2]))

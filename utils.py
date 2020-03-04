@@ -186,8 +186,6 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         for o in bpy.context.view_layer.objects: o.select_set(False)
         new_ob.select_set(True)
         bpy.context.view_layer.objects.active = new_ob
-    new_ob.shape_key_clear()
-    new_ob.data.update()
     return new_ob
 
 def simple_to_mesh(ob):
@@ -416,12 +414,13 @@ def curve_from_points(points, name='Curve'):
     ob_curve = bpy.data.objects.new(name,curve)
     return ob_curve
 
-def curve_from_pydata(points, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True):
+def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True):
     curve = bpy.data.curves.new(name,'CURVE')
     curve.dimensions = '3D'
     for c in indexes:
         # cleanup
         pts = np.array([points[i] for i in c])
+        rad = np.array([radii[i] for i in c])
         if merge_distance > 0:
             pts1 = np.roll(pts,1,axis=0)
             dist = np.linalg.norm(pts1-pts, axis=1)
@@ -433,6 +432,7 @@ def curve_from_pydata(points, indexes, name='Curve', skip_open=False, merge_dist
                 if count > merge_distance: count = 0
                 else: mask[i] = False
             pts = pts[mask]
+            rad = rad[mask]
 
         bool_cyclic = c[0] == c[-1]
         if skip_open and not bool_cyclic: continue
@@ -442,6 +442,7 @@ def curve_from_pydata(points, indexes, name='Curve', skip_open=False, merge_dist
         w = np.ones(n_pts).reshape((n_pts,1))
         co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
         s.points.foreach_set('co',co)
+        s.points.foreach_set('radius',rad)
         s.use_cyclic_u = bool_cyclic
     ob_curve = bpy.data.objects.new(name,curve)
     bpy.context.collection.objects.link(ob_curve)
@@ -498,7 +499,6 @@ def bmesh_set_weight_numpy(bm, group_index, weight):
         #if group_index in dvert:
         dvert[group_index] = weight[i]
     return bm
-
 
 ### MODIFIERS ###
 def mod_preserve_topology(mod):

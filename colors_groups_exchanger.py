@@ -1961,6 +1961,12 @@ class tissue_weight_contour_curves_pattern(Operator):
     bevel_depth : FloatProperty(
         name="Bevel Depth", default=0, min=0, soft_max=1,
         description="")
+    min_bevel_depth : FloatProperty(
+        name="Min Bevel Depth", default=0.1, min=0, soft_max=1,
+        description="")
+    max_bevel_depth : FloatProperty(
+        name="Max Bevel Depth", default=1, min=0, soft_max=1,
+        description="")
     remove_open_curves : BoolProperty(
         name="Remove Open Curves", default=False,
         description="Remove Open Curves")
@@ -1968,6 +1974,10 @@ class tissue_weight_contour_curves_pattern(Operator):
     vertex_group_pattern : StringProperty(
         name="Pattern", default='',
         description="Vertex Group used for pattern displace")
+
+    vertex_group_bevel : StringProperty(
+        name="Bevel", default='',
+        description="Variable Bevel depth")
 
     object_name : StringProperty(
         name="Active Object", default='',
@@ -2018,7 +2028,14 @@ class tissue_weight_contour_curves_pattern(Operator):
             col.prop(self,'limit_z')
         col.separator()
         col.label(text='Curves:')
-        col.prop(self,'bevel_depth')
+        col.prop_search(self, 'vertex_group_bevel', ob, "vertex_groups", text='Bevel')
+        if self.vertex_group_bevel != '':
+            row = col.row(align=True)
+            row.prop(self,'min_bevel_depth')
+            row.prop(self,'max_bevel_depth')
+        else:
+            col.prop(self,'bevel_depth')
+        col.separator()
         col.prop(self,'clean_distance')
         col.prop(self,'remove_open_curves')
 
@@ -2055,8 +2072,16 @@ class tissue_weight_contour_curves_pattern(Operator):
             self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
             pattern_weight = np.zeros(len(me0.vertices))
 
+        variable_bevel = False
+        try:
+            bevel_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_bevel], len(me0.vertices))
+            variable_bevel = True
+        except:
+            bevel_weight = np.ones(len(me0.vertices))
+
         #filtered_edges = bm.edges
         total_verts = np.zeros((0,3))
+        total_radii = np.zeros((0,1))
         total_segments = []# np.array([])
         radius = []
 
@@ -2098,7 +2123,16 @@ class tissue_weight_contour_curves_pattern(Operator):
 
             count = len(total_verts)
 
-            new_filtered_edges, edges_index, verts = contour_edges_pattern(self, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight)
+            new_filtered_edges, edges_index, verts, bevel = contour_edges_pattern(self, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight)
+            if len(edges_index) > 0:
+                if self.max_bevel_depth != self.min_bevel_depth:
+                    min_radius = self.min_bevel_depth / self.max_bevel_depth
+                    radii = min_radius + bevel*(1 - min_radius)
+                else:
+                    radii = bevel
+            else:
+                continue
+
             #new_filtered_edges, edges_index, verts = contour_edges_pattern(self.in_steps, self.out_steps, self.in_displace, self.out_displace, self.limit_z, c, iso_val, vertices, normals, filtered_edges, weight, pattern_weight)
             if verts[0,0] == None: continue
             else: filtered_edges = new_filtered_edges
@@ -2146,7 +2180,8 @@ class tissue_weight_contour_curves_pattern(Operator):
 
 
             total_segments = total_segments + segments
-            total_verts = np.concatenate((total_verts,verts))
+            total_verts = np.concatenate((total_verts, verts))
+            total_radii = np.concatenate((total_radii, radii))
 
             if self.min_rad != self.max_rad:
                 try:
@@ -2163,9 +2198,10 @@ class tissue_weight_contour_curves_pattern(Operator):
             ordered_points = find_curves(total_segments, len(total_verts))
             print("Contour Curves, point ordered in: " + str(timeit.default_timer() - step_time) + " sec")
             step_time = timeit.default_timer()
-            crv = curve_from_pydata(total_verts,ordered_points,ob0.name + '_ContourCurves', self.remove_open_curves, merge_distance=self.clean_distance)
+            crv = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', self.remove_open_curves, merge_distance=self.clean_distance)
             context.view_layer.objects.active = crv
-            crv.data.bevel_depth = self.bevel_depth
+            if variable_bevel: crv.data.bevel_depth = self.max_bevel_depth
+            else: crv.data.bevel_depth = self.bevel_depth
 
             crv.select_set(True)
             ob0.select_set(False)
@@ -3182,7 +3218,7 @@ if False:
         _verts = verts.astype(type='float64', order='A')
         return _filtered_edges, _edges_index, _verts
 
-def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, filtered_edges, weight, pattern_weight):
+def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight):
     # vertices indexes
     id0 = filtered_edges[:,0]
     id1 = filtered_edges[:,1]
@@ -3195,7 +3231,8 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
 
     # mask all edges that have one weight value below the iso value
     mask_new_verts = np.logical_xor(bool_w0, bool_w1)
-    if not mask_new_verts.any(): return np.array([[None]]), {}, np.array([[None]])
+    if not mask_new_verts.any():
+        return np.array([[None]]), {}, np.array([[None]]), np.array([[None]])
 
     id0 = id0[mask_new_verts]
     id1 = id1[mask_new_verts]
@@ -3208,6 +3245,10 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
     w1 = w1[mask_new_verts]
     pattern0 = pattern_weight[id0]
     pattern1 = pattern_weight[id1]
+    try:
+        bevel0 = bevel_weight[id0]
+        bevel1 = bevel_weight[id1]
+    except: pass
     param = (iso_val-w0)/(w1-w0)
     # pattern displace
     #mult = 1 if c%2 == 0 else -1
@@ -3216,6 +3257,10 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
     else:
         mult = operator.out_displace
     pattern_value = pattern0 + (pattern1-pattern0)*param
+    try:
+        bevel_value = bevel0 + (bevel1-bevel0)*param
+        bevel_value = np.expand_dims(bevel_value,axis=1)
+    except: bevel_value = None
     disp = pattern_value * mult
     param = np.expand_dims(param,axis=1)
     disp = np.expand_dims(disp,axis=1)
@@ -3230,7 +3275,7 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
     # remove all edges completely below the iso value
     #mask_edges = np.logical_not(np.logical_and(bool_w0, bool_w1))
     #filtered_edges = filtered_edges[mask_edges]
-    return filtered_edges, edges_index, verts
+    return filtered_edges, edges_index, verts, bevel_value
 
 def contour_edges_pattern_eval(operator, c, verts_count, iso_val, vertices, normals, filtered_edges, weight, pattern_weight):
     # vertices indexes
