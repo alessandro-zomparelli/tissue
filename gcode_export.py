@@ -354,7 +354,10 @@ class tissue_gcode_export(Operator):
                         last = vertices[j-1][-1]
                         d0 = (last-p0).length
                         d1 = (last-p1).length
-                        if d1 < d0: vertices[j].reverse()
+                        if d1 < d0:
+                            vertices[j].reverse()
+                            if use_curve_thickness:
+                                var_height[j].reverse()
 
 
 

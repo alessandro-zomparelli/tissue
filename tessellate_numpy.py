@@ -940,6 +940,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             bool_vertex_group = False
 
     # Adaptive Z
+    com_area = 0
     if scale_mode == 'ADAPTIVE':
         com_area = bb[0]*bb[1]
         if mode != 'BOUNDS' or com_area == 0: com_area = 1
@@ -1097,6 +1098,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
         shift1 = sides
         shift2 = sides*2-1
         shift3 = sides*3-2
+        patch_area = 0
         for j in range(patch_faces):
             if j < patch_faces0:
                 if levels == 0:
@@ -1120,6 +1122,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 u = 0
                 v = sides-jj-2
             face = me0.polygons[j+i*patch_faces]
+
             faces[u][v] = face
             verts[u][v] = verts0[face.vertices[0]]
             if u == sides-1:
@@ -1128,6 +1131,8 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                 verts[u][sides] = verts0[face.vertices[3]]
             if u == v == sides-1:
                 verts[sides][sides] = verts0[face.vertices[2]]
+            patch_area += face.area
+        #patches_area.append(patch_area/patch_faces)
 
         # Random rotation
         if rotation_mode == 'RANDOM' or rotation_shift != 0:
@@ -1194,13 +1199,16 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
         co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
         n2 = np_lerp2(n00,n10,n01,n11,vx,vy)
         if scale_mode == 'ADAPTIVE':
-            areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
-            a00 = areas[np_u, np_v].reshape((n_verts1,1))
-            a10 = areas[np_u1, np_v].reshape((n_verts1,1))
-            a01 = areas[np_u, np_v1].reshape((n_verts1,1))
-            a11 = areas[np_u1, np_v1].reshape((n_verts1,1))
-            # remapped z scale
-            a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
+            if normals_mode == 'FACES':
+                a2 = sqrt(patch_area/com_area)
+            else:
+                areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
+                a00 = areas[np_u, np_v].reshape((n_verts1,1))
+                a10 = areas[np_u1, np_v].reshape((n_verts1,1))
+                a01 = areas[np_u, np_v1].reshape((n_verts1,1))
+                a11 = areas[np_u1, np_v1].reshape((n_verts1,1))
+                # remapped z scale
+                a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
             co3 = co2 + n2 * vz * a2
         else:
             co3 = co2 + n2 * vz
@@ -1690,6 +1698,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                 area/=len(faces) # average area
                 base = sqrt(area)
                 verts_area.append(base*com_mult)
+        if normals_mode == 'FACES':
+            faces_area = [sqrt(f.calc_area())*com_mult for f in bm.faces]
 
     count = 0   # necessary for UV calculation
 
@@ -1800,7 +1810,8 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
         if scale_mode == 'ADAPTIVE':
             np_verts_area = np.array([verts_area[i] for i in ordered])
             if normals_mode == 'FACES':
-                np_verts_area = np.ones(len(ordered))*np.mean(np_verts_area)
+                #np_verts_area = np.ones(len(ordered))*np.mean(np_verts_area)
+                np_verts_area = np.ones(len(ordered))*faces_area[p.index]
             _sz[j] = np_verts_area
         # Vertex weight
         if bool_vertex_group:
