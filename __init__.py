@@ -109,6 +109,7 @@ classes = (
     colors_groups_exchanger.formula_prop,
     colors_groups_exchanger.reaction_diffusion_prop,
     colors_groups_exchanger.weight_formula,
+    colors_groups_exchanger.update_weight_formula,
     colors_groups_exchanger.curvature_to_vertex_groups,
     colors_groups_exchanger.weight_formula_wiki,
     colors_groups_exchanger.tissue_weight_distance,

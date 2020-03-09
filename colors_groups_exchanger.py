@@ -281,6 +281,7 @@ class weight_formula_wiki(Operator):
 class weight_formula(Operator):
     bl_idname = "object.weight_formula"
     bl_label = "Weight Formula"
+    bl_description = "Generate a Vertex Group according to a mathematical formula"
     bl_options = {'REGISTER', 'UNDO'}
 
     ex = [
@@ -309,38 +310,27 @@ class weight_formula(Operator):
 
     formula : StringProperty(
         name="Formula", default="", description="Formula to Evaluate")
-    bl_description = ("Generate a Vertex Group based on the given formula")
 
     slider_f01 : FloatProperty(
-        name="f1", default=1, description="Slider")
-    bl_description = ("Slider Float 1")
+        name="f1", default=1, description="Slider Float 1")
     slider_f02 : FloatProperty(
-        name="f2", default=1, description="Slider")
-    bl_description = ("Slider Float 2")
+        name="f2", default=1, description="Slider Float 2")
     slider_f03 : FloatProperty(
-        name="f3", default=1, description="Slider")
-    bl_description = ("Slider Float 3")
+        name="f3", default=1, description="Slider Float 3")
     slider_f04 : FloatProperty(
-        name="f4", default=1, description="Slider")
-    bl_description = ("Slider Float 4")
+        name="f4", default=1, description="Slider Float 4")
     slider_f05 : FloatProperty(
-        name="f5", default=1, description="Slider")
-    bl_description = ("Slider Float 5")
+        name="f5", default=1, description="Slider Float 5")
     slider_i01 : IntProperty(
-        name="i1", default=1, description="Slider")
-    bl_description = ("Slider Integer 1")
+        name="i1", default=1, description="Slider Integer 1")
     slider_i02 : IntProperty(
-        name="i2", default=1, description="Slider")
-    bl_description = ("Slider Integer 2")
+        name="i2", default=1, description="Slider Integer 2")
     slider_i03 : IntProperty(
-        name="i3", default=1, description="Slider")
-    bl_description = ("Slider Integer 3")
+        name="i3", default=1, description="Slider Integer 3")
     slider_i04 : IntProperty(
-        name="i4", default=1, description="Slider")
-    bl_description = ("Slider Integer 4")
+        name="i4", default=1, description="Slider Integer 4")
     slider_i05 : IntProperty(
-        name="i5", default=1, description="Slider")
-    bl_description = ("Slider Integer 5")
+        name="i5", default=1, description="Slider Integer 5")
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=350)
@@ -411,7 +401,12 @@ class weight_formula(Operator):
         formula = self.formula
 
         if formula == "": return {'FINISHED'}
-        vertex_group_name = "Formula " + formula
+        # replace numeric sliders value
+        for i, slider in enumerate(f_sliders):
+            formula = formula.replace('f'+str(i+1),"{0:.2f}".format(slider))
+        for i, slider in enumerate(i_sliders):
+            formula =formula.replace('i'+str(i+1),str(slider))
+        vertex_group_name = "" + formula
         ob.vertex_groups.new(name=vertex_group_name)
 
         weight = compute_formula(ob, formula=formula, float_var=f_sliders, int_var=i_sliders)
@@ -421,12 +416,13 @@ class weight_formula(Operator):
 
         #start_time = timeit.default_timer()
         weight = nan_to_num(weight)
+        vg = ob.vertex_groups[-1]
         if type(weight) == int or type(weight) == float:
             for i in range(n_verts):
-                ob.vertex_groups[-1].add([i], weight, 'REPLACE')
+                vg.add([i], weight, 'REPLACE')
         elif type(weight) == ndarray:
             for i in range(n_verts):
-                ob.vertex_groups[-1].add([i], weight[i], 'REPLACE')
+                vg.add([i], weight[i], 'REPLACE')
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
 
@@ -440,6 +436,41 @@ class weight_formula(Operator):
         #for f in ob.formula_settings:
         #    print(f.name, f.formula, f.int_var, f.float_var)
         return {'FINISHED'}
+
+
+class update_weight_formula(Operator):
+    bl_idname = "object.update_weight_formula"
+    bl_label = "Update Weight Formula"
+    bl_description = "Update an existing Vertex Group. Make sure that the name\nof the active Vertex Group is a valid formula"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
+
+    def execute(self, context):
+        ob = context.active_object
+        n_verts = len(ob.data.vertices)
+
+        vg = ob.vertex_groups.active
+        formula = vg.name
+        weight = compute_formula(ob, formula=formula)
+        if type(weight) == str:
+            self.report({'ERROR'}, "The name of the active Vertex Group\nis not a valid Formula")
+            return {'CANCELLED'}
+
+        #start_time = timeit.default_timer()
+        weight = nan_to_num(weight)
+        if type(weight) == int or type(weight) == float:
+            for i in range(n_verts):
+                vg.add([i], weight, 'REPLACE')
+        elif type(weight) == ndarray:
+            for i in range(n_verts):
+                vg.add([i], weight[i], 'REPLACE')
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        return {'FINISHED'}
+
 
 class _weight_laplacian(Operator):
     bl_idname = "object._weight_laplacian"
@@ -2699,8 +2730,10 @@ class TISSUE_PT_weight(Panel):
         col.operator("object.face_area_to_vertex_groups", icon="FACESEL")
         col.operator("object.curvature_to_vertex_groups", icon="SMOOTHCURVE")
         col.operator("object.tissue_weight_distance", icon="TRACKING")
-        try: col.operator("object.weight_formula", icon="CON_TRANSFORM")
-        except: col.operator("object.weight_formula")#, icon="CON_TRANSFORM")
+        row = col.row(align=True)
+        try: row.operator("object.weight_formula", icon="CON_TRANSFORM")
+        except: row.operator("object.weight_formula")#, icon="CON_TRANSFORM")
+        row.operator("object.update_weight_formula", icon="FILE_REFRESH", text='')#, icon="CON_TRANSFORM")
         #col.label(text="Weight Processing:")
         col.separator()
 

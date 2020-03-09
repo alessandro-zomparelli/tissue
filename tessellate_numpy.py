@@ -4187,7 +4187,6 @@ def convert_to_frame(ob, props, use_modifiers):
 
         # add faces
         materials += [materials[0]]
-        print(materials)
         for i in range(len(loop)):
              v0 = loop_ext[i+1]
              v1 = loop_ext[i+2]
