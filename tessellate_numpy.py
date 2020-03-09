@@ -419,13 +419,13 @@ class tissue_tessellate_prop(PropertyGroup):
     frame_boundary_mat : IntProperty(
             name="Material Offset",
             default=0,
-            description="Material Offset for boundaries",
+            description="Material Offset for boundaries (with Multi Components or Material ID)",
             update = anim_tessellate_active
             )
     fill_frame_mat : IntProperty(
             name="Material Offset",
             default=0,
-            description="Material Offset for inner faces",
+            description="Material Offset for inner faces (with Multi Components or Material ID)",
             update = anim_tessellate_active
             )
     open_edges_crease : FloatProperty(
@@ -2273,12 +2273,12 @@ class tissue_tessellate(Operator):
     frame_boundary_mat : IntProperty(
             name="Material Offset",
             default=0,
-            description="Material Offset for boundaries"
+            description="Material Offset for boundaries (with Multi Components or Material ID)"
             )
     fill_frame_mat : IntProperty(
             name="Material Offset",
             default=0,
-            description="Material Offset for inner faces"
+            description="Material Offset for inner faces (with Multi Components or Material ID)"
             )
     open_edges_crease : FloatProperty(
             name="Open Edges Crease",
@@ -2449,12 +2449,14 @@ class tissue_tessellate(Operator):
                 row = col.row(align=True)
                 row.prop(self, "fill_frame", icon='NONE')
                 show_frame_mat = self.bool_multi_components or self.bool_material_id
-                if self.fill_frame and show_frame_mat:
-                    row.prop(self, "fill_frame_mat", icon='NONE')
+                col2 = row.column(align=True)
+                col2.prop(self, "fill_frame_mat", icon='NONE')
+                col2.enabled = self.fill_frame and show_frame_mat
                 row = col.row(align=True)
                 row.prop(self, "frame_boundary", text='Boundary', icon='NONE')
-                if self.frame_boundary and show_frame_mat:
-                    row.prop(self, "frame_boundary_mat", icon='NONE')
+                col2 = row.column(align=True)
+                col2.prop(self, "frame_boundary_mat", icon='NONE')
+                col2.enabled = self.frame_boundary and show_frame_mat
 
             if self.rotation_mode == 'UV':
                 uv_error = False
@@ -3021,6 +3023,7 @@ class tissue_update_tessellate(Operator):
 
                         if fill_mode == 'FRAME': convert_function = convert_to_frame
                         else: convert_function = convert_to_fan
+                        fill_mode = 'QUAD'
 
                         if normals_mode == 'CUSTOM' and base_ob.data.shape_keys != None:
                             ## base key
@@ -3518,15 +3521,18 @@ class TISSUE_PT_tessellate_frame(Panel):
             row.prop(props, "frame_mode", expand=True)
             row = col.row(align=True)
             row.prop(props, "frame_thickness", icon='NONE', expand=True)
+            col.separator()
             row = col.row(align=True)
             row.prop(props, "fill_frame", icon='NONE')
             show_frame_mat = props.bool_multi_components or props.bool_material_id
-            if props.fill_frame and show_frame_mat:
-                row.prop(props, "fill_frame_mat", icon='NONE')
+            col2 = row.column(align=True)
+            col2.prop(props, "fill_frame_mat", icon='NONE')
+            col2.enabled = props.fill_frame and show_frame_mat
             row = col.row(align=True)
             row.prop(props, "frame_boundary", text='Boundary', icon='NONE')
-            if props.frame_boundary and show_frame_mat:
-                row.prop(props, "frame_boundary_mat", icon='NONE')
+            col2 = row.column(align=True)
+            col2.prop(props, "frame_boundary_mat", icon='NONE')
+            col2.enabled = props.frame_boundary and show_frame_mat
 
 
 class TISSUE_PT_tessellate_coordinates(Panel):
@@ -4056,7 +4062,7 @@ def convert_to_frame(ob, props, use_modifiers):
             count = 0
             e0 = selected_edges[0]
             face = e0.link_faces[0]
-            boundary_mat = [face.material_index]
+            boundary_mat = [face.material_index + props.frame_boundary_mat]
             face_center = [face.calc_center_median()]
             loop_normals = [face.normal]
             selected_edges = selected_edges[1:]
@@ -4086,7 +4092,7 @@ def convert_to_frame(ob, props, use_modifiers):
                         loop.append(new_vert)
                         e0 = e1
                         face = e0.link_faces[0]
-                        boundary_mat.append(face.material_index)
+                        boundary_mat.append(face.material_index + props.frame_boundary_mat)
                         face_center.append(face.calc_center_median())
                         loop_normals.append(face.normal)
                         selected_edges.remove(e0)
@@ -4101,7 +4107,7 @@ def convert_to_frame(ob, props, use_modifiers):
                         neigh_face_center.append(face_center)
                         face_normals.append(loop_normals)
                         face = e0.link_faces[0]
-                        boundary_mat = [face.material_index]
+                        boundary_mat = [face.material_index + props.frame_boundary_mat]
                         face_center = [face.calc_center_median()]
                         loop_normals = [face.normal]
                     except: break
@@ -4181,6 +4187,7 @@ def convert_to_frame(ob, props, use_modifiers):
 
         # add faces
         materials += [materials[0]]
+        print(materials)
         for i in range(len(loop)):
              v0 = loop_ext[i+1]
              v1 = loop_ext[i+2]
@@ -4189,7 +4196,7 @@ def convert_to_frame(ob, props, use_modifiers):
              face_verts = [v1,v0,v3,v2]
              if mult == -1: face_verts = [v0,v1,v2,v3]
              new_face = bm.faces.new(face_verts)
-             new_face.material_index = materials[i+1] + props.frame_boundary_mat
+             new_face.material_index = materials[i+1]
              new_face.select = True
              new_faces.append(new_face)
         # fill frame
@@ -4204,10 +4211,10 @@ def convert_to_frame(ob, props, use_modifiers):
                 v1 = new_loop[i]
                 face_verts = [v1,v0,center]
                 new_face = bm.faces.new(face_verts)
-                new_face.material_index = materials[i] + props.frame_boundary_mat
+                new_face.material_index = materials[i] + props.fill_frame_mat
                 new_face.select = True
                 new_faces.append(new_face)
-    bpy.ops.object.mode_set(mode='OBJECT')
+    #bpy.ops.object.mode_set(mode='OBJECT')
     #for f in bm.faces: f.select_set(f not in new_faces)
     for f in original_faces: bm.faces.remove(f)
     bm.to_mesh(new_ob.data)
