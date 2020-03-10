@@ -1294,6 +1294,8 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             except: pass
 
     # Vertex Group
+    for vg in ob1.vertex_groups:
+        new_patch.vertex_groups.new(name=vg.name)
     if bool_vertex_group:
         for vg in ob0.vertex_groups:
             new_patch.vertex_groups.new(name=vg.name)
@@ -1307,7 +1309,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
         bm.from_mesh(new_me)
         for i in range(len(store_weight)):
             np_weight = np.concatenate(store_weight[i], axis=0).flatten()
-            bm = bmesh_set_weight_numpy(bm, i, np_weight)
+            bm = bmesh_set_weight_numpy(bm, i + len(ob1.vertex_groups), np_weight)
         bm.to_mesh(new_me)
         new_me.update()
 
@@ -1323,9 +1325,6 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
 
     #if ob0.type == 'MESH': ob0.data = old_me0
     if not bool_correct: return 0
-
-    #bpy.ops.object.join()
-
 
     if bool_shapekeys:
         # set original values and combine Shape Keys and Vertex Groups
@@ -1987,17 +1986,19 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     new_ob = bpy.data.objects.new("tessellate_temp", new_me)
 
     # vertex group
-    if bool_vertex_group and False:
-        for vg in ob0.vertex_groups:
-            new_ob.vertex_groups.new(name=vg.name)
-            for i in range(len(vg_np[vg.index])):
-                new_ob.vertex_groups[vg.name].add([i], vg_np[vg.index][i],"REPLACE")
-    # vertex group
+    for vg in ob1.vertex_groups:
+        new_ob.vertex_groups.new(name=vg.name)
+
     if bool_vertex_group:
         for vg in ob0.vertex_groups:
             new_ob.vertex_groups.new(name=vg.name)
-            for i, vertex_weight in enumerate(w[vg.index]):
-                new_ob.vertex_groups[vg.name].add([i], vertex_weight,"REPLACE")
+        bm = bmesh.new()
+        bm.from_mesh(new_me)
+        for i in range(len(w)):
+            np_weight = np.array(w[i])
+            bm = bmesh_set_weight_numpy(bm, i + len(ob1.vertex_groups), np_weight)
+        bm.to_mesh(new_me)
+        new_me.update()
 
     if bool_shapekeys:
         basis = com_modifiers
@@ -2979,10 +2980,9 @@ class tissue_update_tessellate(Operator):
             bpy.ops.ptcache.bake_all()
         base_ob.modifiers.update()
 
+        # clear vertex groups before creating new ones
+        ob.vertex_groups.clear()
 
-        #new_ob.location = ob.location
-        #new_ob.matrix_world = ob.matrix_world
-        #bpy.ops.object.select_all(action='DESELECT')
         if bool_selection:
             faces = base_ob.data.polygons
             selections = [False]*len(faces)
@@ -3305,17 +3305,17 @@ class tissue_update_tessellate(Operator):
         bpy.data.meshes.remove(old_data)
 
         # copy vertex group
-        if bool_vertex_group:
-            for vg in new_ob.vertex_groups:
-                if not vg.name in ob.vertex_groups.keys():
-                    ob.vertex_groups.new(name=vg.name)
-                new_vg = ob.vertex_groups[vg.name]
-                for i in range(len(ob.data.vertices)):
-                    try:
-                        weight = vg.weight(i)
-                    except:
-                        weight = 0
-                    new_vg.add([i], weight, 'REPLACE')
+        for vg in new_ob.vertex_groups:
+            if not vg.name in ob.vertex_groups.keys():
+                ob.vertex_groups.new(name=vg.name)
+            if vg.name not in ob0.vertex_groups.keys(): continue
+            new_vg = ob.vertex_groups[vg.name]
+            for i in range(len(ob.data.vertices)):
+                try:
+                    weight = vg.weight(i)
+                except:
+                    weight = 0
+                new_vg.add([i], weight, 'REPLACE')
 
         selected_objects = [o for o in context.selected_objects]
         for o in selected_objects: o.select_set(False)
@@ -3459,35 +3459,6 @@ class TISSUE_PT_tessellate_object(Panel):
             col2 = row.column(align=True)
             col2.prop(props, "bool_run", text="",icon='TIME')
             col2.enabled = not props.bool_lock
-            '''
-            col = layout.column(align=True)
-            row = col.row(align=True)
-            row.label(text="Base :")
-            row.label(text="Component :")
-            row = col.row(align=True)
-
-            col2 = row.column(align=True)
-            col2.prop_search(props, "generator", context.scene, "objects")
-            row.separator()
-            col2 = row.column(align=True)
-            col2.prop_search(props, "component", context.scene, "objects")
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.prop(props, "gen_modifiers", text="Use Modifiers", icon='MODIFIER')
-            row.separator()
-            try:
-                if not (ob0.modifiers or ob0.data.shape_keys) or props.fill_mode == 'PATCH':
-                    col2.enabled = False
-            except:
-                col2.enabled = False
-            col2 = row.column(align=True)
-            col2.prop(props, "com_modifiers", text="Use Modifiers", icon='MODIFIER')
-            try:
-                if not (props.component.modifiers or props.component.data.shape_keys):
-                    col2.enabled = False
-            except:
-                    col2.enabled = False
-            '''
             layout.use_property_split = True
             layout.use_property_decorate = False  # No animation.
             col = layout.column(align=True)
@@ -4114,17 +4085,6 @@ def convert_to_frame(ob, props, use_modifiers):
             if props.bool_vertex_group:
                 n_verts = len(new_ob.data.vertices)
                 base_vg = [get_weight(vg,n_verts) for vg in new_ob.vertex_groups]
-                '''
-                base_vg = []
-                for vg in new_ob.vertex_groups:
-                    vertex_group = []
-                    for v in bm.verts:
-                        try:
-                            vertex_group.append(vg.weight(v.index))
-                        except:
-                            vertex_group.append(0)
-                    base_vg.append(vertex_group)
-                '''
             while True:
                 new_vert = None
                 face = None
