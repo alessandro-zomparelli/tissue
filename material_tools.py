@@ -111,6 +111,7 @@ class random_materials(Operator):
             col.prop(self, "count")
             #row = col.row(align=True)
             col.separator()
+            col.label(text='Colors:')
             col.prop(self, "hue")
             col.prop(self, "hue_variation")
             #col.prop(self, "random_colors")
@@ -143,6 +144,7 @@ class random_materials(Operator):
         rand = list(np.random.randint(count, size=n_faces))
         ob.data.polygons.foreach_set('material_index',rand)
         ob.data.update()
+        bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
 
 
@@ -175,6 +177,8 @@ class weight_to_materials(Operator):
         name="Mode"
         )
 
+    vg = None
+
     @classmethod
     def poll(cls, context):
         try: return context.object.type == 'MESH'
@@ -191,12 +195,15 @@ class weight_to_materials(Operator):
             col.prop(self, "count")
             #row = col.row(align=True)
             col.separator()
+            col.label(text='Colors:')
             col.prop(self, "hue")
             col.prop(self, "hue_variation")
 
     def execute(self, context):
         ob = context.active_object
-        vg = ob.vertex_groups.active
+        if self.vg == None:
+            self.vg = ob.vertex_groups.active_index
+        vg = ob.vertex_groups[self.vg]
         if vg == None:
             self.report({'ERROR'}, "The selected object doesn't have any Vertex Group")
             return {'CANCELLED'}
@@ -228,4 +235,5 @@ class weight_to_materials(Operator):
         faces_weight.astype('int')
         ob.data.polygons.foreach_set('material_index',list(faces_weight))
         ob.data.update()
+        bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
