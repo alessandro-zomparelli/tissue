@@ -2761,6 +2761,11 @@ class TISSUE_PT_weight(Panel):
         col.operator("object.start_reaction_diffusion",
                     icon="EXPERIMENTAL",
                     text="Reaction-Diffusion")
+        
+        col.separator()
+        col.label(text="Materials:")
+        col.operator("object.random_materials", icon='COLOR')
+        col.operator("object.weight_to_materials", icon='GROUP_VERTEX')
 
         #col.prop(context.object, "reaction_diffusion_run", icon="PLAY", text="Run Simulation")
         ####col.prop(context.object, "reaction_diffusion_run")

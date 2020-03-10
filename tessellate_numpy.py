@@ -3364,6 +3364,7 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.dual_mesh")
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
 
+
         act = context.object
         if act and act.type == 'MESH':
             col.operator("object.uv_to_mesh", icon="UV")
@@ -3372,6 +3373,11 @@ class TISSUE_PT_tessellate(Panel):
                 col.separator()
                 col.label(text="Weight:")
                 col.operator("object.tissue_weight_distance", icon="TRACKING")
+
+        col.separator()
+        col.label(text="Materials:")
+        col.operator("object.random_materials", icon='COLOR')
+        col.operator("object.weight_to_materials", icon='GROUP_VERTEX')
 
 class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'

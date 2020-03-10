@@ -53,6 +53,7 @@ if "bpy" in locals():
     importlib.reload(utils)
     importlib.reload(gcode_export)
     importlib.reload(preferences)
+    importlib.reload(material_tools)
 
 else:
     from . import tessellate_numpy
@@ -63,6 +64,7 @@ else:
     from . import utils
     from . import gcode_export
     from . import preferences
+    from . import material_tools
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
@@ -119,6 +121,9 @@ classes = (
     dual_mesh.dual_mesh_tessellated,
 
     lattice.lattice_along_surface,
+
+    material_tools.random_materials,
+    material_tools.weight_to_materials,
 
     uv_to_mesh.uv_to_mesh,
     gcode_export.TISSUE_PT_gcode_exporter,
