@@ -65,7 +65,7 @@ class random_materials(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     prefix : StringProperty(
-        name="Prefix", default="Random_", description="Name prefix")
+        name="Prefix", default="Random.", description="Name prefix")
 
     color_A : FloatVectorProperty(name="Color A",
                                     subtype='COLOR_GAMMA',
@@ -154,7 +154,7 @@ class weight_to_materials(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     prefix : StringProperty(
-        name="Prefix", default="Random_", description="Name prefix")
+        name="Prefix", default="Weight.", description="Name prefix")
 
     hue : FloatProperty(name="Hue", min=0, max=1, default=0.5)
     hue_variation : FloatProperty(name="Hue Variation", min=0, max=1, default=0.3)
