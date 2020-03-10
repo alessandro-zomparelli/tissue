@@ -300,7 +300,7 @@ class weight_formula(Operator):
         'abs(0.5-rz)*2',
         'rx'
         ]
-    ex_items = list((s,s,"") for s in ex)
+    ex_items = list((str(i),s,"") for i,s in enumerate(ex))
     ex_items.append(('CUSTOM', "User Formula", ""))
 
     examples : EnumProperty(
@@ -345,11 +345,13 @@ class weight_formula(Operator):
         #try: self.examples = self.formula
         #except: pass
 
-        if self.examples != self.old_ex and self.examples != 'CUSTOM':
-            self.formula = self.examples
-            self.old_ex = self.examples
-        elif self.formula != self.examples:
-            self.examples = 'CUSTOM'
+        if self.examples != 'CUSTOM':
+            example = self.ex[int(self.examples)]
+            if example != self.old_ex:
+                self.formula = example
+                self.old_ex = example
+            elif self.formula != example:
+                self.examples = 'CUSTOM'
         formula = self.formula
 
         layout.separator()
@@ -393,11 +395,13 @@ class weight_formula(Operator):
         f_sliders = self.slider_f01, self.slider_f02, self.slider_f03, self.slider_f04, self.slider_f05
         i_sliders = self.slider_i01, self.slider_i02, self.slider_i03, self.slider_i04, self.slider_i05
 
-        if self.examples != self.old_ex and self.examples != 'CUSTOM':
-            self.formula = self.examples
-            self.old_ex = self.examples
-        elif self.formula != self.examples:
-            self.examples = 'CUSTOM'
+        if self.examples != 'CUSTOM':
+            example = self.ex[int(self.examples)]
+            if example != self.old_ex:
+                self.formula = example
+                self.old_ex = example
+            elif self.formula != example:
+                self.examples = 'CUSTOM'
         formula = self.formula
 
         if formula == "": return {'FINISHED'}
@@ -2345,13 +2349,13 @@ class vertex_group_to_vertex_colors(Operator):
     bl_description = ("Convert the active Vertex Group into a Vertex Color.")
 
     channel : EnumProperty(
-        items=[('Blue', 'Blue Channel', 'Convert to Blue Channel'),
-               ('Green', 'Green Channel', 'Convert to Green Channel'),
-               ('Red', 'Red Channel', 'Convert to Red Channel'),
-               ('Value', 'Value Channel', 'Convert to Grayscale'),
-               ('False Colors', 'False Colors', 'Convert to False Colors')],
+        items=[('BLUE', 'Blue Channel', 'Convert to Blue Channel'),
+               ('GREEN', 'Green Channel', 'Convert to Green Channel'),
+               ('RED', 'Red Channel', 'Convert to Red Channel'),
+               ('VALUE', 'Value Channel', 'Convert to Grayscale'),
+               ('FALSE_COLORS', 'False Colors', 'Convert to False Colors')],
         name="Convert to", description="Choose how to convert vertex group",
-        default="Value", options={'LIBRARY_EDITABLE'})
+        default="VALUE", options={'LIBRARY_EDITABLE'})
 
     invert : BoolProperty(
         name="invert", default=False, description="invert color channel")
@@ -2372,11 +2376,11 @@ class vertex_group_to_vertex_colors(Operator):
         colors_id = obj.data.vertex_colors.active_index
 
         colors_name = group_name
-        if(self.channel == 'False Colors'): colors_name += "_false_colors"
-        elif(self.channel == 'Value'):  colors_name += "_value"
-        elif(self.channel == 'Red'):  colors_name += "_red"
-        elif(self.channel == 'Green'):  colors_name += "_green"
-        elif(self.channel == 'Blue'):  colors_name += "_blue"
+        if(self.channel == 'FALSE_COLORS'): colors_name += "_false_colors"
+        elif(self.channel == 'VALUE'):  colors_name += "_value"
+        elif(self.channel == 'RED'):  colors_name += "_red"
+        elif(self.channel == 'GREEN'):  colors_name += "_green"
+        elif(self.channel == 'BLUE'):  colors_name += "_blue"
         context.object.data.vertex_colors[colors_id].name = colors_name
 
         v_colors = obj.data.vertex_colors.active.data
@@ -2389,13 +2393,13 @@ class vertex_group_to_vertex_colors(Operator):
             for v in f.vertices:
                 gr = obj.data.vertices[v].groups
 
-                if(self.channel == 'False Colors'): v_colors[i].color = (0,0,0.5,1)
+                if(self.channel == 'FALSE_COLORS'): v_colors[i].color = (0,0,0.5,1)
                 else: v_colors[i].color = (0,0,0,1)
 
                 for g in gr:
                     if g.group == group_id:
                         w = g.weight
-                        if(self.channel == 'False Colors'):
+                        if(self.channel == 'FALSE_COLORS'):
                             mult = 0.6+0.4*w
                             if w < 0.25:
                                 v_colors[i].color = (0, w*4*mult, 1*mult,1)
@@ -2405,19 +2409,19 @@ class vertex_group_to_vertex_colors(Operator):
                                 v_colors[i].color = ((w-0.5)*4*mult,1*mult,0,1)
                             else:
                                 v_colors[i].color = (1*mult,(1-(w-0.75)*4)*mult,0,1)
-                        elif(self.channel == 'Value'):
+                        elif(self.channel == 'VALUE'):
                             v_colors[i].color = (
                                 self.invert + mult * w,
                                 self.invert + mult * w,
                                 self.invert + mult * w,
                                 1)
-                        elif(self.channel == 'Red'):
+                        elif(self.channel == 'RED'):
                             v_colors[i].color = (
                                 self.invert + mult * w,0,0,1)
-                        elif(self.channel == 'Green'):
+                        elif(self.channel == 'GREEN'):
                             v_colors[i].color = (
                                 0, self.invert + mult * w,0,1)
-                        elif(self.channel == 'Blue'):
+                        elif(self.channel == 'BLUE'):
                             v_colors[i].color = (
                                 0,0, self.invert + mult * w,1)
                 i+=1
@@ -2761,7 +2765,7 @@ class TISSUE_PT_weight(Panel):
         col.operator("object.start_reaction_diffusion",
                     icon="EXPERIMENTAL",
                     text="Reaction-Diffusion")
-        
+
         col.separator()
         col.label(text="Materials:")
         col.operator("object.random_materials", icon='COLOR')
