@@ -240,6 +240,14 @@ class lattice_along_surface(Operator):
             soft_max=1,
             description="Lattice displace"
             )
+    weight_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0.000,
+            max=1.000,
+            precision=3,
+            description="Thickness factor to use for zero vertex group influence"
+            )
     grid_object = ""
     source_object = ""
 
@@ -264,6 +272,9 @@ class lattice_along_surface(Operator):
             )
         row = col.row()
         row.prop(self, "use_groups")
+        if self.use_groups:
+            row = col.row()
+            row.prop(self, "weight_factor")
         col.separator()
         col.label(text="Scale:")
         col.prop(
@@ -380,10 +391,7 @@ class lattice_along_surface(Operator):
 
         # set as parent
         if self.set_parent:
-            obj.select_set(True)
-            lattice.select_set(True)
-            context.view_layer.objects.active = lattice
-            bpy.ops.object.parent_set(type='LATTICE')
+            lattice.parent = obj
 
         # reading grid structure
         verts_grid, edges_grid, faces_grid = grid_from_mesh(
@@ -399,15 +407,19 @@ class lattice_along_surface(Operator):
             lattice.data.points_u = nu
             lattice.data.points_v = nv
             lattice.data.points_w = nw
+            if self.use_groups:
+                vg = temp_grid_obj.vertex_groups.active
+                weight_factor = self.weight_factor
             for i in range(nu):
                 for j in range(nv):
                     for w in range(nw):
                         if self.use_groups:
                             try:
-                                displace = temp_grid_obj.vertex_groups.active.weight(
-                                                    verts_grid[i][j]) * scale_normal * bb.z
+                                weight_influence = vg.weight(verts_grid[i][j])
                             except:
-                                displace = 0#scale_normal * bb.z
+                                weight_influence = 0
+                            weight_influence = weight_influence * (1 - weight_factor) + weight_factor
+                            displace = weight_influence * scale_normal * bb.z
                         else:
                             displace = scale_normal * bb.z
                         target_point = (grid_mesh.vertices[verts_grid[i][j]].co +
