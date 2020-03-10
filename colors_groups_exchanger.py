@@ -1949,7 +1949,7 @@ class weight_contour_curves(Operator):
 
 class tissue_weight_contour_curves_pattern(Operator):
     bl_idname = "object.tissue_weight_contour_curves_pattern"
-    bl_label = "Contour Curves Pattern"
+    bl_label = "Contour Curves"
     bl_description = ("")
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -1970,17 +1970,17 @@ class tissue_weight_contour_curves_pattern(Operator):
     max_rad = 1
 
     in_displace : FloatProperty(
-        name="In Displace", default=0, soft_min=0, soft_max=10,
+        name="Displace A", default=0, soft_min=-10, soft_max=10,
         description="Pattern displace strength")
     out_displace : FloatProperty(
-        name="Out Displace", default=2, soft_min=0, soft_max=10,
+        name="Displace B", default=2, soft_min=-10, soft_max=10,
         description="Pattern displace strength")
 
     in_steps : IntProperty(
-        name="In Steps", default=1, min=0, soft_max=10,
+        name="Steps A", default=1, min=0, soft_max=10,
         description="Number of layers to move inwards")
     out_steps : IntProperty(
-        name="Out Steps", default=1, min=0, soft_max=10,
+        name="Steps B", default=1, min=0, soft_max=10,
         description="Number of layers to move outwards")
     limit_z : BoolProperty(
         name="Limit Z", default=False,
@@ -2007,7 +2007,7 @@ class tissue_weight_contour_curves_pattern(Operator):
         description="Remove Open Curves")
 
     vertex_group_pattern : StringProperty(
-        name="Pattern", default='',
+        name="Displace", default='',
         description="Vertex Group used for pattern displace")
 
     vertex_group_bevel : StringProperty(
@@ -2046,13 +2046,25 @@ class tissue_weight_contour_curves_pattern(Operator):
         layout = self.layout
         col = layout.column(align=True)
         col.prop(self, "use_modifiers")
-        col.prop_search(self, 'vertex_group_contour', ob, "vertex_groups", text='Contour')
+        col.label(text="Contour Curves:")
+        col.prop_search(self, 'vertex_group_contour', ob, "vertex_groups", text='')
         row = col.row(align=True)
         row.prop(self,'min_iso')
         row.prop(self,'max_iso')
         col.prop(self,'n_curves')
         col.separator()
-        col.prop_search(self, 'vertex_group_pattern', ob, "vertex_groups", text='Pattern')
+        col.label(text='Curves Bevel:')
+        col.prop_search(self, 'vertex_group_bevel', ob, "vertex_groups", text='')
+        if self.vertex_group_bevel != '':
+            row = col.row(align=True)
+            row.prop(self,'min_bevel_depth')
+            row.prop(self,'max_bevel_depth')
+        else:
+            col.prop(self,'bevel_depth')
+        col.separator()
+
+        col.label(text="Displace Pattern:")
+        col.prop_search(self, 'vertex_group_pattern', ob, "vertex_groups", text='')
         if self.vertex_group_pattern != '':
             row = col.row(align=True)
             row.prop(self,'in_steps')
@@ -2062,18 +2074,10 @@ class tissue_weight_contour_curves_pattern(Operator):
             row.prop(self,'out_displace')
             col.prop(self,'limit_z')
         col.separator()
-        col.label(text='Curves:')
-        col.prop_search(self, 'vertex_group_bevel', ob, "vertex_groups", text='Bevel')
-        if self.vertex_group_bevel != '':
-            row = col.row(align=True)
-            row.prop(self,'min_bevel_depth')
-            row.prop(self,'max_bevel_depth')
-        else:
-            col.prop(self,'bevel_depth')
-        col.separator()
+
+        col.label(text='Clean Curves:')
         col.prop(self,'clean_distance')
         col.prop(self,'remove_open_curves')
-
 
     def execute(self, context):
         start_time = timeit.default_timer()
@@ -2104,7 +2108,7 @@ class tissue_weight_contour_curves_pattern(Operator):
         try:
             pattern_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_pattern], len(me0.vertices))
         except:
-            self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
+            #self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
             pattern_weight = np.zeros(len(me0.vertices))
 
         variable_bevel = False
@@ -2129,13 +2133,8 @@ class tissue_weight_contour_curves_pattern(Operator):
         fw_max = np.array([np.max(fw) for fw in faces_weight])
 
         bm_faces = np.array(bm.faces)
-        #bm_faces = np.array([np.array([e.index for e in f.edges]) for f in bm.faces ])
-        #all_edges_by_faces = []
-        #for f in bm.faces:
-        #    all_edges_by_faces += [e.index for e in f.edges]
-        #all_edges_by_faces = np.array(all_edges_by_faces)
 
-        print("Contour Curves, data loaded: " + str(timeit.default_timer() - start_time) + " sec")
+        #print("Contour Curves, data loaded: " + str(timeit.default_timer() - start_time) + " sec")
         step_time = timeit.default_timer()
         for c in range(self.n_curves):
             min_iso = min(self.min_iso, self.max_iso)
@@ -2168,7 +2167,6 @@ class tissue_weight_contour_curves_pattern(Operator):
             else:
                 continue
 
-            #new_filtered_edges, edges_index, verts = contour_edges_pattern(self.in_steps, self.out_steps, self.in_displace, self.out_displace, self.limit_z, c, iso_val, vertices, normals, filtered_edges, weight, pattern_weight)
             if verts[0,0] == None: continue
             else: filtered_edges = new_filtered_edges
             edges_id = {}
@@ -2189,31 +2187,6 @@ class tissue_weight_contour_curves_pattern(Operator):
                             seg = []
                     except: pass
 
-            #segments = np.array([])
-            #keys = np.array(edges_id.keys())
-            #verts_id = np.arange(len(edges_index))+len(total_verts)
-
-            #seg_mask = np.in1d(edges_index, all_edges_by_faces)
-            #segments = verts_id[seg_mask]
-
-            #try: segments = segments.reshape((len(segments)//2,2))
-            #except: continue
-            '''
-            for f in faces_mask:
-                #print(f)
-                #print(edges_index)
-                #print(verts_id)
-                seg_mask = np.in1d(edges_index,f)
-                #if not seg_mask.any(): continue
-                seg = verts_id[seg_mask]
-                seg = seg.reshape((len(seg)//2,2))
-                if len(seg)==0: continue
-                segments = seg if len(segments)==0 else np.concatenate((segments ,seg))
-            '''
-            #if len(segments)>0:
-            #    total_segments = segments if len(total_segments)==0 else np.concatenate((total_segments, segments))
-
-
             total_segments = total_segments + segments
             total_verts = np.concatenate((total_verts, verts))
             total_radii = np.concatenate((total_radii, radii))
@@ -2225,13 +2198,13 @@ class tissue_weight_contour_curves_pattern(Operator):
                 except:
                     iso_rad = (self.min_rad + self.max_rad)/2
                 radius = radius + [iso_rad]*len(verts)
-        print("Contour Curves, points computing: " + str(timeit.default_timer() - step_time) + " sec")
+        #print("Contour Curves, points computing: " + str(timeit.default_timer() - step_time) + " sec")
         step_time = timeit.default_timer()
 
         if len(total_segments) > 0:
             step_time = timeit.default_timer()
             ordered_points = find_curves(total_segments, len(total_verts))
-            print("Contour Curves, point ordered in: " + str(timeit.default_timer() - step_time) + " sec")
+            #print("Contour Curves, point ordered in: " + str(timeit.default_timer() - step_time) + " sec")
             step_time = timeit.default_timer()
             crv = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', self.remove_open_curves, merge_distance=self.clean_distance)
             context.view_layer.objects.active = crv
@@ -2241,7 +2214,7 @@ class tissue_weight_contour_curves_pattern(Operator):
             crv.select_set(True)
             ob0.select_set(False)
             crv.matrix_world = ob0.matrix_world
-            print("Contour Curves, curves created in: " + str(timeit.default_timer() - step_time) + " sec")
+            #print("Contour Curves, curves created in: " + str(timeit.default_timer() - step_time) + " sec")
         else:
             bm.free()
             self.report({'ERROR'}, "There are no values in the chosen range")
@@ -2755,7 +2728,7 @@ class TISSUE_PT_weight(Panel):
         col.operator("object.edges_bending", icon="DRIVER_ROTATIONAL_DIFFERENCE")#"MOD_SIMPLEDEFORM")
         col.separator()
         col.label(text="Weight Contour:")
-        col.operator("object.weight_contour_curves", icon="MOD_CURVE")
+        #col.operator("object.weight_contour_curves", icon="MOD_CURVE")
         col.operator("object.tissue_weight_contour_curves_pattern", icon="FORCE_TURBULENCE")
         col.operator("object.weight_contour_displace", icon="MOD_DISPLACE")
         col.operator("object.weight_contour_mask", icon="MOD_MASK")
@@ -3228,7 +3201,7 @@ if False:
         # pattern displace
         #mult = 1 if c%2 == 0 else -1
         if c%(in_steps + out_steps) < in_steps:
-            mult = -in_displace
+            mult = in_displace
         else:
             mult = out_displace
         pattern_value = pattern0 + (pattern1-pattern0)*param
@@ -3295,7 +3268,7 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
     # pattern displace
     #mult = 1 if c%2 == 0 else -1
     if c%(operator.in_steps + operator.out_steps) < operator.in_steps:
-        mult = -operator.in_displace
+        mult = operator.in_displace
     else:
         mult = operator.out_displace
     pattern_value = pattern0 + (pattern1-pattern0)*param
