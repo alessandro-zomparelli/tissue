@@ -482,6 +482,12 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Subdivisions levels for Patch tessellation after the first iteration",
             update = anim_tessellate_active
             )
+    use_origin_offset : BoolProperty(
+            name="Align to Origins",
+            default=False,
+            description="Define offset according to components origin",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -531,6 +537,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.fill_frame_mat = operator.fill_frame_mat
     ob.tissue_tessellate.cap_material_index = operator.cap_material_index
     ob.tissue_tessellate.patch_subs = operator.patch_subs
+    ob.tissue_tessellate.use_origin_offset = operator.use_origin_offset
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -581,12 +588,13 @@ def load_parameters(operator, ob):
     operator.fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
     operator.frame_thickness = ob.tissue_tessellate.frame_thickness
     operator.frame_mode = ob.tissue_tessellate.frame_mode
+    operator.use_origin_offset = ob.tissue_tessellate.use_origin_offset
     return ob
 
 def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
                scale_mode, rotation_mode, rotation_shift, rand_seed, bool_vertex_group,
                bool_selection, bool_shapekeys, bool_material_id, material_id,
-               normals_mode, bounds_x, bounds_y):
+               normals_mode, bounds_x, bounds_y, use_origin_offset):
     random.seed(rand_seed)
 
     if normals_mode == 'CUSTOM':
@@ -835,13 +843,17 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     for v in me1.vertices:
         if mode == 'BOUNDS':
             vert = v.co - min_c  # (ob1.matrix_world * v.co) - min_c
+            if use_origin_offset: vert[2] = v.co[2]
             vert[0] = vert[0] / bb[0] if bb[0] != 0 else 0.5
             vert[1] = vert[1] / bb[1] if bb[1] != 0 else 0.5
             if scale_mode == 'CONSTANT':
                 vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
-                vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
+                if not use_origin_offset:
+                    vert[2] = vert[2] - 0.5 + offset * 0.5
             else:
-                vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+                if not use_origin_offset:
+                    vert[2] = vert[2] + (-0.5 + offset * 0.5) * bb[2]
+            vert[2] *= zscale
         elif mode == 'LOCAL':
             vert = v.co.xyz
             vert[2] *= zscale
@@ -1005,13 +1017,17 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
             for i, sk_v in enumerate(source):
                 if mode == 'BOUNDS':
                     sk_vert = sk_v.co - min_c
+                    if use_origin_offset: sk_vert[2] = sk_v.co[2]
                     sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
                     sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
                     if scale_mode == 'CONSTANT':
                         sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
-                        sk_vert[2] = (sk_vert[2] - 0.5 + offset * 0.5) * zscale
+                        if not use_origin_offset:
+                            sk_vert[2] = sk_vert[2] - 0.5 + offset * 0.5
                     else:
-                        sk_vert[2] = (sk_vert[2] + (- 0.5 + offset * 0.5) * bb[2]) * zscale
+                        if not use_origin_offset:
+                            sk_vert[2] = sk_vert[2] + (- 0.5 + offset * 0.5) * bb[2]
+                    sk_vert[2] *= zscale
                 elif mode == 'LOCAL':
                     sk_vert = sk_v.co
                     sk_vert[2] *= zscale
@@ -1351,7 +1367,7 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
 def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
                scale_mode, rotation_mode, rotation_shift, rotation_direction, rand_seed, fill_mode,
                bool_vertex_group, bool_selection, bool_shapekeys,
-               bool_material_id, material_id, normals_mode, bounds_x, bounds_y):
+               bool_material_id, material_id, normals_mode, bounds_x, bounds_y, use_origin_offset):
 
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
     random.seed(rand_seed)
@@ -1590,12 +1606,19 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
     if mode == 'BOUNDS':
         vx = (vx - min_c[0]) / bb[0] if bb[0] != 0 else 0.5
         vy = (vy - min_c[1]) / bb[1] if bb[1] != 0 else 0.5
-        vz = vz - min_c[2]
+        if use_origin_offset:
+            offset = 0
+        else:
+            vz = vz - min_c[2]
         if scale_mode == 'CONSTANT':
             vz = vz / bb[2] if bb[2] != 0 else 0
-            vz = (vz - 0.5 + offset * 0.5) * zscale
+            if not use_origin_offset:
+                vz = (vz - 0.5 + offset * 0.5) * zscale
+            else: vz *= zscale
         else:
-            vz = (vz + (- 0.5 + offset * 0.5) * bb[2]) * zscale
+            if not use_origin_offset:
+                vz = (vz + (- 0.5 + offset * 0.5) * bb[2]) * zscale
+            else: vz *= zscale
         #vz = ((vz - min_c[2]) + (-0.5 + offset * 0.5) * bb[2]) * zscale
     else:
         vz *= zscale
@@ -1642,9 +1665,12 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
                     vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
                     if scale_mode == 'CONSTANT':
                         vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
-                        vert[2] = (vert[2] - 0.5 + offset * 0.5) * zscale
+                        if not use_origin_offset:
+                            vert[2] = vert[2] - 0.5 + offset * 0.5
                     else:
-                        vert[2] = (vert[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+                        if not use_origin_offset:
+                            vert[2] = vert[2] + (-0.5 + offset * 0.5) * bb[2]
+                    vert[2] *= zscale
                 elif mode == 'LOCAL':
                     vert = v.co.xyz
                     vert[2] *= zscale
@@ -2327,6 +2353,11 @@ class tissue_tessellate(Operator):
             min=0,
             description="Subdivisions levels for Patch tessellation after the first iteration"
             )
+    use_origin_offset : BoolProperty(
+            name="Align to Origins",
+            default=False,
+            description="Define offset according to components origin"
+            )
     working_on = ""
 
     def draw(self, context):
@@ -2491,10 +2522,13 @@ class tissue_tessellate(Operator):
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
             if self.mode == 'BOUNDS':
-                col.prop(
+                row = col.row(align=True)
+                row.prop(
                     self, "offset", text="Offset", icon='NONE', expand=False,
                     slider=True, toggle=False, icon_only=False, event=False,
                     full_event=False, emboss=True, index=-1)
+                row.enabled = not self.use_origin_offset
+                col.prop(self, 'use_origin_offset')
 
             # Component XY
             col.separator()
@@ -2879,6 +2913,7 @@ class tissue_update_tessellate(Operator):
             bridge_cuts = ob.tissue_tessellate.bridge_cuts
             cap_material_index = ob.tissue_tessellate.cap_material_index
             patch_subs = ob.tissue_tessellate.patch_subs
+            use_origin_offset = ob.tissue_tessellate.use_origin_offset
         try:
             generator.name
             component.name
@@ -3012,7 +3047,7 @@ class tissue_update_tessellate(Operator):
                             base_ob, ob1, offset, zscale, com_modifiers, mode, scale_mode,
                             rotation_mode, rotation_shift, random_seed, bool_vertex_group,
                             bool_selection, bool_shapekeys, bool_material_id, material_id,
-                            normals_mode, bounds_x, bounds_y
+                            normals_mode, bounds_x, bounds_y, use_origin_offset
                             )
                     if iter > 0:
                         base_ob.modifiers.remove(temp_mod)
@@ -3063,7 +3098,8 @@ class tissue_update_tessellate(Operator):
                             rotation_shift, rotation_direction,
                             random_seed, fill_mode, bool_vertex_group,
                             bool_selection, bool_shapekeys, bool_material_id,
-                            material_id, normals_mode, bounds_x, bounds_y
+                            material_id, normals_mode, bounds_x, bounds_y,
+                            use_origin_offset
                             )
 
                 # if empty or error, continue
@@ -3692,9 +3728,12 @@ class TISSUE_PT_tessellate_thickness(Panel):
                      slider=True, toggle=False, icon_only=False, event=False,
                      full_event=False, emboss=True, index=-1)
             if props.mode == 'BOUNDS':
-                col.prop(props, "offset", text="Offset", icon='NONE', expand=False,
+                row = col.row(align=True)
+                row.prop(props, "offset", text="Offset", icon='NONE', expand=False,
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
+                row.enabled = not props.use_origin_offset
+                col.prop(props, 'use_origin_offset')
 
             # Direction
             col = layout.column(align=True)
