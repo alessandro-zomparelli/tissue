@@ -591,10 +591,25 @@ def load_parameters(operator, ob):
     operator.use_origin_offset = ob.tissue_tessellate.use_origin_offset
     return ob
 
-def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
-               scale_mode, rotation_mode, rotation_shift, rand_seed, bool_vertex_group,
-               bool_selection, bool_shapekeys, bool_material_id, material_id,
-               normals_mode, bounds_x, bounds_y, use_origin_offset):
+def tessellate_patch(_ob0, _ob1, props):
+    offset = props.offset
+    zscale = props.zscale
+    com_modifiers = props.com_modifiers
+    mode = props.mode
+    scale_mode = props.scale_mode
+    rotation_mode = props.rotation_mode
+    rotation_shift = props.rotation_shift
+    rand_seed = props.random_seed
+    bool_vertex_group = props.bool_vertex_group
+    bool_selection = props.bool_selection
+    bool_shapekeys = props.bool_shapekeys
+    bool_material_id = props.bool_material_id
+    material_id = props.material_id
+    normals_mode = props.normals_mode
+    bounds_x = props.bounds_x
+    bounds_y = props.bounds_y
+    use_origin_offset = props.use_origin_offset
+
     random.seed(rand_seed)
 
     if normals_mode == 'CUSTOM':
@@ -1363,13 +1378,33 @@ def tessellate_patch(_ob0, _ob1, offset, zscale, com_modifiers, mode,
     new_patch.data.update() # solve normals issues if Smooth Shading is on
     return new_patch
 
-def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers, mode,
-               scale_mode, rotation_mode, rotation_shift, rotation_direction, rand_seed, fill_mode,
-               bool_vertex_group, bool_selection, bool_shapekeys,
-               bool_material_id, material_id, normals_mode, bounds_x, bounds_y, use_origin_offset):
+
+def tessellate_original(_ob0, _ob1, props):
+    offset = props.offset
+    zscale = props.zscale
+    gen_modifiers = props.gen_modifiers
+    com_modifiers = props.com_modifiers
+    mode = props.mode
+    scale_mode = props.scale_mode
+    rotation_mode = props.rotation_mode
+    rotation_shift = props.rotation_shift
+    rotation_direction = props.rotation_direction
+    rand_seed = props.random_seed
+    fill_mode = props.fill_mode
+    bool_vertex_group = props.bool_vertex_group
+    bool_selection = props.bool_selection
+    bool_shapekeys = props.bool_shapekeys
+    bool_material_id = props.bool_material_id
+    material_id = props.material_id
+    normals_mode = props.normals_mode
+    bounds_x = props.bounds_x
+    bounds_y = props.bounds_y
+    use_origin_offset = props.use_origin_offset
 
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
     random.seed(rand_seed)
+
+    if len(_ob0.vertex_groups) == 0: bool_vertex_group = False
 
     if bool_shapekeys:
         try:
@@ -1382,13 +1417,21 @@ def tessellate_original(_ob0, _ob1, offset, zscale, gen_modifiers, com_modifiers
 
     if normals_mode == 'CUSTOM':
         if _ob0.data.shape_keys != None:
-            ob0_sk = convert_object_to_mesh(_ob0, True, True)
+            if not gen_modifiers:
+                for m in _ob0.modifiers:
+                    m.show_viewport = False
+            if fill_mode == 'FAN': ob0_sk = convert_to_fan(_ob0, props, True)
+            elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(_ob0, props, True)
+            else: ob0_sk = convert_object_to_mesh(_ob0, True, True)
             me0_sk = ob0_sk.data
             key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
             for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
         else: normals_mode == 'VERTS'
 
-    ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
+    if fill_mode == 'FAN': ob0 = convert_to_fan(_ob0, props, gen_modifiers)
+    elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, props, gen_modifiers)
+    else: ob0 = convert_object_to_mesh(_ob0, True, True)
+    #ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
     me0 = ob0.data
     ob1 = convert_object_to_mesh(_ob1, com_modifiers, True)
     me1 = ob1.data
@@ -2997,8 +3040,6 @@ class tissue_update_tessellate(Operator):
                 self.report({'ERROR'}, message)
                 return {'CANCELLED'}
 
-
-
         iter_objects = [base_ob]
         ob_location = ob.location
         ob_matrix_world = ob.matrix_world
@@ -3044,62 +3085,14 @@ class tissue_update_tessellate(Operator):
                         temp_mod = base_ob.modifiers['Tissue_Subsurf']
                     # patch tessellation
                     new_ob = tessellate_patch(
-                            base_ob, ob1, offset, zscale, com_modifiers, mode, scale_mode,
-                            rotation_mode, rotation_shift, random_seed, bool_vertex_group,
-                            bool_selection, bool_shapekeys, bool_material_id, material_id,
-                            normals_mode, bounds_x, bounds_y, use_origin_offset
+                            base_ob, ob1, ob.tissue_tessellate
                             )
                     if iter > 0:
                         base_ob.modifiers.remove(temp_mod)
                 else:
                     if iter != 0: gen_modifiers = True
-                    ### FRAME and FAN ###
-                    if fill_mode in ('FRAME','FAN'):
-
-                        if fill_mode == 'FRAME': convert_function = convert_to_frame
-                        else: convert_function = convert_to_fan
-                        fill_mode = 'QUAD'
-
-                        if normals_mode == 'CUSTOM' and base_ob.data.shape_keys != None:
-                            ## base key
-                            sk_values = [sk.value for sk in base_ob.data.shape_keys.key_blocks]
-                            for sk in ob0.data.shape_keys.key_blocks: sk.value = 0
-                            _base_ob = convert_function(base_ob, ob.tissue_tessellate, gen_modifiers)
-                            for i, sk in enumerate(ob0.data.shape_keys.key_blocks):
-                                sk.value = sk_values[i]
-                            ## key 1
-                            # hide modifiers
-                            if not gen_modifiers and len(base_ob.modifiers) > 0:
-                                mod_visibility = [m.show_viewport for m in base_ob.modifiers]
-                                for m in base_ob.modifiers: m.show_viewport = False
-                                base_ob.modifiers.update()
-                            base_ob_sk = convert_function(ob0, ob.tissue_tessellate, True)
-                            ## combine shapekeys
-                            _base_ob.shape_key_add(name='Basis', from_mix=False)
-                            _base_ob.shape_key_add(name='Key1', from_mix=False)
-                            sk_block = _base_ob.data.shape_keys.key_blocks[1]
-                            sk_block.value = 1
-                            for vert, sk in zip(base_ob_sk.data.vertices, sk_block.data):
-                                sk.co = vert.co
-                            bpy.data.objects.remove(base_ob_sk)
-                            # set original modifiers
-                            if not gen_modifiers and len(base_ob.modifiers) > 0:
-                                for i,m in enumerate(base_ob.modifiers):
-                                    m.show_viewport = mod_visibility[i]
-                                base_ob.modifiers.update()
-                        else:
-                            _base_ob = convert_function(base_ob, ob.tissue_tessellate, gen_modifiers)
-                        bpy.data.objects.remove(base_ob)
-                        base_ob = _base_ob
-                    # quad tessellation
                     new_ob = tessellate_original(
-                            base_ob, ob1, offset, zscale, gen_modifiers,
-                            com_modifiers, mode, scale_mode, rotation_mode,
-                            rotation_shift, rotation_direction,
-                            random_seed, fill_mode, bool_vertex_group,
-                            bool_selection, bool_shapekeys, bool_material_id,
-                            material_id, normals_mode, bounds_x, bounds_y,
-                            use_origin_offset
+                            base_ob, ob1, ob.tissue_tessellate
                             )
 
                 # if empty or error, continue
@@ -4222,7 +4215,6 @@ def convert_to_frame(ob, props, use_modifiers):
     #for f in bm.faces: f.select_set(f not in new_faces)
     for f in original_faces: bm.faces.remove(f)
     bm.to_mesh(new_ob.data)
-    bm.free()
     # propagate vertex groups
     if props.bool_vertex_group:
         base_vg = []
@@ -4239,6 +4231,7 @@ def convert_to_frame(ob, props, use_modifiers):
             for ii, jj in zip(vert_ids, new_vert_ids):
                 vg.add([jj], base_vg[vg_id][ii], 'REPLACE')
     new_ob.data.update()
+    bm.free()
     return new_ob
 
 def convert_to_fan(ob, props, use_modifiers):
