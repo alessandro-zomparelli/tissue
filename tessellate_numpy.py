@@ -262,13 +262,20 @@ class tissue_tessellate_prop(PropertyGroup):
         #default="",
         update = anim_tessellate_active
         )
+    target : PointerProperty(
+        type=bpy.types.Object,
+        name="",
+        description="Target object for custom direction",
+        #default="",
+        update = anim_tessellate_active
+        )
     bool_random : BoolProperty(
         name="Randomize",
         default=False,
         description="Randomize component rotation",
         update = anim_tessellate_active
         )
-    random_seed : IntProperty(
+    rand_seed : IntProperty(
         name="Seed",
         default=0,
         soft_min=0,
@@ -351,8 +358,9 @@ class tissue_tessellate_prop(PropertyGroup):
     normals_mode : EnumProperty(
         items=(
             ('VERTS', 'Normals', 'Consistent direction based on vertices normal'),
-            ('FACES', 'Individual Faces', 'Based on individual faces normal'),
-            ('CUSTOM', 'Custom', "According to Base object's shape keys")),
+            ('FACES', 'Faces', 'Based on individual faces normal'),
+            ('SHAPEKEYS', 'Keys', "According to base object's shape keys"),
+            ('OBJECT', 'Object', "According to a target object")),
         default='VERTS',
         name="Direction",
         update = anim_tessellate_active
@@ -507,7 +515,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.merge_thres = operator.merge_thres
     ob.tissue_tessellate.scale_mode = operator.scale_mode
     ob.tissue_tessellate.bool_random = operator.bool_random
-    ob.tissue_tessellate.random_seed = operator.random_seed
+    ob.tissue_tessellate.rand_seed = operator.rand_seed
     ob.tissue_tessellate.fill_mode = operator.fill_mode
     ob.tissue_tessellate.bool_vertex_group = operator.bool_vertex_group
     ob.tissue_tessellate.bool_selection = operator.bool_selection
@@ -558,7 +566,7 @@ def load_parameters(operator, ob):
     operator.merge_thres = ob.tissue_tessellate.merge_thres
     operator.scale_mode = ob.tissue_tessellate.scale_mode
     operator.bool_random = ob.tissue_tessellate.bool_random
-    operator.random_seed = ob.tissue_tessellate.random_seed
+    operator.rand_seed = ob.tissue_tessellate.rand_seed
     operator.fill_mode = ob.tissue_tessellate.fill_mode
     operator.bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
     operator.bool_selection = ob.tissue_tessellate.bool_selection
@@ -591,48 +599,61 @@ def load_parameters(operator, ob):
     operator.use_origin_offset = ob.tissue_tessellate.use_origin_offset
     return ob
 
-def tessellate_patch(_ob0, _ob1, props):
-    offset = props.offset
-    zscale = props.zscale
-    com_modifiers = props.com_modifiers
-    mode = props.mode
-    scale_mode = props.scale_mode
-    rotation_mode = props.rotation_mode
-    rotation_shift = props.rotation_shift
-    rand_seed = props.random_seed
-    bool_vertex_group = props.bool_vertex_group
-    bool_selection = props.bool_selection
-    bool_shapekeys = props.bool_shapekeys
-    bool_material_id = props.bool_material_id
-    material_id = props.material_id
-    normals_mode = props.normals_mode
-    bounds_x = props.bounds_x
-    bounds_y = props.bounds_y
-    use_origin_offset = props.use_origin_offset
+def tessellate_patch(props):
+    _ob0 = props['generator']
+    _ob1 = props['component']
+    offset = props['offset']
+    zscale = props['zscale']
+    com_modifiers = props['com_modifiers']
+    mode = props['mode']
+    scale_mode = props['scale_mode']
+    rotation_mode = props['rotation_mode']
+    rotation_shift = props['rotation_shift']
+    rand_seed = props['rand_seed']
+    bool_vertex_group = props['bool_vertex_group']
+    bool_selection = props['bool_selection']
+    bool_shapekeys = props['bool_shapekeys']
+    bool_material_id = props['bool_material_id']
+    material_id = props['material_id']
+    normals_mode = props['normals_mode']
+    bounds_x = props['bounds_x']
+    bounds_y = props['bounds_y']
+    use_origin_offset = props['use_origin_offset']
+    target = props['target']
+    if normals_mode == 'SHAPEKEYS':
+        if _ob0.data.shape_keys != None:
+            target = _ob0
+        else: normals_mode = 'VERTS'
+    if normals_mode == 'OBJECT' and target == None: normals_mode = 'VERTS'
 
     random.seed(rand_seed)
 
-    if normals_mode == 'CUSTOM':
-        if _ob0.data.shape_keys != None:
-            ob0_sk = convert_object_to_mesh(_ob0)
-            me0_sk = ob0_sk.data
+    if normals_mode in ('SHAPEKEYS','OBJECT'):
+        ob0_sk = convert_object_to_mesh(target, True, True)
+        me0_sk = ob0_sk.data
+        if normals_mode == 'SHAPEKEYS':
             key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
             for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
-        else: normals_mode = 'VERTS'
 
     ob0 = convert_object_to_mesh(_ob0)
     me0 = ob0.data
 
     # base normals
     normals0 = []
-    if normals_mode == 'CUSTOM':
-        for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
-        for v0, v1 in zip(ob0.data.vertices, me0_sk.vertices):
-            normals0.append(v1.co - v0.co)
-        bpy.data.objects.remove(ob0_sk)
-    else:
-        ob0.data.update()
-        normals0 = [v.normal for v in ob0.data.vertices]
+    if normals_mode in ('SHAPEKEYS','OBJECT'):
+        if len(me0_sk.vertices) != len(me0.vertices):
+            normals_mode = 'VERTS'
+            print("Tissue: Base mesh and Target mesh doesn't have the same amount of vertices")
+            bpy.data.objects.remove(ob0_sk)
+        else:
+            if normals_mode == 'SHAPEKEYS':
+                for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
+            for v0, v1 in zip(me0.vertices, me0_sk.vertices):
+                normals0.append(v1.co - v0.co)
+            bpy.data.objects.remove(ob0_sk)
+    if normals_mode in ('VERTS','FACES'):
+        me0.update()
+        normals0 = [v.normal for v in me0.vertices]
 
 #    ob0 = convert_object_to_mesh(_ob0)
     ob0.name = _ob0.name + "_apply_mod"
@@ -1378,28 +1399,69 @@ def tessellate_patch(_ob0, _ob1, props):
     new_patch.data.update() # solve normals issues if Smooth Shading is on
     return new_patch
 
+def props_to_dict(props):
+    tessellate_dict = {}
+    tessellate_dict['generator'] = props.generator
+    tessellate_dict['component'] = props.component
+    tessellate_dict['offset'] = props.offset
+    tessellate_dict['zscale'] = props.zscale
+    tessellate_dict['gen_modifiers'] = props.gen_modifiers
+    tessellate_dict['com_modifiers'] = props.com_modifiers
+    tessellate_dict['mode'] = props.mode
+    tessellate_dict['scale_mode'] = props.scale_mode
+    tessellate_dict['rotation_mode'] = props.rotation_mode
+    tessellate_dict['rotation_shift'] = props.rotation_shift
+    tessellate_dict['rotation_direction'] = props.rotation_direction
+    tessellate_dict['rand_seed'] = props.rand_seed
+    tessellate_dict['fill_mode'] = props.fill_mode
+    tessellate_dict['bool_vertex_group'] = props.bool_vertex_group
+    tessellate_dict['bool_selection'] = props.bool_selection
+    tessellate_dict['bool_shapekeys'] = props.bool_shapekeys
+    tessellate_dict['bool_material_id'] = props.bool_material_id
+    tessellate_dict['material_id'] = props.material_id
+    tessellate_dict['normals_mode'] = props.normals_mode
+    tessellate_dict['bounds_x'] = props.bounds_x
+    tessellate_dict['bounds_y'] = props.bounds_y
+    tessellate_dict['use_origin_offset'] = props.use_origin_offset
+    tessellate_dict['target'] = props.target
+    tessellate_dict['frame_thickness'] = props.frame_thickness
+    tessellate_dict['frame_mode'] = props.frame_mode
+    tessellate_dict['frame_boundary'] = props.frame_boundary
+    tessellate_dict['fill_frame'] = props.fill_frame
+    tessellate_dict['frame_boundary_mat'] = props.frame_boundary_mat
+    tessellate_dict['fill_frame_mat'] = props.fill_frame_mat
+    return tessellate_dict
 
-def tessellate_original(_ob0, _ob1, props):
-    offset = props.offset
-    zscale = props.zscale
-    gen_modifiers = props.gen_modifiers
-    com_modifiers = props.com_modifiers
-    mode = props.mode
-    scale_mode = props.scale_mode
-    rotation_mode = props.rotation_mode
-    rotation_shift = props.rotation_shift
-    rotation_direction = props.rotation_direction
-    rand_seed = props.random_seed
-    fill_mode = props.fill_mode
-    bool_vertex_group = props.bool_vertex_group
-    bool_selection = props.bool_selection
-    bool_shapekeys = props.bool_shapekeys
-    bool_material_id = props.bool_material_id
-    material_id = props.material_id
-    normals_mode = props.normals_mode
-    bounds_x = props.bounds_x
-    bounds_y = props.bounds_y
-    use_origin_offset = props.use_origin_offset
+def tessellate_original(props):
+    _ob0 = props['generator']
+    _ob1 = props['component']
+    offset = props['offset']
+    zscale = props['zscale']
+    gen_modifiers = props['gen_modifiers']
+    com_modifiers = props['com_modifiers']
+    mode = props['mode']
+    scale_mode = props['scale_mode']
+    rotation_mode = props['rotation_mode']
+    rotation_shift = props['rotation_shift']
+    rotation_direction = props['rotation_direction']
+    rand_seed = props['rand_seed']
+    fill_mode = props['fill_mode']
+    bool_vertex_group = props['bool_vertex_group']
+    bool_selection = props['bool_selection']
+    bool_shapekeys = props['bool_shapekeys']
+    bool_material_id = props['bool_material_id']
+    material_id = props['material_id']
+    normals_mode = props['normals_mode']
+    bounds_x = props['bounds_x']
+    bounds_y = props['bounds_y']
+    use_origin_offset = props['use_origin_offset']
+    target = props['target']
+    custom_mode = 'OBJECT'
+    if normals_mode == 'SHAPEKEYS':
+        if _ob0.data.shape_keys != None:
+            target = _ob0
+        else: normals_mode = 'VERTS'
+    if normals_mode == 'OBJECT' and target == None: normals_mode = 'VERTS'
 
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
     random.seed(rand_seed)
@@ -1415,18 +1477,18 @@ def tessellate_original(_ob0, _ob1, props):
         except:
             bool_shapekeys = False
 
-    if normals_mode == 'CUSTOM':
-        if _ob0.data.shape_keys != None:
-            if not gen_modifiers:
-                for m in _ob0.modifiers:
-                    m.show_viewport = False
-            if fill_mode == 'FAN': ob0_sk = convert_to_fan(_ob0, props, True)
-            elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(_ob0, props, True)
-            else: ob0_sk = convert_object_to_mesh(_ob0, True, True)
-            me0_sk = ob0_sk.data
+    if normals_mode in ('SHAPEKEYS', 'OBJECT'):
+        if normals_mode == 'SHAPEKEYS' and not gen_modifiers:
+            target = _ob0
+            for m in _ob0.modifiers:
+                m.show_viewport = False
+        if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, props, True)
+        elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, True)
+        else: ob0_sk = convert_object_to_mesh(target, True, True)
+        me0_sk = ob0_sk.data
+        if normals_mode == 'SHAPEKEYS':
             key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
             for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
-        else: normals_mode == 'VERTS'
 
     if fill_mode == 'FAN': ob0 = convert_to_fan(_ob0, props, gen_modifiers)
     elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, props, gen_modifiers)
@@ -1438,12 +1500,19 @@ def tessellate_original(_ob0, _ob1, props):
 
     # base normals
     normals0 = []
-    if normals_mode == 'CUSTOM' and _ob0.data.shape_keys != None:
-        for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
-        for v0, v1 in zip(me0.vertices, me0_sk.vertices):
-            normals0.append(v1.co - v0.co)
-        bpy.data.objects.remove(ob0_sk)
-    else:
+    if normals_mode in ('SHAPEKEYS', 'OBJECT'):
+        if len(me0_sk.vertices) != len(me0.vertices):
+            normals_mode = 'VERTS'
+            print("Tissue: Base mesh and Target mesh doesn't have the same amount of vertices")
+            bpy.data.objects.remove(ob0_sk)
+        else:
+            if normals_mode == 'SHAPEKEYS':
+                for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
+            for v0, v1 in zip(me0.vertices, me0_sk.vertices):
+                normals0.append(v1.co - v0.co)
+            bpy.data.objects.remove(ob0_sk)
+
+    if normals_mode in ('VERTS','FACES'):
         me0.update()
         normals0 = [v.normal for v in me0.vertices]
 
@@ -1480,9 +1549,7 @@ def tessellate_original(_ob0, _ob1, props):
         bpy.data.meshes.remove(me0)
         return 0
 
-
     if mode != 'BOUNDS':
-
         bpy.ops.object.select_all(action='DESELECT')
         for o in bpy.context.view_layer.objects: o.select_set(False)
         bpy.context.view_layer.objects.active = ob1
@@ -2209,7 +2276,7 @@ class tissue_tessellate(Operator):
             default=False,
             description="Randomize component rotation"
             )
-    random_seed : IntProperty(
+    rand_seed : IntProperty(
             name="Seed",
             default=0,
             soft_min=0,
@@ -2253,6 +2320,11 @@ class tissue_tessellate(Operator):
             description="Component object for the tessellation",
             default = ""
             )
+    target : StringProperty(
+            name="",
+            description="Target object for custom direction",
+            default = ""
+            )
     bool_material_id : BoolProperty(
             name="Tessellation on Material ID",
             default=False,
@@ -2291,8 +2363,9 @@ class tissue_tessellate(Operator):
     normals_mode : EnumProperty(
             items=(
                 ('VERTS', 'Normals', 'Consistent direction based on vertices normal'),
-                ('FACES', 'Individual Faces', 'Based on individual faces normal'),
-                ('CUSTOM', 'Custom', "According to Base object's shape keys")),
+                ('FACES', 'Faces', 'Based on individual faces normal'),
+                ('SHAPEKEYS', 'Keys', "According to base object's shape keys"),
+                ('OBJECT', 'Object', "According to a target object")),
             default='VERTS',
             name="Direction"
             )
@@ -2642,7 +2715,7 @@ class tissue_tessellate(Operator):
                               slider=True, toggle=False, icon_only=False, event=False,
                               full_event=False, emboss=True, index=-1)
                 if self.rotation_mode == 'RANDOM':
-                    col.prop(self, "random_seed")
+                    col.prop(self, "rand_seed")
                 else:
                     col.prop(self, "rotation_shift")
 
@@ -2926,7 +2999,7 @@ class tissue_update_tessellate(Operator):
             gen_modifiers = ob.tissue_tessellate.gen_modifiers
             com_modifiers = ob.tissue_tessellate.com_modifiers
             bool_random = ob.tissue_tessellate.bool_random
-            random_seed = ob.tissue_tessellate.random_seed
+            rand_seed = ob.tissue_tessellate.rand_seed
             fill_mode = ob.tissue_tessellate.fill_mode
             bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
             bool_selection = ob.tissue_tessellate.bool_selection
@@ -2958,6 +3031,7 @@ class tissue_update_tessellate(Operator):
             cap_material_index = ob.tissue_tessellate.cap_material_index
             patch_subs = ob.tissue_tessellate.patch_subs
             use_origin_offset = ob.tissue_tessellate.use_origin_offset
+            target = ob.tissue_tessellate.target
         try:
             generator.name
             component.name
@@ -2965,6 +3039,8 @@ class tissue_update_tessellate(Operator):
             self.report({'ERROR'},
                         "Active object must be Tessellate before Update")
             return {'CANCELLED'}
+
+        tess_props = props_to_dict(ob.tissue_tessellate)
 
         # Solve Local View issues
         local_spaces = []
@@ -3048,7 +3124,8 @@ class tissue_update_tessellate(Operator):
         for iter in range(iterations):
 
             if iter > 0 and len(iter_objects) == 0: break
-            if iter > 0 and normals_mode == 'CUSTOM': normals_mode = 'VERTS'
+            if iter > 0 and normals_mode in ('SHAPEKEYS','OBJECT'):
+                tess_props['normals_mode'] = 'VERTS'
             same_iteration = []
             matched_materials = []
             # iterate base object materials (needed for multi-components)
@@ -3084,16 +3161,12 @@ class tissue_update_tessellate(Operator):
                         base_ob.modifiers['Tissue_Subsurf'].levels = patch_subs
                         temp_mod = base_ob.modifiers['Tissue_Subsurf']
                     # patch tessellation
-                    new_ob = tessellate_patch(
-                            base_ob, ob1, ob.tissue_tessellate
-                            )
+                    new_ob = tessellate_patch(tess_props)
                     if iter > 0:
                         base_ob.modifiers.remove(temp_mod)
                 else:
                     if iter != 0: gen_modifiers = True
-                    new_ob = tessellate_original(
-                            base_ob, ob1, ob.tissue_tessellate
-                            )
+                    new_ob = tessellate_original(tess_props)
 
                 # if empty or error, continue
                 if type(new_ob) is not bpy.types.Object:
@@ -3632,7 +3705,7 @@ class TISSUE_PT_tessellate_rotation(Panel):
                           slider=True, toggle=False, icon_only=False, event=False,
                           full_event=False, emboss=True, index=-1)
             if props.rotation_mode == 'RANDOM':
-                col.prop(props, "random_seed")
+                col.prop(props, "rand_seed")
             else:
                 col.prop(props, "rotation_shift")
 
@@ -3708,6 +3781,10 @@ class TISSUE_PT_tessellate_thickness(Panel):
             props, "normals_mode", text="Direction", icon='NONE', expand=True,
                 slider=False, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
+            if props.normals_mode == 'OBJECT':
+                col.separator()
+                row = col.row(align=True)
+                row.prop_search(props, "target", context.scene, "objects", text='Target')
 
 
 class TISSUE_PT_tessellate_options(Panel):
@@ -4052,7 +4129,7 @@ def convert_to_frame(ob, props, use_modifiers):
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
-    if props.bool_selection:
+    if props['bool_selection']:
         original_faces = [f for f in bm.faces if f.select]
     else:
         original_faces = list(bm.faces)
@@ -4063,7 +4140,7 @@ def convert_to_frame(ob, props, use_modifiers):
     neigh_face_center = []
     face_normals = []
     # append boundary loops
-    if props.frame_boundary:
+    if props['frame_boundary']:
         #selected_edges = [e for e in bm.edges if e.select]
         selected_edges = [e for e in bm.edges if e.is_boundary]
         if len(selected_edges) > 0:
@@ -4071,11 +4148,11 @@ def convert_to_frame(ob, props, use_modifiers):
             count = 0
             e0 = selected_edges[0]
             face = e0.link_faces[0]
-            boundary_mat = [face.material_index + props.frame_boundary_mat]
+            boundary_mat = [face.material_index + props['frame_boundary_mat']]
             face_center = [face.calc_center_median()]
             loop_normals = [face.normal]
             selected_edges = selected_edges[1:]
-            if props.bool_vertex_group:
+            if props['bool_vertex_group']:
                 n_verts = len(new_ob.data.vertices)
                 base_vg = [get_weight(vg,n_verts) for vg in new_ob.vertex_groups]
             while True:
@@ -4090,7 +4167,7 @@ def convert_to_frame(ob, props, use_modifiers):
                         loop.append(new_vert)
                         e0 = e1
                         face = e0.link_faces[0]
-                        boundary_mat.append(face.material_index + props.frame_boundary_mat)
+                        boundary_mat.append(face.material_index + props['frame_boundary_mat'])
                         face_center.append(face.calc_center_median())
                         loop_normals.append(face.normal)
                         selected_edges.remove(e0)
@@ -4105,7 +4182,7 @@ def convert_to_frame(ob, props, use_modifiers):
                         neigh_face_center.append(face_center)
                         face_normals.append(loop_normals)
                         face = e0.link_faces[0]
-                        boundary_mat = [face.material_index + props.frame_boundary_mat]
+                        boundary_mat = [face.material_index + props['frame_boundary_mat']]
                         face_center = [face.calc_center_median()]
                         loop_normals = [face.normal]
                     except: break
@@ -4124,7 +4201,7 @@ def convert_to_frame(ob, props, use_modifiers):
         face_normals.append([f.normal for v in loop])
 
     # calc areas for relative frame mode
-    if props.frame_mode == 'RELATIVE':
+    if props['frame_mode'] == 'RELATIVE':
         verts_area = []
         for v in bm.verts:
             linked_faces = v.link_faces
@@ -4157,7 +4234,7 @@ def convert_to_frame(ob, props, use_modifiers):
             normal = face_normals[loop_index][i]
             tan0 = normal.cross(vec0)
             tan1 = normal.cross(vec1)
-            tangent = (tan0 + tan1).normalized()/sin(ang)*props.frame_thickness
+            tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']
             tangents.append(tangent)
 
         # calc correct direction for boundaries
@@ -4174,7 +4251,7 @@ def convert_to_frame(ob, props, use_modifiers):
         # add vertices
         for i in range(len(loop)):
             vert = loop_ext[i+1]
-            if props.frame_mode == 'RELATIVE': area = verts_area[vert.index]
+            if props['frame_mode'] == 'RELATIVE': area = verts_area[vert.index]
             else: area = 1
             new_co = vert.co + tangents[i] * mult * area
             # add vertex
@@ -4197,7 +4274,7 @@ def convert_to_frame(ob, props, use_modifiers):
              new_face.select = True
              new_faces.append(new_face)
         # fill frame
-        if props.fill_frame and not is_boundary:
+        if props['fill_frame'] and not is_boundary:
             n_verts = len(new_loop)-1
             loop_center = Vector((0,0,0))
             for v in new_loop[1:]: loop_center += v.co
@@ -4208,7 +4285,7 @@ def convert_to_frame(ob, props, use_modifiers):
                 v1 = new_loop[i]
                 face_verts = [v1,v0,center]
                 new_face = bm.faces.new(face_verts)
-                new_face.material_index = materials[i] + props.fill_frame_mat
+                new_face.material_index = materials[i] + props['fill_frame_mat']
                 new_face.select = True
                 new_faces.append(new_face)
     #bpy.ops.object.mode_set(mode='OBJECT')
@@ -4216,7 +4293,7 @@ def convert_to_frame(ob, props, use_modifiers):
     for f in original_faces: bm.faces.remove(f)
     bm.to_mesh(new_ob.data)
     # propagate vertex groups
-    if props.bool_vertex_group:
+    if props['bool_vertex_group']:
         base_vg = []
         for vg in new_ob.vertex_groups:
             vertex_group = []
@@ -4245,7 +4322,7 @@ def convert_to_fan(ob, props, use_modifiers):
 
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_mode(type='FACE')
-    if not props.bool_selection:
+    if not props['bool_selection']:
         bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.mesh.poke()
     bpy.ops.object.mode_set(mode='OBJECT')
