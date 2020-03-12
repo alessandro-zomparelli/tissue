@@ -379,6 +379,14 @@ class tissue_tessellate_prop(PropertyGroup):
         name="Warning Message",
         default=""
         )
+    warning_message_thickness : StringProperty(
+        name="Warning Message Thickness",
+        default=""
+        )
+    warning_message_merge : StringProperty(
+        name="Warning Message Merge",
+        default=""
+        )
     bounds_x : EnumProperty(
             items=(
                 ('EXTEND', 'Extend', 'Default X coordinates'),
@@ -503,6 +511,8 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_dependencies = operator.bool_dependencies
     ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
     ob.tissue_tessellate.component = bpy.data.objects[operator.component]
+    if operator.target in bpy.data.objects.keys():
+        ob.tissue_tessellate.target = bpy.data.objects[operator.target]
     ob.tissue_tessellate.zscale = operator.zscale
     ob.tissue_tessellate.offset = operator.offset
     ob.tissue_tessellate.gen_modifiers = operator.gen_modifiers
@@ -599,7 +609,43 @@ def load_parameters(operator, ob):
     operator.use_origin_offset = ob.tissue_tessellate.use_origin_offset
     return ob
 
+def props_to_dict(ob):
+    props = ob.tissue_tessellate
+    tessellate_dict = {}
+    tessellate_dict['self'] = ob
+    tessellate_dict['generator'] = props.generator
+    tessellate_dict['component'] = props.component
+    tessellate_dict['offset'] = props.offset
+    tessellate_dict['zscale'] = props.zscale
+    tessellate_dict['gen_modifiers'] = props.gen_modifiers
+    tessellate_dict['com_modifiers'] = props.com_modifiers
+    tessellate_dict['mode'] = props.mode
+    tessellate_dict['scale_mode'] = props.scale_mode
+    tessellate_dict['rotation_mode'] = props.rotation_mode
+    tessellate_dict['rotation_shift'] = props.rotation_shift
+    tessellate_dict['rotation_direction'] = props.rotation_direction
+    tessellate_dict['rand_seed'] = props.rand_seed
+    tessellate_dict['fill_mode'] = props.fill_mode
+    tessellate_dict['bool_vertex_group'] = props.bool_vertex_group
+    tessellate_dict['bool_selection'] = props.bool_selection
+    tessellate_dict['bool_shapekeys'] = props.bool_shapekeys
+    tessellate_dict['bool_material_id'] = props.bool_material_id
+    tessellate_dict['material_id'] = props.material_id
+    tessellate_dict['normals_mode'] = props.normals_mode
+    tessellate_dict['bounds_x'] = props.bounds_x
+    tessellate_dict['bounds_y'] = props.bounds_y
+    tessellate_dict['use_origin_offset'] = props.use_origin_offset
+    tessellate_dict['target'] = props.target
+    tessellate_dict['frame_thickness'] = props.frame_thickness
+    tessellate_dict['frame_mode'] = props.frame_mode
+    tessellate_dict['frame_boundary'] = props.frame_boundary
+    tessellate_dict['fill_frame'] = props.fill_frame
+    tessellate_dict['frame_boundary_mat'] = props.frame_boundary_mat
+    tessellate_dict['fill_frame_mat'] = props.fill_frame_mat
+    return tessellate_dict
+
 def tessellate_patch(props):
+    ob = props['self']
     _ob0 = props['generator']
     _ob1 = props['component']
     offset = props['offset']
@@ -620,11 +666,23 @@ def tessellate_patch(props):
     bounds_y = props['bounds_y']
     use_origin_offset = props['use_origin_offset']
     target = props['target']
+
+    # reset messages
+    ob.tissue_tessellate.warning_message_thickness = ''
+
     if normals_mode == 'SHAPEKEYS':
         if _ob0.data.shape_keys != None:
             target = _ob0
-        else: normals_mode = 'VERTS'
-    if normals_mode == 'OBJECT' and target == None: normals_mode = 'VERTS'
+        else:
+            normals_mode = 'VERTS'
+            message = "Base mesh doesn't have Shape Keys"
+            ob.tissue_tessellate.warning_message_thickness = message
+            print("Tissue: " + message)
+    if normals_mode == 'OBJECT' and target == None:
+        normals_mode = 'VERTS'
+        message = "Please select a target object"
+        ob.tissue_tessellate.warning_message_thickness = message
+        print("Tissue: " + message)
 
     random.seed(rand_seed)
 
@@ -643,7 +701,9 @@ def tessellate_patch(props):
     if normals_mode in ('SHAPEKEYS','OBJECT'):
         if len(me0_sk.vertices) != len(me0.vertices):
             normals_mode = 'VERTS'
-            print("Tissue: Base mesh and Target mesh doesn't have the same amount of vertices")
+            message = "Base mesh and Target mesh doesn't match"
+            ob.tissue_tessellate.warning_message_thickness = message
+            print("Tissue: " + message)
             bpy.data.objects.remove(ob0_sk)
         else:
             if normals_mode == 'SHAPEKEYS':
@@ -1399,40 +1459,8 @@ def tessellate_patch(props):
     new_patch.data.update() # solve normals issues if Smooth Shading is on
     return new_patch
 
-def props_to_dict(props):
-    tessellate_dict = {}
-    tessellate_dict['generator'] = props.generator
-    tessellate_dict['component'] = props.component
-    tessellate_dict['offset'] = props.offset
-    tessellate_dict['zscale'] = props.zscale
-    tessellate_dict['gen_modifiers'] = props.gen_modifiers
-    tessellate_dict['com_modifiers'] = props.com_modifiers
-    tessellate_dict['mode'] = props.mode
-    tessellate_dict['scale_mode'] = props.scale_mode
-    tessellate_dict['rotation_mode'] = props.rotation_mode
-    tessellate_dict['rotation_shift'] = props.rotation_shift
-    tessellate_dict['rotation_direction'] = props.rotation_direction
-    tessellate_dict['rand_seed'] = props.rand_seed
-    tessellate_dict['fill_mode'] = props.fill_mode
-    tessellate_dict['bool_vertex_group'] = props.bool_vertex_group
-    tessellate_dict['bool_selection'] = props.bool_selection
-    tessellate_dict['bool_shapekeys'] = props.bool_shapekeys
-    tessellate_dict['bool_material_id'] = props.bool_material_id
-    tessellate_dict['material_id'] = props.material_id
-    tessellate_dict['normals_mode'] = props.normals_mode
-    tessellate_dict['bounds_x'] = props.bounds_x
-    tessellate_dict['bounds_y'] = props.bounds_y
-    tessellate_dict['use_origin_offset'] = props.use_origin_offset
-    tessellate_dict['target'] = props.target
-    tessellate_dict['frame_thickness'] = props.frame_thickness
-    tessellate_dict['frame_mode'] = props.frame_mode
-    tessellate_dict['frame_boundary'] = props.frame_boundary
-    tessellate_dict['fill_frame'] = props.fill_frame
-    tessellate_dict['frame_boundary_mat'] = props.frame_boundary_mat
-    tessellate_dict['fill_frame_mat'] = props.fill_frame_mat
-    return tessellate_dict
-
 def tessellate_original(props):
+    ob = props['self']
     _ob0 = props['generator']
     _ob1 = props['component']
     offset = props['offset']
@@ -1457,11 +1485,23 @@ def tessellate_original(props):
     use_origin_offset = props['use_origin_offset']
     target = props['target']
     custom_mode = 'OBJECT'
+
+    # reset messages
+    ob.tissue_tessellate.warning_message_thickness = ''
+
     if normals_mode == 'SHAPEKEYS':
         if _ob0.data.shape_keys != None:
             target = _ob0
-        else: normals_mode = 'VERTS'
-    if normals_mode == 'OBJECT' and target == None: normals_mode = 'VERTS'
+        else:
+            normals_mode = 'VERTS'
+            message = "Base mesh doesn't have Shape Keys"
+            ob.tissue_tessellate.warning_message_thickness = message
+            print("Tissue: " + message)
+    if normals_mode == 'OBJECT' and target == None:
+        normals_mode = 'VERTS'
+        message = "Please select a target object"
+        ob.tissue_tessellate.warning_message_thickness = message
+        print("Tissue: " + message)
 
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
     random.seed(rand_seed)
@@ -1503,7 +1543,9 @@ def tessellate_original(props):
     if normals_mode in ('SHAPEKEYS', 'OBJECT'):
         if len(me0_sk.vertices) != len(me0.vertices):
             normals_mode = 'VERTS'
-            print("Tissue: Base mesh and Target mesh doesn't have the same amount of vertices")
+            message = "Base mesh and Target mesh doesn't match"
+            ob.tissue_tessellate.warning_message_thickness = message
+            print("Tissue: " + message)
             bpy.data.objects.remove(ob0_sk)
         else:
             if normals_mode == 'SHAPEKEYS':
@@ -2525,7 +2567,7 @@ class tissue_tessellate(Operator):
             layout.label(text="Only Mesh, Curve, Surface or Text objects are allowed")
         else:
             if ob0 == ob1 == None:
-                ob0 = bpy.context.active_object
+                ob0 = context.active_object
                 self.generator = ob0.name
                 for o in sel:
                     if o != ob0:
@@ -2748,6 +2790,14 @@ class tissue_tessellate(Operator):
                     self, "normals_mode", text="Direction", icon='NONE', expand=True,
                     slider=False, toggle=False, icon_only=False, event=False,
                     full_event=False, emboss=True, index=-1)
+                if self.normals_mode == 'OBJECT':
+                    col.separator()
+                    col.prop_search(self, "target", context.scene, "objects", text='Target')
+                    #if ob.tissue_tessellate.warning_message_thickness != "":
+                    #    row.label(
+                    #        text=ob.tissue_tessellate.warning_message_thickness,
+                    #        icon='INFO'
+                    #        )
                 #row.enabled = self.fill_mode != 'PATCH'
 
                 allow_multi = False
@@ -2828,6 +2878,9 @@ class tissue_tessellate(Operator):
             ob1 = bpy.data.objects[self.component]
         except:
             return {'CANCELLED'}
+        #self.target = bpy.data.objects[self.target]
+
+        print(self.target)
 
         self.object_name = "Tessellation"
         # Check if existing object with same name
@@ -3040,7 +3093,10 @@ class tissue_update_tessellate(Operator):
                         "Active object must be Tessellate before Update")
             return {'CANCELLED'}
 
-        tess_props = props_to_dict(ob.tissue_tessellate)
+        # reset messages
+        ob.tissue_tessellate.warning_message_merge = ''
+
+        tess_props = props_to_dict(ob)
 
         # Solve Local View issues
         local_spaces = []
@@ -3122,6 +3178,7 @@ class tissue_update_tessellate(Operator):
         #base_ob = new_ob#.copy()
 
         for iter in range(iterations):
+            tess_props['generator'] = base_ob
 
             if iter > 0 and len(iter_objects) == 0: break
             if iter > 0 and normals_mode in ('SHAPEKEYS','OBJECT'):
@@ -3137,11 +3194,14 @@ class tissue_update_tessellate(Operator):
                     try:
                         mat = base_ob.material_slots[m_id].material
                         ob1 = bpy.data.objects[mat.name]
+                        tess_props['component'] = ob1
                         if ob1.type not in ('MESH', 'CURVE','SURFACE','FONT', 'META'):
                             continue
                         material_id = m_id
+                        tess_props['material_id'] = material_id
                         matched_materials.append(m_id)
                         bool_material_id = True
+                        tess_props['bool_material_id'] = bool_material_id
                     except:
                         continue
                 if com_modifiers or ob1.type != 'MESH':
@@ -3293,18 +3353,18 @@ class tissue_update_tessellate(Operator):
             if merge:
                 merged = merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
                 if merged == 'bridge_error':
-                    for o in iter_objects:
-                        try: bpy.data.objects.remove(o)
-                        except: pass
-                    try: bpy.data.meshes.remove(data1)
-                    except: pass
-                    context.view_layer.objects.active = ob
-                    ob.select_set(True)
+                    #for o in iter_objects:
+                    #    try: bpy.data.objects.remove(o)
+                    #    except: pass
+                    #try: bpy.data.meshes.remove(data1)
+                    #except: pass
+                    #context.view_layer.objects.active = ob
+                    #ob.select_set(True)
                     message = "Can't make the bridge!"
-                    ob.tissue_tessellate.error_message = message
+                    ob.tissue_tessellate.warning_message_merge = message
                     #bpy.ops.object.mode_set(mode=starting_mode)
-                    self.report({'ERROR'}, message)
-                    return {'CANCELLED'}
+                    #self.report({'ERROR'}, message)
+                    #return {'CANCELLED'}
 
             base_ob = context.view_layer.objects.active
 
@@ -3340,7 +3400,7 @@ class tissue_update_tessellate(Operator):
                                     "the last Subsurf (or Multires) is quads only."
         errors["wires_error"] = "Please remove all wire edges in the base object."
         errors["verts_error"] = "Please remove all floating vertices in the base object."
-        errors["bridge_error"] = "Can't make the bridge."
+        #errors["bridge_error"] = "Can't make the bridge."
         if new_ob in errors:
             for o in iter_objects:
                 try: bpy.data.objects.remove(o)
@@ -3785,6 +3845,9 @@ class TISSUE_PT_tessellate_thickness(Panel):
                 col.separator()
                 row = col.row(align=True)
                 row.prop_search(props, "target", context.scene, "objects", text='Target')
+            if props.warning_message_thickness != '':
+                col.separator()
+                col.label(text=props.warning_message_thickness, icon='ERROR')
 
 
 class TISSUE_PT_tessellate_options(Panel):
@@ -3836,6 +3899,9 @@ class TISSUE_PT_tessellate_options(Panel):
                         col.separator()
                         col.prop(props, "bridge_cuts")
                         col.prop(props, "bridge_smoothness")
+                if props.warning_message_merge:
+                    col.separator()
+                    col.label(text=props.warning_message_merge, icon='ERROR')
 
 
 class TISSUE_PT_tessellate_morphing(Panel):
@@ -3893,7 +3959,7 @@ class TISSUE_PT_tessellate_morphing(Panel):
             row2 = col2.row(align=True)
             row2.prop(props, "bool_shapekeys", text="Use Shape Keys",  icon='SHAPEKEY_DATA')
             row2.enabled = allow_shapekeys
-            if not allow_shapekeys:
+            if not allow_shapekeys and props.bool_shapekeys:
                 col2 = layout.column(align=True)
                 row2 = col2.row(align=True)
                 row2.label(text="Use Shape Keys is not compatible with Use Modifiers", icon='INFO')
