@@ -34,7 +34,7 @@ bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
     "version": (0, 3, 39),
-    "blender": (2, 80, 0),
+    "blender": (2, 82, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
@@ -51,7 +51,6 @@ if "bpy" in locals():
     importlib.reload(lattice)
     importlib.reload(uv_to_mesh)
     importlib.reload(utils)
-    importlib.reload(gcode_export)
     importlib.reload(preferences)
     importlib.reload(material_tools)
 
@@ -62,7 +61,6 @@ else:
     from . import lattice
     from . import uv_to_mesh
     from . import utils
-    from . import gcode_export
     from . import preferences
     from . import material_tools
 
@@ -125,10 +123,7 @@ classes = (
     material_tools.random_materials,
     material_tools.weight_to_materials,
 
-    uv_to_mesh.uv_to_mesh,
-    gcode_export.TISSUE_PT_gcode_exporter,
-    gcode_export.tissue_gcode_prop,
-    gcode_export.tissue_gcode_export
+    uv_to_mesh.uv_to_mesh
 )
 
 def register():
@@ -138,9 +133,6 @@ def register():
     #bpy.utils.register_module(__name__)
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tessellate_numpy.tissue_tessellate_prop
-                                            )
-    bpy.types.Scene.tissue_gcode = PointerProperty(
-                                            type=gcode_export.tissue_gcode_prop
                                             )
     bpy.types.Object.formula_settings = CollectionProperty(
                                             type=colors_groups_exchanger.formula_prop

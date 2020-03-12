@@ -24,26 +24,15 @@
 #                                                                              #
 ################################################################################
 
-import bpy, bmesh
+import bpy
 import numpy as np
 
 import colorsys
-
-import math, timeit, time
-from math import *#pi, sin
-from statistics import mean, stdev
-from mathutils import Vector
 from numpy import *
-try: from .numba_functions import numba_reaction_diffusion
-except: pass
-#from .numba_functions import numba_reaction_diffusion
-try: import numexpr as ne
-except: pass
 
 from bpy.types import (
         Operator,
-        Panel,
-        PropertyGroup,
+        Panel
         )
 
 from bpy.props import (
@@ -79,7 +68,6 @@ class random_materials(Operator):
                                     max=1,
                                     default=[1,1,1])
 
-
     hue : FloatProperty(name="Hue", min=0, max=1, default=0.5)
     hue_variation : FloatProperty(name="Hue Variation", min=0, max=1, default=0.6)
 
@@ -94,6 +82,8 @@ class random_materials(Operator):
 
     random_colors : BoolProperty(
         name="Random Colors", default=True, description="Colors are automatically generated")
+
+    executed = False
 
     @classmethod
     def poll(cls, context):
@@ -120,7 +110,10 @@ class random_materials(Operator):
                 col.prop(self, "color_B")
 
     def execute(self, context):
+        bpy.ops.object.mode_set(mode='OBJECT')
         ob = context.active_object
+        if len(ob.material_slots) == 0 and not self.executed:
+            self.generate_materials = True
         if self.generate_materials:
             colA = self.color_A
             colB = self.color_B
@@ -141,13 +134,12 @@ class random_materials(Operator):
             count = len(ob.material_slots)
         np.random.seed(seed=self.seed)
         n_faces = len(ob.data.polygons)
-        rand = list(np.random.randint(count, size=n_faces))
-        ob.data.polygons.foreach_set('material_index',rand)
-        ob.data.update()
-        bpy.ops.object.mode_set(mode='OBJECT')
+        if count > 0:
+            rand = list(np.random.randint(count, size=n_faces))
+            ob.data.polygons.foreach_set('material_index',rand)
+            ob.data.update()
+        self.executed = True
         return {'FINISHED'}
-
-
 
 class weight_to_materials(Operator):
     bl_idname = "object.weight_to_materials"

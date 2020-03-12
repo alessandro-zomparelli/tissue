@@ -3903,7 +3903,6 @@ class TISSUE_PT_tessellate_options(Panel):
                     col.separator()
                     col.label(text=props.warning_message_merge, icon='ERROR')
 
-
 class TISSUE_PT_tessellate_morphing(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
