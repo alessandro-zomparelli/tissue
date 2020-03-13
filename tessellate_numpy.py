@@ -1159,25 +1159,6 @@ def tessellate_patch(props):
             sk_uv.append(_sk_uv)
         store_sk_coordinates = [[] for t in ob1.data.shape_keys.key_blocks]       # [[None for k in range(n_patches)] for t in ob1.data.shape_keys.key_blocks]
 
-    '''
-    #coordinates = []
-    new_me = array_mesh(ob1, n_patches)
-    new_patch = bpy.data.objects.new("tessellate_temp", new_me)
-    bpy.context.collection.objects.link(new_patch)
-    new_patch.select_set(True)
-    bpy.context.view_layer.objects.active = new_patch
-
-    for area in bpy.context.screen.areas:
-        for space in area.spaces:
-            try: new_patch.local_view_set(space, True)
-            except: pass
-
-    # Vertex Group
-    if bool_vertex_group:
-        for vg in ob0.vertex_groups:
-            new_patch.vertex_groups.new(name=vg.name)
-    '''
-
     np_verts1_uv = np.array(verts1_uv)
     verts1_uv_quads = np.array(verts1_uv_quads)
     np_u = verts1_uv_quads[:,0]
@@ -1198,11 +1179,6 @@ def tessellate_patch(props):
         if bool_material_id and not poly.material_index == material_id: continue
 
         bool_correct = True
-        #new_patch = bpy.data.objects.new("patch", me1.copy())
-        #bpy.context.collection.objects.link(new_patch)
-
-        #new_patch.select_set(True)
-        #bpy.context.view_layer.objects.active = new_patch
 
         # find patch faces
         faces = _faces.copy()
@@ -1419,7 +1395,6 @@ def tessellate_patch(props):
             coordinates = coordinates.flatten().tolist()
             new_patch.data.shape_keys.key_blocks[i].data.foreach_set('co', coordinates)
 
-    #if ob0.type == 'MESH': ob0.data = old_me0
     if not bool_correct: return 0
 
     if bool_shapekeys:
@@ -1532,7 +1507,7 @@ def tessellate_original(props):
 
     if fill_mode == 'FAN': ob0 = convert_to_fan(_ob0, props, gen_modifiers)
     elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, props, gen_modifiers)
-    else: ob0 = convert_object_to_mesh(_ob0, True, True)
+    else: ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
     #ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
     me0 = ob0.data
     ob1 = convert_object_to_mesh(_ob1, com_modifiers, True)
@@ -1814,6 +1789,7 @@ def tessellate_original(props):
                     vert = v.co - min_c
                     vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
                     vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
+                    vert[2] = v.co.z
                     if scale_mode == 'CONSTANT':
                         vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
                         if not use_origin_offset:
@@ -3326,10 +3302,6 @@ class tissue_update_tessellate(Operator):
                 if iter < iterations-1: new_ob.data = base_ob.data
                 # store new iteration and set transformations
                 iter_objects.append(new_ob)
-                #try:
-                #    bpy.data.objects.remove(bpy.data.objects['_tissue_tmp_base'])
-                #except:
-                #    pass
                 base_ob.name = '_tissue_tmp_base'
             elif combine_mode == 'ALL':
                 base_ob = new_ob.copy()
@@ -3351,20 +3323,11 @@ class tissue_update_tessellate(Operator):
                 iter_objects = [new_ob]
 
             if merge:
-                merged = merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
+                use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components)
+                merged = merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh)
                 if merged == 'bridge_error':
-                    #for o in iter_objects:
-                    #    try: bpy.data.objects.remove(o)
-                    #    except: pass
-                    #try: bpy.data.meshes.remove(data1)
-                    #except: pass
-                    #context.view_layer.objects.active = ob
-                    #ob.select_set(True)
                     message = "Can't make the bridge!"
                     ob.tissue_tessellate.warning_message_merge = message
-                    #bpy.ops.object.mode_set(mode=starting_mode)
-                    #self.report({'ERROR'}, message)
-                    #return {'CANCELLED'}
 
             base_ob = context.view_layer.objects.active
 
@@ -3451,7 +3414,8 @@ class tissue_update_tessellate(Operator):
 
         is_multiple = iterations > 1 or combine_mode != 'LAST'# or bool_multi_components
         if merge and is_multiple:
-            merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index)
+            use_bmesh = bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components
+            merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh)
 
         if bool_smooth: bpy.ops.object.shade_smooth()
 
@@ -4393,28 +4357,90 @@ def convert_to_fan(ob, props, use_modifiers):
     bpy.ops.object.mode_set(mode='OBJECT')
     return new_ob
 
-def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index):
-    bm = bmesh.new()
-    bm.from_mesh(ob.data)
-    boundary_verts = [v for v in bm.verts if v.is_boundary]
-    bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=merge_thres)
+def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh):
 
-    if bool_dissolve_seams:
-        seam_edges = [e for e in bm.edges if e.seam]
-        bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
-    if close_mesh != 'NONE':
-        bm.edges.ensure_lookup_table()
-        # set crease
-        crease_layer = bm.edges.layers.crease.verify()
-        boundary_edges = [e for e in bm.edges if e.is_boundary]
-        for e in boundary_edges:
-            e[crease_layer] = open_edges_crease
-        if close_mesh == 'BRIDGE':
-            try:
-                closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
-            except:
-                return 'bridge_error'
-        if close_mesh == 'CAP':
-            closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
-        for f in closed['faces']: f.material_index = cap_material_index
-    bm.to_mesh(ob.data)
+    if not use_bmesh:
+        print("ddcdcdcdcdcgvlkvfnoivnion")
+        skip = True
+        ob.active_shape_key_index = 1
+        for sk in ob.data.shape_keys.key_blocks:
+            if skip:
+                skip = False
+                continue
+            sk.mute = True
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for sk in ob.data.shape_keys.key_blocks:
+            sk.mute = False
+        ob.data.update()
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(
+            use_extend=False, use_expand=False, type='VERT')
+        bpy.ops.mesh.select_non_manifold(
+            extend=False, use_wire=True, use_boundary=True,
+            use_multi_face=False, use_non_contiguous=False, use_verts=False)
+
+        bpy.ops.mesh.remove_doubles(
+            threshold=merge_thres, use_unselected=False)
+
+        if bool_dissolve_seams:
+            bpy.ops.mesh.select_mode(type='EDGE')
+            bpy.ops.mesh.select_all(action='DESELECT')
+            bpy.ops.object.mode_set(mode='OBJECT')
+            for e in new_ob.data.edges:
+                e.select = e.use_seam
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.dissolve_edges()
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        if close_mesh != 'NONE':
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_mode(
+                use_extend=False, use_expand=False, type='EDGE')
+            bpy.ops.mesh.select_non_manifold(
+                extend=False, use_wire=False, use_boundary=True,
+                use_multi_face=False, use_non_contiguous=False, use_verts=False)
+            if open_edges_crease != 0:
+                bpy.ops.transform.edge_crease(value=open_edges_crease)
+            if close_mesh == 'CAP':
+                bpy.ops.mesh.edge_face_add()
+            if close_mesh == 'BRIDGE':
+                try:
+                    bpy.ops.mesh.bridge_edge_loops(
+                        type='PAIRS',
+                        number_cuts=bridge_cuts,
+                        interpolation='SURFACE',
+                        smoothness=bridge_smoothness)
+                except: pass
+            bpy.ops.object.mode_set(mode='OBJECT')
+            for f in new_ob.data.polygons:
+                if f.select: f.material_index = cap_material_index
+    else:
+
+
+        bm = bmesh.new()
+        bm.from_mesh(ob.data.copy())
+        boundary_verts = [v for v in bm.verts if v.is_boundary]
+        bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=merge_thres)
+
+        if bool_dissolve_seams:
+            seam_edges = [e for e in bm.edges if e.seam]
+            bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
+        if close_mesh != 'NONE':
+            bm.edges.ensure_lookup_table()
+            # set crease
+            crease_layer = bm.edges.layers.crease.verify()
+            boundary_edges = [e for e in bm.edges if e.is_boundary]
+            for e in boundary_edges:
+                e[crease_layer] = open_edges_crease
+            if close_mesh == 'BRIDGE':
+                try:
+                    closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
+                except:
+                    return 'bridge_error'
+            if close_mesh == 'CAP':
+                closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
+            for f in closed['faces']: f.material_index = cap_material_index
+        bm.to_mesh(ob.data)
