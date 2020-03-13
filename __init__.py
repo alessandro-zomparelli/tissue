@@ -114,6 +114,8 @@ classes = (
     colors_groups_exchanger.weight_formula_wiki,
     colors_groups_exchanger.tissue_weight_distance,
     colors_groups_exchanger.random_weight,
+    colors_groups_exchanger.bake_reaction_diffusion,
+    colors_groups_exchanger.reaction_diffusion_free_data,
 
     dual_mesh.dual_mesh,
     dual_mesh.dual_mesh_tessellated,
