@@ -180,7 +180,7 @@ class tissue_tessellate_prop(PropertyGroup):
     rotation_mode : EnumProperty(
         items=(('RANDOM', "Random", "Random faces rotation"),
                ('UV', "Active UV", "Rotate according to UV coordinates"),
-               ('WEIGHT', "Active Weight", "Rotate according to Vertex Group gradient"),
+               ('WEIGHT', "Weight Gradient", "Rotate according to Vertex Group gradient"),
                ('DEFAULT', "Default", "Default rotation")),
         default='DEFAULT',
         name="Component Rotation",
@@ -505,6 +505,36 @@ class tissue_tessellate_prop(PropertyGroup):
             update = anim_tessellate_active
             )
 
+    vertex_group_thickness : StringProperty(
+            name="Thickness weight", default='',
+            description="Vertex Group used for thickness",
+            update = anim_tessellate_active
+            )
+    invert_vertex_group_thickness : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_tessellate_active
+            )
+    vertex_group_thickness_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0,
+            max=1,
+            description="Thickness factor to use for zero vertex group influence",
+            update = anim_tessellate_active
+            )
+
+    vertex_group_rotation : StringProperty(
+            name="Rotation weight", default='',
+            description="Vertex Group used for rotation",
+            update = anim_tessellate_active
+            )
+    invert_vertex_group_rotation : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_tessellate_active
+            )
+
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
     ob.tissue_tessellate.bool_lock = operator.bool_lock
@@ -556,6 +586,11 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.cap_material_index = operator.cap_material_index
     ob.tissue_tessellate.patch_subs = operator.patch_subs
     ob.tissue_tessellate.use_origin_offset = operator.use_origin_offset
+    ob.tissue_tessellate.vertex_group_thickness = operator.vertex_group_thickness
+    ob.tissue_tessellate.invert_vertex_group_thickness = operator.invert_vertex_group_thickness
+    ob.tissue_tessellate.vertex_group_thickness_factor = operator.vertex_group_thickness_factor
+    ob.tissue_tessellate.vertex_group_rotation = operator.vertex_group_rotation
+    ob.tissue_tessellate.invert_vertex_group_rotation = operator.invert_vertex_group_rotation
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -607,6 +642,11 @@ def load_parameters(operator, ob):
     operator.frame_thickness = ob.tissue_tessellate.frame_thickness
     operator.frame_mode = ob.tissue_tessellate.frame_mode
     operator.use_origin_offset = ob.tissue_tessellate.use_origin_offset
+    operator.vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
+    operator.invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
+    operator.vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
+    operator.vertex_group_rotation = ob.tissue_tessellate.vertex_group_rotation
+    operator.invert_vertex_group_rotation = ob.tissue_tessellate.invert_vertex_group_rotation
     return ob
 
 def props_to_dict(ob):
@@ -642,6 +682,11 @@ def props_to_dict(ob):
     tessellate_dict['fill_frame'] = props.fill_frame
     tessellate_dict['frame_boundary_mat'] = props.frame_boundary_mat
     tessellate_dict['fill_frame_mat'] = props.fill_frame_mat
+    tessellate_dict['vertex_group_thickness'] = props.vertex_group_thickness
+    tessellate_dict['invert_vertex_group_thickness'] = props.invert_vertex_group_thickness
+    tessellate_dict['vertex_group_thickness_factor'] = props.vertex_group_thickness_factor
+    tessellate_dict['vertex_group_rotation'] = props.vertex_group_rotation
+    tessellate_dict['invert_vertex_group_rotation'] = props.invert_vertex_group_rotation
     return tessellate_dict
 
 def tessellate_patch(props):
@@ -665,6 +710,12 @@ def tessellate_patch(props):
     bounds_x = props['bounds_x']
     bounds_y = props['bounds_y']
     use_origin_offset = props['use_origin_offset']
+    vertex_group_thickness = props['vertex_group_thickness']
+    invert_vertex_group_thickness = props['invert_vertex_group_thickness']
+    vertex_group_thickness_factor = props['vertex_group_thickness_factor']
+    vertex_group_rotation = props['vertex_group_rotation']
+    invert_vertex_group_rotation = props['invert_vertex_group_rotation']
+    rotation_direction = props['rotation_direction']
     target = props['target']
 
     # reset messages
@@ -1033,7 +1084,8 @@ def tessellate_patch(props):
     new_patch = None
 
     # All vertex group
-    if bool_vertex_group:
+    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or vertex_group_thickness in ob0.vertex_groups.keys()
+    if read_vertex_groups:
         try:
             weight = []
             for vg in ob0.vertex_groups:
@@ -1168,7 +1220,7 @@ def tessellate_patch(props):
 
     #store_coordinates = [0]*n_patches
     store_coordinates = []
-    if bool_vertex_group:
+    if read_vertex_groups:
         store_weight = [[] for j in ob0.vertex_groups]       #[[None for i in range(n_patches)] for j in new_patch.vertex_groups]
 
     n_patches_count = 0
@@ -1222,18 +1274,36 @@ def tessellate_patch(props):
             patch_area += face.area
         #patches_area.append(patch_area/patch_faces)
 
+        weight_shift = 0
+        if rotation_mode == 'WEIGHT':
+            if vertex_group_rotation in ob0.vertex_groups.keys():
+                vg = ob0.vertex_groups[vertex_group_rotation]
+                corners = [
+                    verts[0][0].index,
+                    verts[-1][0].index,
+                    verts[-1][-1].index,
+                    verts[0][-1].index
+                    ]
+                corners_weight = []
+                for id in corners:
+                    try: corners_weight.append(vg.weight(id))
+                    except: corners_weight.append(0)
+                if invert_vertex_group_rotation:
+                    corners_weight = [1-w for w in corners_weight]
+                corners_weight*=2
+                if rotation_direction == 'DIAG':
+                    differential = [corners_weight[ii]-corners_weight[ii+2] for ii in range(4)]
+                else:
+                    differential = [corners_weight[ii]+corners_weight[ii+1]-corners_weight[ii+2]- corners_weight[ii+3] for ii in range(4)]
+                weight_shift = 4-differential.index(max(differential))
+
         # Random rotation
-        if rotation_mode == 'RANDOM' or rotation_shift != 0:
-            if rotation_mode == 'RANDOM': rot = random.randint(0, 3)
-            else: rot = rotation_shift%4
-            if rot == 1:
-                verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
-            elif rot == 2:
-                verts = [[verts[k][w] for w in range(sides,-1,-1)] for k in range(sides,-1,-1)]
-            elif rot == 3:
-                verts = [[verts[w][k] for w in range(sides,-1,-1)] for k in range(sides+1)]
+        random_shift = 0
+        if rotation_mode == 'RANDOM':
+            random_shift = random.randint(0, 3)
 
         # UV rotation
+        UV_shift = 0
         if rotation_mode == 'UV' and ob0.type == 'MESH':
             if len(ob0.data.uv_layers) > 0:
                 uv0 = me0.uv_layers.active.data[faces[0][0].index*4].uv
@@ -1253,18 +1323,25 @@ def tessellate_patch(props):
                 dot1203 = v1203.x
                 dot0132 = v0132.x
                 if(abs(dot1203) < abs(dot0132)):
-                    if (dot0132 > 0):
-                        pass
-                    else:
-                        verts = [[verts[k][w] for w in range(sides,-1,-1)] for k in range(sides,-1,-1)]
+                    if (dot0132 > 0): pass
+                    else: UV_shift = 2
                 else:
-                    if(dot1203 < 0):
-                        verts = [[verts[w][k] for w in range(sides,-1,-1)] for k in range(sides+1)]
-                    else:
-                        verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
+                    if(dot1203 < 0): UV_shift = 3
+                    else: UV_shift = 1
 
+        # Rotate Patch
+        rot = weight_shift + random_shift + UV_shift + rotation_shift
+        rot = rot%4
+        if rot != 0:
+            if rot == 1:
+                verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
+            elif rot == 2:
+                verts = [[verts[k][w] for w in range(sides,-1,-1)] for k in range(sides,-1,-1)]
+            elif rot == 3:
+                verts = [[verts[w][k] for w in range(sides,-1,-1)] for k in range(sides+1)]
+
+        # Patch Morphing
         verts_xyz = np.array([[v.co for v in _verts] for _verts in verts])
-        #verts_norm = np.array([[v.normal for v in _verts] for _verts in verts])
         verts_norm = np.array([[normals0[v.index] for v in _verts] for _verts in verts])
         if normals_mode == 'FACES':
             verts_norm = np.mean(verts_norm, axis=(0,1))
@@ -1286,6 +1363,32 @@ def tessellate_patch(props):
         vz = np_verts1_uv[:,2].reshape((n_verts1,1))
         co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
         n2 = np_lerp2(n00,n10,n01,n11,vx,vy)
+
+        # load vertex groups
+        if bool_vertex_group or vertex_group_thickness in ob0.vertex_groups.keys():
+            for _weight, vg in zip(weight, ob0.vertex_groups):
+                np_weight = np.array([[_weight[v.index] for v in verts_v] for verts_v in verts])
+                w00 = np_weight[np_u, np_v].reshape((n_verts1,1))
+                w10 = np_weight[np_u1, np_v].reshape((n_verts1,1))
+                w01 = np_weight[np_u, np_v1].reshape((n_verts1,1))
+                w11 = np_weight[np_u1, np_v1].reshape((n_verts1,1))
+                # remapped z scale
+                #store_weight[vg.index][i] = np_lerp2(w00,w10,w01,w11,vx,vy)
+                store_weight[vg.index].append(np_lerp2(w00,w10,w01,w11,vx,vy))
+
+        # weight thickness
+        if vertex_group_thickness in ob0.vertex_groups.keys():
+            vg_index = ob0.vertex_groups[vertex_group_thickness].index
+            weight_thickness = np.array(store_weight[vg_index][-1]).reshape((n_verts1,1))
+            if invert_vertex_group_thickness:
+                weight_thickness = 1-weight_thickness
+            if vertex_group_thickness_factor > 0:
+                fact = vertex_group_thickness_factor
+                weight_thickness = weight_thickness*(1-fact) + fact
+        else:
+            weight_thickness = 1
+
+        # thickness variation
         if scale_mode == 'ADAPTIVE':
             if normals_mode == 'FACES':
                 a2 = sqrt(patch_area/com_area)
@@ -1297,28 +1400,11 @@ def tessellate_patch(props):
                 a11 = areas[np_u1, np_v1].reshape((n_verts1,1))
                 # remapped z scale
                 a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
-            co3 = co2 + n2 * vz * a2
+            co3 = co2 + n2 * vz * a2 * weight_thickness
         else:
-            co3 = co2 + n2 * vz
-        #store_coordinates[i] = co3
+            co3 = co2 + n2 * vz * weight_thickness
         store_coordinates.append(co3)
         n_patches_count += 1
-        #if i == 0: coordinates = co3
-        #else: coordinates = np.concatenate((coordinates,co3), axis=0)
-
-        ######new_patch.data.vertices.foreach_set('co',coordinates)
-
-        # vertex groups
-        if bool_vertex_group:
-            for _weight, vg in zip(weight, ob0.vertex_groups):
-                np_weight = np.array([[_weight[v.index] for v in verts_v] for verts_v in verts])
-                w00 = np_weight[np_u, np_v].reshape((n_verts1,1))
-                w10 = np_weight[np_u1, np_v].reshape((n_verts1,1))
-                w01 = np_weight[np_u, np_v1].reshape((n_verts1,1))
-                w11 = np_weight[np_u1, np_v1].reshape((n_verts1,1))
-                # remapped z scale
-                #store_weight[vg.index][i] = np_lerp2(w00,w10,w01,w11,vx,vy)
-                store_weight[vg.index].append(np_lerp2(w00,w10,w01,w11,vx,vy))
 
         if bool_shapekeys:
             for i_sk, sk in enumerate(ob1.data.shape_keys.key_blocks):
@@ -1337,6 +1423,10 @@ def tessellate_patch(props):
                 vz = np_verts1_uv[:,2].reshape((n_verts1,1))
                 co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
                 n2 = np_lerp2(n00,n10,n01,n11,vx,vy)
+
+                # NOTE: weight thickness is based on the base position of the
+                #       vertices, not on the coordinates of the shape keys
+
                 if scale_mode == 'ADAPTIVE':
                     areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
                     a00 = areas[u,v].reshape((n_verts1,1))
@@ -1345,14 +1435,10 @@ def tessellate_patch(props):
                     a11 = areas[u1,v1].reshape((n_verts1,1))
                     # remapped z scale
                     a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
-                    co3 = co2 + n2 * vz * a2
+                    co3 = co2 + n2 * vz * a2 * weight_thickness
                 else:
-                    co3 = co2 + n2 * vz
-                #store_sk_coordinates[i_sk][i] = co3
+                    co3 = co2 + n2 * vz * weight_thickness
                 store_sk_coordinates[i_sk].append(co3)
-                #coordinates = co3.flatten().tolist()
-                #new_patch.data.shape_keys.key_blocks[sk.name].data.foreach_set('co', coordinates)
-                #####new_patch.data.shape_keys.key_blocks[sk.name].data[i_vert].co = sk_co
 
     new_me = array_mesh(ob1, n_patches_count)
     new_patch = bpy.data.objects.new("tessellate_temp", new_me)
@@ -1459,6 +1545,11 @@ def tessellate_original(props):
     bounds_y = props['bounds_y']
     use_origin_offset = props['use_origin_offset']
     target = props['target']
+    vertex_group_thickness = props['vertex_group_thickness']
+    invert_vertex_group_thickness = props['invert_vertex_group_thickness']
+    vertex_group_thickness_factor = props['vertex_group_thickness_factor']
+    vertex_group_rotation = props['vertex_group_rotation']
+    invert_vertex_group_rotation = props['invert_vertex_group_rotation']
     custom_mode = 'OBJECT'
 
     # reset messages
@@ -1817,7 +1908,8 @@ def tessellate_original(props):
             #sk_np.append([])
 
     # All vertex group
-    if bool_vertex_group or rotation_mode == 'WEIGHT':
+    bool_weight_thickness = vertex_group_thickness in ob0.vertex_groups.keys()
+    if bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness:
         try:
             weight = []
             for vg in ob0.vertex_groups:
@@ -1939,10 +2031,13 @@ def tessellate_original(props):
 
         # Weight Rotation
         elif rotation_mode == 'WEIGHT':
-            if len(weight) > 0:
-                active_weight = weight[ob0.vertex_groups.active_index]
+            if vertex_group_rotation in ob0.vertex_groups.keys():
+                rotation_weight = weight[ob0.vertex_groups[vertex_group_rotation].index]
                 i = p.index
-                face_weights = [active_weight[v] for v in p.vertices]
+                if invert_vertex_group_rotation:
+                    face_weights = [1-rotation_weight[v] for v in p.vertices]
+                else:
+                    face_weights = [rotation_weight[v] for v in p.vertices]
                 face_weights*=2
                 if rotation_direction == 'DIAG':
                     differential = [face_weights[ii]-face_weights[ii+2] for ii in range(4)]
@@ -1966,8 +2061,9 @@ def tessellate_original(props):
                 #np_verts_area = np.ones(len(ordered))*np.mean(np_verts_area)
                 np_verts_area = np.ones(len(ordered))*faces_area[p.index]
             _sz[j] = np_verts_area
+
         # Vertex weight
-        if bool_vertex_group:
+        if bool_vertex_group or bool_weight_thickness:
             ws0 = []
             for w in weight:
                 _ws0 = []
@@ -1983,7 +2079,7 @@ def tessellate_original(props):
         if normals_mode != 'FACES':
             _nvs0[j] = (nvs0[0], nvs0[1], nvs0[2], nvs0[-1])
 
-        if bool_vertex_group:
+        if bool_vertex_group or bool_weight_thickness:
             for i_vg, ws0_face in enumerate(ws0):
                 _w0[i_vg][j] = (ws0_face[0], ws0_face[1], ws0_face[2], ws0_face[-1])
 
@@ -2020,7 +2116,7 @@ def tessellate_original(props):
         nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
 
     # interpolate vertex groups
-    if bool_vertex_group:
+    if bool_vertex_group or bool_weight_thickness:
         w = np.array(_w0)
         w_0 = w[:,:,0].reshape((n_vg, n_faces,1,1))
         w_1 = w[:,:,1].reshape((n_vg, n_faces,1,1))
@@ -2029,6 +2125,17 @@ def tessellate_original(props):
         # remapped weight
         w = np_lerp2(w_0, w_1, w_3, w_2, vx, vy)
         w = w.reshape((n_vg, n_faces*n_verts1))
+
+    if bool_weight_thickness:
+        vg_index = ob0.vertex_groups[vertex_group_thickness].index
+        weight_thickness = w[vg_index]
+        weight_thickness = weight_thickness.reshape((n_faces,n_verts1,1))
+        if invert_vertex_group_thickness: weight_thickness = 1-weight_thickness
+        fact = vertex_group_thickness_factor
+        if fact > 0:
+            weight_thickness = weight_thickness*(1-fact) + fact
+    else:
+        weight_thickness = 1
 
     if scale_mode == 'ADAPTIVE':
         if use_numba:
@@ -2041,9 +2148,9 @@ def tessellate_original(props):
             _sz_3 = _sz[:,3].reshape((n_faces,1,1))
             # remapped z scale
             sz2 = np_lerp2(_sz_0, _sz_1, _sz_3, _sz_2, vx, vy)
-        v3 = v2 + nv2 * vz * sz2
+        v3 = v2 + nv2 * vz * sz2 * weight_thickness
     else:
-        v3 = v2 + nv2 * vz
+        v3 = v2 + nv2 * vz * weight_thickness
 
     new_verts_np = v3.reshape((n_faces*n_verts1,3))
 
@@ -2077,9 +2184,9 @@ def tessellate_original(props):
                 else:
                     # remapped z scale
                     sz2 = np_lerp2(_sz_0, _sz_1, _sz_3, _sz_2, vx, vy)
-                v3 = v2 + nv2 * vz * sz2
+                v3 = v2 + nv2 * vz * sz2 * weight_thickness
             else:
-                v3 = v2 + nv2 * vz
+                v3 = v2 + nv2 * vz * weight_thickness
 
             sk_np[i] = v3.reshape((n_faces*n_verts1,3))
 
@@ -2229,7 +2336,7 @@ class tissue_tessellate(Operator):
     rotation_mode : EnumProperty(
             items=(('RANDOM', "Random", "Random faces rotation"),
                    ('UV', "Active UV", "Face rotation is based on UV coordinates"),
-                   ('WEIGHT', "Active Weight", "Rotate according to Vertex Group gradient"),
+                   ('WEIGHT', "Weight Gradient", "Rotate according to Vertex Group gradient"),
                    ('DEFAULT', "Default", "Default rotation")),
             default='DEFAULT',
             name="Component Rotation"
@@ -2493,6 +2600,32 @@ class tissue_tessellate(Operator):
             default=False,
             description="Define offset according to components origin"
             )
+
+    vertex_group_thickness : StringProperty(
+            name="Thickness weight", default='',
+            description="Vertex Group used for thickness"
+            )
+    invert_vertex_group_thickness : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+    vertex_group_thickness_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0,
+            max=1,
+            description="Thickness factor to use for zero vertex group influence"
+            )
+
+    vertex_group_rotation : StringProperty(
+            name="Rotation weight", default='',
+            description="Vertex Group used for rotation"
+            )
+    invert_vertex_group_rotation : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+
     working_on = ""
 
     def draw(self, context):
@@ -2665,6 +2798,17 @@ class tissue_tessellate(Operator):
                 row.enabled = not self.use_origin_offset
                 col.prop(self, 'use_origin_offset')
 
+                col.separator()
+                row = col.row(align=True)
+                row.prop_search(self, 'vertex_group_thickness',
+                    ob0, "vertex_groups", text='')
+                col2 = row.column(align=True)
+                row2 = col2.row(align=True)
+                row2.prop(self, "invert_vertex_group_thickness", text="",
+                    toggle=True, icon='ARROW_LEFTRIGHT')
+                row2.prop(self, "vertex_group_thickness_factor")
+                row2.enabled = self.vertex_group_thickness in ob0.vertex_groups.keys()
+
             # Component XY
             col.separator()
             row = col.row(align=True)
@@ -2729,6 +2873,17 @@ class tissue_tessellate(Operator):
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
                 if self.rotation_mode == 'WEIGHT':
+                    col.separator()
+                    row = col.row(align=True)
+                    row.separator()
+                    row.separator()
+                    row.separator()
+                    row.prop_search(self, 'vertex_group_rotation',
+                        ob0, "vertex_groups", text='Vertex Group')
+                    col2 = row.column(align=True)
+                    col2.prop(self, "invert_vertex_group_rotation", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+                    col2.enabled = self.vertex_group_rotation in ob0.vertex_groups.keys()
+                    col.separator()
                     col.prop(self, "rotation_direction", expand=False,
                               slider=True, toggle=False, icon_only=False, event=False,
                               full_event=False, emboss=True, index=-1)
@@ -3060,6 +3215,11 @@ class tissue_update_tessellate(Operator):
             cap_material_index = ob.tissue_tessellate.cap_material_index
             patch_subs = ob.tissue_tessellate.patch_subs
             use_origin_offset = ob.tissue_tessellate.use_origin_offset
+            vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
+            invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
+            vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
+            vertex_group_rotation = ob.tissue_tessellate.vertex_group_rotation
+            invert_vertex_group_rotation = ob.tissue_tessellate.invert_vertex_group_rotation
             target = ob.tissue_tessellate.target
         try:
             generator.name
@@ -3725,6 +3885,17 @@ class TISSUE_PT_tessellate_rotation(Panel):
                      slider=True, toggle=False, icon_only=False, event=False,
                      full_event=False, emboss=True, index=-1)
             if props.rotation_mode == 'WEIGHT':
+                col.separator()
+                row = col.row(align=True)
+                row.separator()
+                row.separator()
+                row.separator()
+                row.prop_search(props, 'vertex_group_rotation',
+                    ob0, "vertex_groups", text='Vertex Group')
+                col2 = row.column(align=True)
+                col2.prop(props, "invert_vertex_group_rotation", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+                col2.enabled = props.vertex_group_rotation in ob0.vertex_groups.keys()
+                col.separator()
                 col.prop(props, "rotation_direction", expand=False,
                           slider=True, toggle=False, icon_only=False, event=False,
                           full_event=False, emboss=True, index=-1)
@@ -3795,6 +3966,17 @@ class TISSUE_PT_tessellate_thickness(Panel):
                          full_event=False, emboss=True, index=-1)
                 row.enabled = not props.use_origin_offset
                 col.prop(props, 'use_origin_offset')
+
+            col.separator()
+            row = col.row(align=True)
+            row.prop_search(props, 'vertex_group_thickness',
+                ob0, "vertex_groups", text='')
+            col2 = row.column(align=True)
+            row2 = col2.row(align=True)
+            row2.prop(props, "invert_vertex_group_thickness", text="",
+                toggle=True, icon='ARROW_LEFTRIGHT')
+            row2.prop(props, "vertex_group_thickness_factor")
+            row2.enabled = props.vertex_group_thickness in ob0.vertex_groups.keys()
 
             # Direction
             col = layout.column(align=True)
