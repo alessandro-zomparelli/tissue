@@ -1392,6 +1392,7 @@ def tessellate_patch(props):
         if scale_mode == 'ADAPTIVE':
             if normals_mode == 'FACES':
                 a2 = sqrt(patch_area/com_area)
+                weight_thickness = weight_thickness.mean()
             else:
                 areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
                 a00 = areas[np_u, np_v].reshape((n_verts1,1))
@@ -1588,9 +1589,9 @@ def tessellate_original(props):
             target = _ob0
             for m in _ob0.modifiers:
                 m.show_viewport = False
-        if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, props, True)
-        elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, True)
-        else: ob0_sk = convert_object_to_mesh(target, True, True)
+        if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, props, gen_modifiers)
+        elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, gen_modifiers)
+        else: ob0_sk = convert_object_to_mesh(target, gen_modifiers, True)
         me0_sk = ob0_sk.data
         if normals_mode == 'SHAPEKEYS':
             key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
@@ -1615,7 +1616,8 @@ def tessellate_original(props):
             bpy.data.objects.remove(ob0_sk)
         else:
             if normals_mode == 'SHAPEKEYS':
-                for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
+                for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0):
+                    sk.value = val
             for v0, v1 in zip(me0.vertices, me0_sk.vertices):
                 normals0.append(v1.co - v0.co)
             bpy.data.objects.remove(ob0_sk)
@@ -2130,6 +2132,8 @@ def tessellate_original(props):
         vg_index = ob0.vertex_groups[vertex_group_thickness].index
         weight_thickness = w[vg_index]
         weight_thickness = weight_thickness.reshape((n_faces,n_verts1,1))
+        if normals_mode == 'FACES':
+            weight_thickness = weight_thickness.mean(axis=1).repeat(n_verts1,axis=1).reshape((n_faces,n_verts1,1))
         if invert_vertex_group_thickness: weight_thickness = 1-weight_thickness
         fact = vertex_group_thickness_factor
         if fact > 0:
