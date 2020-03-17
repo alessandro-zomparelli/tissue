@@ -243,6 +243,98 @@ def array_mesh(ob, n):
 
 ### MESH FUNCTIONS
 
+def calc_verts_area(me):
+    n_verts = len(me.vertices)
+    n_faces = len(me.polygons)
+    vareas = np.zeros(n_verts)
+    vcount = np.zeros(n_verts)
+    for p in me.polygons:
+        verts = np.array(p.vertices)
+        vareas[verts] += p.area
+        vcount[verts] += 1
+    return vareas / vcount
+
+def get_patches(me_low, me_high, sides, subs):
+    nv = len(me_low.vertices)       # number of vertices
+    ne = len(me_low.edges)          # number of edges
+    n = 2**subs + 1
+    nev = ne * n            # number of vertices along the subdivided edges
+    nevi = nev - 2*ne          # internal vertices along subdividede edges
+
+    # filtered polygonal faces
+    polys = [p for p in me_low.polygons if len(p.vertices)==sides]
+    n0 = 2**(subs-1) - 1
+    ps = [nv + nevi]
+    for p in me_low.polygons:
+        psides = len(p.vertices)
+        increment = psides * (n0**2 + n0) + 1
+        ps.append(increment)
+    ips = np.array(ps).cumsum()                    # incremental polygon sides
+    nf = len(polys)
+    # when subdivided quad faces follows a different pattern
+    if sides == 4:
+        n_patches = nf
+    else:
+        n_patches = nf*sides
+
+
+    ek = me_low.edge_keys               # edges keys
+    ek1 = me_high.edge_keys             # edges keys
+    evi = np.arange(nevi) + nv
+    evi = evi.reshape(ne,n-2)           # edges verts
+    straight = np.arange(n-2)+1
+    inverted = np.flip(straight)
+    inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
+
+    if sides == 4:
+        patches = np.zeros((nf,n,n))
+        for count, p in enumerate(polys):
+            patch = patches[count]
+            pid = p.index
+            verts = p.vertices
+
+            # filling corners
+            patch[0,0] = verts[0]
+            patch[n-1,0] = verts[1]
+            patch[n-1,n-1] = verts[2]
+            patch[0,n-1] = verts[3]
+
+            if subs == 0: continue
+
+            # fill edges
+            ids = straight
+            e0 = tuple(sorted((verts[0],verts[1])))
+            edge_verts = evi[ek.index(e0)]
+            e1 = tuple(sorted((verts[0], edge_verts[0])))
+            if e1 not in ek1: ids = inverted
+            patch[ids,0] = evi[ek.index(e0)]
+
+            ids = straight
+            e0 = tuple(sorted((verts[1],verts[2])))
+            edge_verts = evi[ek.index(e0)]
+            e1 = tuple(sorted((verts[1], edge_verts[0])))
+            if e1 not in ek1: ids = inverted
+            patch[n-1,ids] = evi[ek.index(e0)]
+
+            ids = straight
+            e0 = tuple(sorted((verts[2],verts[3])))
+            edge_verts = evi[ek.index(e0)]
+            e1 = tuple(sorted((verts[3], edge_verts[0])))
+            if e1 not in ek1: ids = inverted
+            patch[ids,n-1] = evi[ek.index(e0)]
+
+            ids = straight
+            e0 = tuple(sorted((verts[3],verts[0])))
+            edge_verts = evi[ek.index(e0)]
+            e1 = tuple(sorted((verts[0], edge_verts[0])))
+            if e1 not in ek1: ids = inverted
+            patch[0,ids] = evi[ek.index(e0)]
+
+            # fill inners
+            patch[1:-1,1:-1] = inners + ips[pid]
+
+    return patches.astype(dtype='int')
+
 def get_vertices_numpy(mesh):
     n_verts = len(mesh.vertices)
     verts = [0]*n_verts*3
