@@ -752,7 +752,7 @@ def tessellate_patch(props):
     if normals_mode in ('SHAPEKEYS','OBJECT'):
         if len(me0_sk.vertices) != len(me0.vertices):
             normals_mode = 'VERTS'
-            message = "Base mesh and Target mesh doesn't match"
+            message = "Base mesh and Target mesh don't match"
             ob.tissue_tessellate.warning_message_thickness = message
             print("Tissue: " + message)
             bpy.data.objects.remove(ob0_sk)
@@ -766,7 +766,6 @@ def tessellate_patch(props):
         me0.update()
         normals0 = [v.normal for v in me0.vertices]
 
-#    ob0 = convert_object_to_mesh(_ob0)
     ob0.name = _ob0.name + "_apply_mod"
     me0 = _ob0.data
 
@@ -836,28 +835,7 @@ def tessellate_patch(props):
     before_bm.edges.ensure_lookup_table()
     before_bm.verts.ensure_lookup_table()
 
-    error = ""
-    '''
-    for f in before_bm.faces:
-        if len(f.loops) != 4:
-            error = "topology_error"
-            break
-    for e in before_bm.edges:
-        if len(e.link_faces) == 0:
-            error = "wires_error"
-            break
-    for v in before_bm.verts:
-        if len(v.link_faces) == 0:
-            error = "verts_error"
-            break
-    '''
     before_bm.free()
-    if error != "":
-        bpy.data.meshes.remove(ob0.data)
-        #bpy.data.meshes.remove(me0)
-        bpy.data.meshes.remove(before_subsurf)
-        bpy.data.objects.remove(before)
-        return error
 
     me0 = ob0.data
     verts0 = me0.vertices   # Collect generator vertices
@@ -1071,10 +1049,6 @@ def tessellate_patch(props):
     step = 1/sides
     sides0 = sides-2
     patch_faces0 = int((sides-2)**2)
-    n_patches = int(len(me0.polygons)/patch_faces)
-    if len(me0.polygons)%patch_faces != 0 and False:
-        #ob0.data = old_me0
-        return "topology_error"
 
     new_verts = []
     new_edges = []
@@ -1197,7 +1171,7 @@ def tessellate_patch(props):
                 _sk_uv[i] = Vector((fu,fv,fw))
             sk_uv_quads.append(_sk_uv_quads)
             sk_uv.append(_sk_uv)
-        store_sk_coordinates = [[] for t in ob1.data.shape_keys.key_blocks]       # [[None for k in range(n_patches)] for t in ob1.data.shape_keys.key_blocks]
+        store_sk_coordinates = [[] for t in ob1.data.shape_keys.key_blocks]
 
     np_verts1_uv = np.array(verts1_uv)
     verts1_uv_quads = np.array(verts1_uv_quads)
@@ -1206,71 +1180,18 @@ def tessellate_patch(props):
     np_u1 = verts1_uv_quads[:,2]
     np_v1 = verts1_uv_quads[:,3]
 
-    #store_coordinates = [0]*n_patches
     store_coordinates = []
     if read_vertex_groups:
-        store_weight = [[] for j in ob0.vertex_groups]       #[[None for i in range(n_patches)] for j in new_patch.vertex_groups]
+        store_weight = [[] for j in ob0.vertex_groups]
 
-    all_verts = get_patches(before_subsurf,me0,4, levels)
+    all_verts = get_patches(before_subsurf, me0, 4, levels)
     verts0 = np.array(verts0)
     poly_dict = {}
     for p in me0.polygons:
         poly_dict[tuple(sorted(p.vertices))] = p.index
 
-    n_patches_count = 0
-
     for verts_id in all_verts:
         verts = verts0[verts_id]
-
-        if rotation_mode == 'UV' and ob0.type == 'MESH' and False:
-            poly = me0.polygons[i*patch_faces]
-            if bool_selection and not poly.select: continue
-            if bool_material_id and not poly.material_index == material_id: continue
-
-            bool_correct = True
-
-            # find patch faces
-            faces = _faces.copy()
-            verts = _verts.copy()
-            shift1 = sides
-            shift2 = sides*2-1
-            shift3 = sides*3-2
-            patch_area = 0
-
-            for j in range(patch_faces):
-                if j < patch_faces0:
-                    if levels == 0:
-                        u = j%sides0
-                        v = j//sides0
-                    else:
-                        u = j%sides0+1
-                        v = j//sides0+1
-                elif j < patch_faces0 + shift1:
-                    u = j-patch_faces0
-                    v = 0
-                elif j < patch_faces0 + shift2:
-                    u = sides-1
-                    v = j-(patch_faces0 + sides)+1
-                elif j < patch_faces0 + shift3:
-                    jj = j-(patch_faces0 + shift2)
-                    u = sides-jj-2
-                    v = sides-1
-                else:
-                    jj = j-(patch_faces0 + shift3)
-                    u = 0
-                    v = sides-jj-2
-                face = me0.polygons[j+i*patch_faces]
-
-                faces[u][v] = face
-                verts[u][v] = verts0[face.vertices[0]]
-                if u == sides-1:
-                    verts[sides][v] = verts0[face.vertices[1]]
-                if v == sides-1:
-                    verts[u][sides] = verts0[face.vertices[3]]
-                if u == v == sides-1:
-                    verts[sides][sides] = verts0[face.vertices[2]]
-                patch_area += face.area
-            #patches_area.append(patch_area/patch_faces)
 
         weight_shift = 0
         if rotation_mode == 'WEIGHT':
@@ -1304,10 +1225,6 @@ def tessellate_patch(props):
         UV_shift = 0
         if rotation_mode == 'UV' and ob0.type == 'MESH':
             if len(ob0.data.uv_layers) > 0:
-                #uv0 = me0.uv_layers.active.data[faces[0][0].index*4].uv
-                #uv1 = me0.uv_layers.active.data[faces[0][-1].index*4 + 3].uv
-                #uv2 = me0.uv_layers.active.data[faces[-1][-1].index*4 + 2].uv
-                #uv3 = me0.uv_layers.active.data[faces[-1][0].index*4 + 1].uv
                 corner = poly_dict[tuple(sorted([verts_id[0,0], verts_id[0,1], verts_id[1,0], verts_id[1,1]]))]
                 uv0 = me0.uv_layers.active.data[corner*4].uv
                 corner = poly_dict[tuple(sorted([verts_id[0,-2], verts_id[0,-1], verts_id[1,-2], verts_id[1,-1]]))]
@@ -1379,7 +1296,6 @@ def tessellate_patch(props):
                 w01 = np_weight[np_u, np_v1].reshape((n_verts1,1))
                 w11 = np_weight[np_u1, np_v1].reshape((n_verts1,1))
                 # remapped z scale
-                #store_weight[vg.index][i] = np_lerp2(w00,w10,w01,w11,vx,vy)
                 store_weight[vg.index].append(np_lerp2(w00,w10,w01,w11,vx,vy))
 
         # weight thickness
@@ -1413,7 +1329,6 @@ def tessellate_patch(props):
         else:
             co3 = co2 + n2 * vz * weight_thickness
         store_coordinates.append(co3)
-        n_patches_count += 1
 
         if bool_shapekeys:
             for i_sk, sk in enumerate(ob1.data.shape_keys.key_blocks):
@@ -1490,7 +1405,7 @@ def tessellate_patch(props):
             coordinates = coordinates.flatten().tolist()
             new_patch.data.shape_keys.key_blocks[i].data.foreach_set('co', coordinates)
 
-    ############## if not bool_correct: return 0
+    ############# if not bool_correct: return 0
 
     if bool_shapekeys:
         # set original values and combine Shape Keys and Vertex Groups
@@ -1970,9 +1885,6 @@ def tessellate_original(props):
     _sz = [0]*n_faces
     n_vg = len(ob0.vertex_groups)
     _w0 = [[0]*n_faces for i in range(n_vg)]
-    ##### np_faces = [np.array(p) for p in fs1]
-    ##### new_faces = [0]*n_faces*n_faces1
-    ##### face1_count = 0
 
     face_verts1 = []
     for j, p in enumerate(base_polygons):
@@ -3531,11 +3443,6 @@ class tissue_update_tessellate(Operator):
         errors = {}
         errors["modifiers_error"] = "Modifiers that change the topology of the mesh \n" \
                                     "after the last Subsurf (or Multires) are not allowed."
-        errors["topology_error"] = "Make sure that the topology of the mesh before \n" \
-                                    "the last Subsurf (or Multires) is quads only."
-        errors["wires_error"] = "Please remove all wire edges in the base object."
-        errors["verts_error"] = "Please remove all floating vertices in the base object."
-        #errors["bridge_error"] = "Can't make the bridge."
         if new_ob in errors:
             for o in iter_objects:
                 try: bpy.data.objects.remove(o)

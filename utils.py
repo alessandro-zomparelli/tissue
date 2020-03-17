@@ -277,7 +277,6 @@ def get_patches(me_low, me_high, sides, subs):
     else:
         n_patches = nf*sides
 
-
     ek = me_low.edge_keys               # edges keys
     ek1 = me_high.edge_keys             # edges keys
     evi = np.arange(nevi) + nv
@@ -285,6 +284,16 @@ def get_patches(me_low, me_high, sides, subs):
     straight = np.arange(n-2)+1
     inverted = np.flip(straight)
     inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
+
+    edges_dict = {e : e1 for e,e1 in zip(ek,evi)}
+    keys0 = [ek1[i*(n-1)] for i in range(len(ek))]
+    keys1 = [ek1[i*(n-1)+n-2] for i in range(len(ek))]
+    edges_straight = dict.fromkeys(keys0 + keys1, straight)
+    keys2 = [(k0[0],k1[1]) for k0,k1 in zip(keys0, keys1)]
+    keys3 = [(k1[0],k0[1]) for k0,k1 in zip(keys0, keys1)]
+    edges_inverted = dict.fromkeys(keys2 + keys3, inverted)
+    filter_edges = {**edges_straight, **edges_inverted}
+
 
     if sides == 4:
         patches = np.zeros((nf,n,n))
@@ -301,33 +310,31 @@ def get_patches(me_low, me_high, sides, subs):
 
             if subs == 0: continue
 
-            # fill edges
-            ids = straight
-            e0 = tuple(sorted((verts[0],verts[1])))
-            edge_verts = evi[ek.index(e0)]
-            e1 = tuple(sorted((verts[0], edge_verts[0])))
-            if e1 not in ek1: ids = inverted
-            patch[ids,0] = evi[ek.index(e0)]
+            edge_keys = p.edge_keys
 
-            ids = straight
-            e0 = tuple(sorted((verts[1],verts[2])))
-            edge_verts = evi[ek.index(e0)]
-            e1 = tuple(sorted((verts[1], edge_verts[0])))
-            if e1 not in ek1: ids = inverted
+            # fill edges
+            e0 = edge_keys[0]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[0], edge_verts[0])
+            ids = filter_edges[e1]
+            patch[ids,0] = edge_verts
+
+            e0 = edge_keys[1]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[1], edge_verts[0])
+            ids = filter_edges[e1]
             patch[n-1,ids] = evi[ek.index(e0)]
 
-            ids = straight
-            e0 = tuple(sorted((verts[2],verts[3])))
-            edge_verts = evi[ek.index(e0)]
-            e1 = tuple(sorted((verts[3], edge_verts[0])))
-            if e1 not in ek1: ids = inverted
+            e0 = edge_keys[2]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[3], edge_verts[0])
+            ids = filter_edges[e1]
             patch[ids,n-1] = evi[ek.index(e0)]
 
-            ids = straight
-            e0 = tuple(sorted((verts[3],verts[0])))
-            edge_verts = evi[ek.index(e0)]
-            e1 = tuple(sorted((verts[0], edge_verts[0])))
-            if e1 not in ek1: ids = inverted
+            e0 = edge_keys[3]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[0], edge_verts[0])
+            ids = filter_edges[e1]
             patch[0,ids] = evi[ek.index(e0)]
 
             # fill inners
