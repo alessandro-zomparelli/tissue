@@ -1520,13 +1520,15 @@ def tessellate_original(props):
             bool_shapekeys = False
 
     if normals_mode in ('SHAPEKEYS', 'OBJECT'):
+        use_modifiers = gen_modifiers
         if normals_mode == 'SHAPEKEYS' and not gen_modifiers:
             target = _ob0
-            for m in _ob0.modifiers:
+            for m in target.modifiers:
                 m.show_viewport = False
-        if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, props, gen_modifiers)
-        elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, gen_modifiers)
-        else: ob0_sk = convert_object_to_mesh(target, gen_modifiers, True)
+            use_modifiers = True
+        if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, props, use_modifiers)
+        elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, use_modifiers)
+        else: ob0_sk = convert_object_to_mesh(target, use_modifiers, True)
         me0_sk = ob0_sk.data
         if normals_mode == 'SHAPEKEYS':
             key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
