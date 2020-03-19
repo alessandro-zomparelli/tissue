@@ -742,15 +742,23 @@ def tessellate_patch(props):
     if normals_mode in ('SHAPEKEYS','OBJECT'):
         ob0_sk = convert_object_to_mesh(target, True, True)
         me0_sk = ob0_sk.data
+        normals_target = [0]*len(me0_sk.vertices)*3
+        me0_sk.vertices.foreach_get('co',normals_target)
+        normals_target = np.array(normals_target).reshape(len(me0_sk.vertices),3)
         if normals_mode == 'SHAPEKEYS':
             key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
             for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
 
     ob0 = convert_object_to_mesh(_ob0)
     me0 = ob0.data
+    n_verts0 = len(me0.vertices)
+
+    # read vertices coordinates
+    verts0_co = [0]*n_verts0*3
+    me0.vertices.foreach_get('co',verts0_co)
+    verts0_co = np.array(verts0_co).reshape(n_verts0,3)
 
     # base normals
-    normals0 = []
     if normals_mode in ('SHAPEKEYS','OBJECT'):
         if len(me0_sk.vertices) != len(me0.vertices):
             normals_mode = 'VERTS'
@@ -761,20 +769,21 @@ def tessellate_patch(props):
         else:
             if normals_mode == 'SHAPEKEYS':
                 for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
-            for v0, v1 in zip(me0.vertices, me0_sk.vertices):
-                normals0.append(v1.co - v0.co)
+            verts0_normal = normals_target - verts0_co
             bpy.data.objects.remove(ob0_sk)
     if normals_mode in ('VERTS','FACES'):
-        me0.update()
-        normals0 = [v.normal for v in me0.vertices]
+        verts0_normal = [0]*n_verts0*3
+        me0.vertices.foreach_get('normal',verts0_normal)
+        verts0_normal = [v.normal for v in me0.vertices]
+        verts0_normal = np.array(verts0_normal).reshape(n_verts0,3)
 
     ob0.name = _ob0.name + "_apply_mod"
-    me0 = _ob0.data
+    _me0 = _ob0.data
 
     # Check if zero faces are selected
     if _ob0.type == 'MESH':
         bool_cancel = True
-        for p in me0.polygons:
+        for p in _me0.polygons:
             check_sel = check_mat = False
             if not bool_selection or p.select: check_sel = True
             if not bool_material_id or p.material_index == material_id: check_mat = True
@@ -830,16 +839,6 @@ def tessellate_patch(props):
         else: before.modifiers.remove(m)
 
     before_subsurf = simple_to_mesh(before)
-
-    me0 = ob0.data
-    n_verts0 = len(me0.vertices)
-    #verts0 = me0.vertices   # Collect generator vertices
-    verts0_co = [0]*n_verts0*3
-    verts0_normal = [0]*n_verts0*3
-    me0.vertices.foreach_get('co',verts0_co)
-    me0.vertices.foreach_get('normal',verts0_normal)
-    verts0_co = np.array(verts0_co).reshape(n_verts0,3)
-    verts0_normal = np.array(verts0_normal).reshape(n_verts0,3)
 
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
 
@@ -991,7 +990,6 @@ def tessellate_patch(props):
                 for sk in me1.shape_keys.key_blocks:
                     sk.data[v.index].co = ob1.matrix_world @ sk.data[v.index].co
             except: pass
-        #verts1.append(vert)
         v.co = vert
 
     # Bounds X, Y
@@ -1076,8 +1074,6 @@ def tessellate_patch(props):
             if rotation_mode == 'WEIGHT':
                 vg = ob0.vertex_groups[vertex_group_rotation]
                 weight_rotation = get_weight_numpy(vg, n_verts0)
-        #except:
-        #    bool_vertex_group = False
 
     # Adaptive Z
     com_area = 0
@@ -1089,9 +1085,6 @@ def tessellate_patch(props):
 
     random.seed(rand_seed)
     bool_correct = False
-
-    #_faces = [[[0] for ii in range(sides)] for jj in range(sides)]
-    #_verts = [[[0] for ii in range(sides+1)] for jj in range(sides+1)]
 
     # find relative UV component's vertices
     verts1_uv_quads = [0]*len(verts1)
@@ -1190,7 +1183,7 @@ def tessellate_patch(props):
 
     #end_time = time.time()
     #print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
-    
+
     all_verts = get_patches(before_subsurf, me0, 4, levels, bool_selection, bool_material_id, material_id)
     n_patches = len(all_verts)
 
@@ -1324,8 +1317,7 @@ def tessellate_patch(props):
         verts_area = verts_area[all_verts]
         if normals_mode == 'FACES':
             verts_area = verts_area.mean(axis=(1,2)).reshape((n_patches,1,1))
-            mean_area = np.sqrt(verts_area/com_area)
-            a2 = mean_area
+            a2 = verts_area
         else:
             a00 = verts_area[:, np_u, np_v].reshape((n_patches,n_verts1,1))
             a10 = verts_area[:, np_u1, np_v].reshape((n_patches,n_verts1,1))

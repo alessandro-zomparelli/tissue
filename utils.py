@@ -466,8 +466,8 @@ def get_patches_(me_low, me_high, sides, subs):
             # fill inners
             patch[1:-1,1:-1] = inners + ips[pid]
 
-    end_time = time.time()
-    print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
+    #end_time = time.time()
+    #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
 
     return patches.astype(dtype='int')
 
