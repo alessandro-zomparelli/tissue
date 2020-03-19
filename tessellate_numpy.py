@@ -1188,8 +1188,8 @@ def tessellate_patch(props):
     np_u1 = verts1_uv_quads[:,2]
     np_v1 = verts1_uv_quads[:,3]
 
-    end_time = time.time()
-    print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
+    #end_time = time.time()
+    #print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
 
     all_verts = get_patches(before_subsurf, me0, 4, levels)
     n_patches = len(all_verts)
@@ -1210,13 +1210,12 @@ def tessellate_patch(props):
             if rotation_direction == 'DIAG':
                 c0 = corners_weight[:,ids4]
                 c3 = corners_weight[:,(ids4+2)%4]
-                differential = c0 - c3
+                differential = c3 - c0
             else:
                 c0 = corners_weight[:,ids4]
                 c1 = corners_weight[:,(ids4+1)%4]
                 c2 = corners_weight[:,(ids4+2)%4]
                 c3 = corners_weight[:,(ids4+3)%4]
-                #differential = c0 + c1 - c2 - c3
                 differential = - c0 + c1 + c2 - c3
             weight_shift = np.argmax(differential, axis=1)
 
@@ -1229,41 +1228,38 @@ def tessellate_patch(props):
         # UV rotation
         UV_shift = 0
         if rotation_mode == 'UV' and ob0.type == 'MESH':
-            if rotation_mode == 'UV' and ob0.type == 'MESH':
-                poly_dict = {}
-                for p in me0.polygons:
-                    poly_dict[tuple(sorted(p.vertices))] = p.index
-            _UV_shift = []
-            if len(ob0.data.uv_layers) > 0:
-                for verts in all_verts:
-                    corner = poly_dict[tuple(sorted([verts[0,0], verts[0,1], verts[1,0], verts[1,1]]))]
-                    uv0 = me0.uv_layers.active.data[corner*4].uv
-                    corner = poly_dict[tuple(sorted([verts[0,-2], verts[0,-1], verts[1,-2], verts[1,-1]]))]
-                    uv1 = me0.uv_layers.active.data[corner*4 + 3].uv
-                    corner = poly_dict[tuple(sorted([verts[-2,-2], verts[-2,-1], verts[-1,-2], verts[-1,-1]]))]
-                    uv2 = me0.uv_layers.active.data[corner*4 + 2].uv
-                    corner = poly_dict[tuple(sorted([verts[-2,0], verts[-2,1], verts[-1,0], verts[-1,1]]))]
-                    uv3 = me0.uv_layers.active.data[corner*4 + 1].uv
-                    v01 = (uv0 + uv1)
+            bm = bmesh.new()
+            bm.from_mesh(before_subsurf)
+            uv_lay = bm.loops.layers.uv.active
+            UV_shift = []
+            for f in bm.faces:
+                ll = f.loops
+                if len(ll) == 4:
+                    uv0 = ll[0][uv_lay].uv
+                    uv1 = ll[3][uv_lay].uv
+                    uv2 = ll[2][uv_lay].uv
+                    uv3 = ll[1][uv_lay].uv
+
+                    v01 = (uv0 + uv1)   # not necessary to divide by 2
                     v32 = (uv3 + uv2)
-                    v0132 = v32 - v01
-                    v0132.normalize()
+                    v0132 = v32 - v01   # axis vector 1
+                    v0132.normalize()   # based on the rotation not on the size
                     v12 = (uv1 + uv2)
                     v03 = (uv0 + uv3)
-                    v1203 = v03 - v12
-                    v1203.normalize()
+                    v1203 = v03 - v12   # axis vector 2
+                    v1203.normalize()   # based on the rotation not on the size
 
-                    vertUV = []
                     dot1203 = v1203.x
                     dot0132 = v0132.x
-                    if(abs(dot1203) < abs(dot0132)):
-                        if (dot0132 > 0): pass
-                        else: UV_shift = 2
-                    else:
-                        if(dot1203 < 0): UV_shift = 3
-                        else: UV_shift = 1
-                    _UV_shift.append(UV_shift)
-                UV_shift = np.array(_UV_shift)
+                    if(abs(dot1203) < abs(dot0132)):    # already vertical
+                        if (dot0132 > 0): shift = 0
+                        else: shift = 2                 # rotate 180°
+                    else:                               # horizontal
+                        if(dot1203 < 0): shift = 3
+                        else: shift = 1
+                    UV_shift.append(shift)
+            UV_shift = np.array(UV_shift)
+            bm.free()
 
         # Rotate Patch
         rotation_shift = np.zeros((n_patches))+rotation_shift
@@ -1984,11 +1980,11 @@ def tessellate_original(props):
                     face_weights = [1-rotation_weight[v] for v in p.vertices]
                 else:
                     face_weights = [rotation_weight[v] for v in p.vertices]
-                face_weights*=2
+                fsides = len(face_weights)
                 if rotation_direction == 'DIAG':
-                    differential = [face_weights[ii]-face_weights[ii+2] for ii in range(4)]
+                    differential = [-face_weights[(ii)%fsides]+face_weights[(ii+2)%fsides] for ii in range(4)]
                 else:
-                    differential = [face_weights[ii]+face_weights[ii+1]-face_weights[ii+2]- face_weights[ii+3] for ii in range(4)]
+                    differential = [-face_weights[(ii)%fsides]-face_weights[(ii+1)%fsides]+face_weights[(ii+2)%fsides]+face_weights[(ii+3)%fsides] for ii in range(4)]
                 starting = differential.index(max(differential))
 
                 ordered = p.vertices[starting:] + p.vertices[:starting]

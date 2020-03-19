@@ -272,15 +272,13 @@ def calc_verts_area_bmesh(me):
         faces = v.link_faces
         for f in faces:
             area += f.calc_area()
-        area = area/len(faces)
-        verts_area[v.index] = area
+        verts_area[v.index] = area if area == 0 else area/len(faces)
     bm.free()
     return verts_area
 
 import time
 def get_patches(me_low, me_high, sides, subs):
-
-    start_time = time.time()
+    #start_time = time.time()
     nv = len(me_low.vertices)       # number of vertices
     ne = len(me_low.edges)          # number of edges
     n = 2**subs + 1
@@ -365,8 +363,8 @@ def get_patches(me_low, me_high, sides, subs):
             # fill inners
             patch[1:-1,1:-1] = inners + ips[pid]
 
-    end_time = time.time()
-    print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
+    #end_time = time.time()
+    #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
 
     return patches.astype(dtype='int')
 
