@@ -690,6 +690,8 @@ def props_to_dict(ob):
     return tessellate_dict
 
 def tessellate_patch(props):
+
+    start_time = time.time()
     ob = props['self']
     _ob0 = props['generator']
     _ob1 = props['component']
@@ -829,16 +831,15 @@ def tessellate_patch(props):
 
     before_subsurf = simple_to_mesh(before)
 
-    before_bm = bmesh.new()
-    before_bm.from_mesh(before_subsurf)
-    before_bm.faces.ensure_lookup_table()
-    before_bm.edges.ensure_lookup_table()
-    before_bm.verts.ensure_lookup_table()
-
-    before_bm.free()
-
     me0 = ob0.data
-    verts0 = me0.vertices   # Collect generator vertices
+    n_verts0 = len(me0.vertices)
+    #verts0 = me0.vertices   # Collect generator vertices
+    verts0_co = [0]*n_verts0*3
+    verts0_normal = [0]*n_verts0*3
+    me0.vertices.foreach_get('co',verts0_co)
+    me0.vertices.foreach_get('normal',verts0_normal)
+    verts0_co = np.array(verts0_co).reshape(n_verts0,3)
+    verts0_normal = np.array(verts0_normal).reshape(n_verts0,3)
 
     if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
 
@@ -1058,34 +1059,39 @@ def tessellate_patch(props):
     new_patch = None
 
     # All vertex group
-    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or vertex_group_thickness in ob0.vertex_groups.keys()
+    if rotation_mode == 'WEIGHT':
+        if not vertex_group_rotation in ob0.vertex_groups.keys():
+            rotation_mode = 'DEFAULT'
+    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT'
+    weight = weight_thickness = weight_rotation = None
     if read_vertex_groups:
-        try:
-            weight = []
-            for vg in ob0.vertex_groups:
-                _weight = []
-                for v in me0.vertices:
-                    try:
-                        _weight.append(vg.weight(v.index))
-                    except:
-                        _weight.append(0)
-                weight.append(_weight)
-        except:
-            bool_vertex_group = False
+        if bool_vertex_group:
+            weight = [get_weight(vg, n_verts0) for vg in ob0.vertex_groups]
+            weight = np.array(weight)
+            n_vg = len(ob0.vertex_groups)
+            if rotation_mode == 'WEIGHT':
+                vg_id = ob0.vertex_groups[vertex_group_rotation].index
+                weight_rotation =  weight[vg_id]
+        else:
+            if rotation_mode == 'WEIGHT':
+                vg = ob0.vertex_groups[vertex_group_rotation]
+                weight_rotation = get_weight_numpy(vg, n_verts0)
+        #except:
+        #    bool_vertex_group = False
 
     # Adaptive Z
     com_area = 0
     if scale_mode == 'ADAPTIVE':
         com_area = bb[0]*bb[1]
         if mode != 'BOUNDS' or com_area == 0: com_area = 1
-        areas = calc_verts_area(me0)
+        areas = calc_verts_area_bmesh(me0)
         verts_area = np.sqrt(areas*patch_faces/com_area)
 
     random.seed(rand_seed)
     bool_correct = False
 
-    _faces = [[[0] for ii in range(sides)] for jj in range(sides)]
-    _verts = [[[0] for ii in range(sides+1)] for jj in range(sides+1)]
+    #_faces = [[[0] for ii in range(sides)] for jj in range(sides)]
+    #_verts = [[[0] for ii in range(sides+1)] for jj in range(sides+1)]
 
     # find relative UV component's vertices
     verts1_uv_quads = [0]*len(verts1)
@@ -1172,6 +1178,8 @@ def tessellate_patch(props):
             sk_uv_quads.append(_sk_uv_quads)
             sk_uv.append(_sk_uv)
         store_sk_coordinates = [[] for t in ob1.data.shape_keys.key_blocks]
+        sk_uv_quads = np.array(sk_uv_quads)
+        sk_uv = np.array(sk_uv)
 
     np_verts1_uv = np.array(verts1_uv)
     verts1_uv_quads = np.array(verts1_uv_quads)
@@ -1180,189 +1188,205 @@ def tessellate_patch(props):
     np_u1 = verts1_uv_quads[:,2]
     np_v1 = verts1_uv_quads[:,3]
 
-    store_coordinates = []
-    if read_vertex_groups:
-        store_weight = [[] for j in ob0.vertex_groups]
+    end_time = time.time()
+    print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
 
     all_verts = get_patches(before_subsurf, me0, 4, levels)
-    verts0 = np.array(verts0)
-    poly_dict = {}
-    for p in me0.polygons:
-        poly_dict[tuple(sorted(p.vertices))] = p.index
+    n_patches = len(all_verts)
 
-    for verts_id in all_verts:
-        verts = verts0[verts_id]
+    ### ROTATE PATCHES ###
 
+    if rotation_mode != 'DEFAULT' or rotation_shift != 0:
+
+        # Weight rotation
         weight_shift = 0
         if rotation_mode == 'WEIGHT':
-            if vertex_group_rotation in ob0.vertex_groups.keys():
-                vg = ob0.vertex_groups[vertex_group_rotation]
-                corners = [
-                    verts[0][0].index,
-                    verts[-1][0].index,
-                    verts[-1][-1].index,
-                    verts[0][-1].index
-                    ]
-                corners_weight = []
-                for id in corners:
-                    try: corners_weight.append(vg.weight(id))
-                    except: corners_weight.append(0)
-                if invert_vertex_group_rotation:
-                    corners_weight = [1-w for w in corners_weight]
-                corners_weight*=2
-                if rotation_direction == 'DIAG':
-                    differential = [corners_weight[ii]-corners_weight[ii+2] for ii in range(4)]
-                else:
-                    differential = [corners_weight[ii]+corners_weight[ii+1]-corners_weight[ii+2]- corners_weight[ii+3] for ii in range(4)]
-                weight_shift = 4-differential.index(max(differential))
+            corners_id = np.array(((0,0,-1,-1),(0,-1,-1,0)))
+            corners = all_verts[:,corners_id[0],corners_id[1]]
+            corners_weight = weight_rotation[corners]
+            if invert_vertex_group_rotation:
+                corners_weight = 1-corners_weight
+            ids4 = np.arange(4)
+            if rotation_direction == 'DIAG':
+                c0 = corners_weight[:,ids4]
+                c3 = corners_weight[:,(ids4+2)%4]
+                differential = c0 - c3
+            else:
+                c0 = corners_weight[:,ids4]
+                c1 = corners_weight[:,(ids4+1)%4]
+                c2 = corners_weight[:,(ids4+2)%4]
+                c3 = corners_weight[:,(ids4+3)%4]
+                #differential = c0 + c1 - c2 - c3
+                differential = - c0 + c1 + c2 - c3
+            weight_shift = np.argmax(differential, axis=1)
 
         # Random rotation
         random_shift = 0
         if rotation_mode == 'RANDOM':
-            random_shift = random.randint(0, 3)
+            np.random.seed(rand_seed)
+            random_shift = np.random.randint(0,4,size=n_patches)
 
         # UV rotation
         UV_shift = 0
         if rotation_mode == 'UV' and ob0.type == 'MESH':
+            if rotation_mode == 'UV' and ob0.type == 'MESH':
+                poly_dict = {}
+                for p in me0.polygons:
+                    poly_dict[tuple(sorted(p.vertices))] = p.index
+            _UV_shift = []
             if len(ob0.data.uv_layers) > 0:
-                corner = poly_dict[tuple(sorted([verts_id[0,0], verts_id[0,1], verts_id[1,0], verts_id[1,1]]))]
-                uv0 = me0.uv_layers.active.data[corner*4].uv
-                corner = poly_dict[tuple(sorted([verts_id[0,-2], verts_id[0,-1], verts_id[1,-2], verts_id[1,-1]]))]
-                uv1 = me0.uv_layers.active.data[corner*4 + 3].uv
-                corner = poly_dict[tuple(sorted([verts_id[-2,-2], verts_id[-2,-1], verts_id[-1,-2], verts_id[-1,-1]]))]
-                uv2 = me0.uv_layers.active.data[corner*4 + 2].uv
-                corner = poly_dict[tuple(sorted([verts_id[-2,0], verts_id[-2,1], verts_id[-1,0], verts_id[-1,1]]))]
-                uv3 = me0.uv_layers.active.data[corner*4 + 1].uv
-                v01 = (uv0 + uv1)
-                v32 = (uv3 + uv2)
-                v0132 = v32 - v01
-                v0132.normalize()
-                v12 = (uv1 + uv2)
-                v03 = (uv0 + uv3)
-                v1203 = v03 - v12
-                v1203.normalize()
+                for verts in all_verts:
+                    corner = poly_dict[tuple(sorted([verts[0,0], verts[0,1], verts[1,0], verts[1,1]]))]
+                    uv0 = me0.uv_layers.active.data[corner*4].uv
+                    corner = poly_dict[tuple(sorted([verts[0,-2], verts[0,-1], verts[1,-2], verts[1,-1]]))]
+                    uv1 = me0.uv_layers.active.data[corner*4 + 3].uv
+                    corner = poly_dict[tuple(sorted([verts[-2,-2], verts[-2,-1], verts[-1,-2], verts[-1,-1]]))]
+                    uv2 = me0.uv_layers.active.data[corner*4 + 2].uv
+                    corner = poly_dict[tuple(sorted([verts[-2,0], verts[-2,1], verts[-1,0], verts[-1,1]]))]
+                    uv3 = me0.uv_layers.active.data[corner*4 + 1].uv
+                    v01 = (uv0 + uv1)
+                    v32 = (uv3 + uv2)
+                    v0132 = v32 - v01
+                    v0132.normalize()
+                    v12 = (uv1 + uv2)
+                    v03 = (uv0 + uv3)
+                    v1203 = v03 - v12
+                    v1203.normalize()
 
-                vertUV = []
-                dot1203 = v1203.x
-                dot0132 = v0132.x
-                if(abs(dot1203) < abs(dot0132)):
-                    if (dot0132 > 0): pass
-                    else: UV_shift = 2
-                else:
-                    if(dot1203 < 0): UV_shift = 3
-                    else: UV_shift = 1
+                    vertUV = []
+                    dot1203 = v1203.x
+                    dot0132 = v0132.x
+                    if(abs(dot1203) < abs(dot0132)):
+                        if (dot0132 > 0): pass
+                        else: UV_shift = 2
+                    else:
+                        if(dot1203 < 0): UV_shift = 3
+                        else: UV_shift = 1
+                    _UV_shift.append(UV_shift)
+                UV_shift = np.array(_UV_shift)
 
         # Rotate Patch
+        rotation_shift = np.zeros((n_patches))+rotation_shift
         rot = weight_shift + random_shift + UV_shift + rotation_shift
         rot = rot%4
-        if rot != 0:
-            if rot == 1:
-                verts = [[verts[w][k] for w in range(sides+1)] for k in range(sides,-1,-1)]
-            elif rot == 2:
-                verts = [[verts[k][w] for w in range(sides,-1,-1)] for k in range(sides,-1,-1)]
-            elif rot == 3:
-                verts = [[verts[w][k] for w in range(sides,-1,-1)] for k in range(sides+1)]
+        flip_u = np.logical_or(rot==2,rot==3)
+        flip_v = np.logical_or(rot==1,rot==2)
+        flip_uv = np.logical_or(rot==1,rot==3)
+        all_verts[flip_u] = all_verts[flip_u,::-1,:]
+        all_verts[flip_v] = all_verts[flip_v,:,::-1]
+        all_verts[flip_uv] = np.transpose(all_verts[flip_uv],(0,2,1))
 
-        # Patch Morphing
-        verts_xyz = np.array([[v.co for v in _verts] for _verts in verts])
-        verts_norm = np.array([[normals0[v.index] for v in _verts] for _verts in verts])
-        if normals_mode == 'FACES':
-            verts_norm = np.mean(verts_norm, axis=(0,1))
-            verts_norm = np.expand_dims(verts_norm, axis=0)
-            verts_norm = np.repeat(verts_norm,len(verts),axis=0)
-            verts_norm = np.expand_dims(verts_norm, axis=0)
-            verts_norm = np.repeat(verts_norm,len(verts),axis=0)
+    ### DEFORM PATCHES ###
 
-        v00 = verts_xyz[np_u, np_v]
-        v10 = verts_xyz[np_u1, np_v]
-        v01 = verts_xyz[np_u, np_v1]
-        v11 = verts_xyz[np_u1, np_v1]
-        n00 = verts_norm[np_u, np_v]
-        n10 = verts_norm[np_u1, np_v]
-        n01 = verts_norm[np_u, np_v1]
-        n11 = verts_norm[np_u1, np_v1]
-        vx = np_verts1_uv[:,0].reshape((n_verts1,1))
-        vy = np_verts1_uv[:,1].reshape((n_verts1,1))
-        vz = np_verts1_uv[:,2].reshape((n_verts1,1))
-        co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
-        n2 = np_lerp2(n00,n10,n01,n11,vx,vy)
+    verts_xyz = verts0_co[all_verts]
+    verts_norm = verts0_normal[all_verts]
+    v00 = verts_xyz[:, np_u, np_v]
+    v10 = verts_xyz[:, np_u1, np_v]
+    v01 = verts_xyz[:, np_u, np_v1]
+    v11 = verts_xyz[:, np_u1, np_v1]
+    vx = np_verts1_uv[:,0].reshape((1,n_verts1,1))
+    vy = np_verts1_uv[:,1].reshape((1,n_verts1,1))
+    vz = np_verts1_uv[:,2].reshape((1,n_verts1,1))
+    co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
+    if normals_mode == 'FACES':
+        n2 = np.mean(verts_norm, axis=(1,2))
+        n2 = np.expand_dims(n2, axis=1)
+    else:
+        n00 = verts_norm[:, np_u, np_v]
+        n10 = verts_norm[:, np_u1, np_v]
+        n01 = verts_norm[:, np_u, np_v1]
+        n11 = verts_norm[:, np_u1, np_v1]
+        n2 = np_lerp2(n00, n10, n01, n11, vx, vy)
 
-        # load vertex groups
-        if bool_vertex_group or vertex_group_thickness in ob0.vertex_groups.keys():
-            for _weight, vg in zip(weight, ob0.vertex_groups):
-                np_weight = np.array([[_weight[v.index] for v in verts_v] for verts_v in verts])
-                w00 = np_weight[np_u, np_v].reshape((n_verts1,1))
-                w10 = np_weight[np_u1, np_v].reshape((n_verts1,1))
-                w01 = np_weight[np_u, np_v1].reshape((n_verts1,1))
-                w11 = np_weight[np_u1, np_v1].reshape((n_verts1,1))
-                # remapped z scale
-                store_weight[vg.index].append(np_lerp2(w00,w10,w01,w11,vx,vy))
+    ### PATCHES WEIGHT ###
+    weight_thickness = 1
+    if bool_vertex_group:
+        patches_weight = weight[:, all_verts]
+        w00 = patches_weight[:, :, np_u, np_v]
+        w10 = patches_weight[:, :, np_u1, np_v]
+        w01 = patches_weight[:, :, np_u, np_v1]
+        w11 = patches_weight[:, :, np_u1, np_v1]
+        store_weight = np_lerp2(w00,w10,w01,w11,vx.transpose(0,2,1),vy.transpose(0,2,1))
 
-        # weight thickness
         if vertex_group_thickness in ob0.vertex_groups.keys():
-            vg_index = ob0.vertex_groups[vertex_group_thickness].index
-            weight_thickness = np.array(store_weight[vg_index][-1]).reshape((n_verts1,1))
-            if invert_vertex_group_thickness:
-                weight_thickness = 1-weight_thickness
-            if vertex_group_thickness_factor > 0:
-                fact = vertex_group_thickness_factor
-                weight_thickness = weight_thickness*(1-fact) + fact
-            if scale_mode == 'ADAPTIVE' and normals_mode == 'FACES':
-                weight_thickness = weight_thickness.mean()
-        else:
-            weight_thickness = 1
+            vg_id = ob0.vertex_groups[vertex_group_thickness].index
+            weight_thickness = store_weight[vg_id,:,:,np.newaxis]
+    elif vertex_group_thickness in ob0.vertex_groups.keys():
+        vg = ob0.vertex_groups[vertex_group_thickness]
+        weight_thickness = get_weight_numpy(vg, n_verts0)
+        wt = weight_thickness[all_verts]
+        wt = wt[:,:,:,np.newaxis]
+        w00 = wt[:, np_u, np_v]
+        w10 = wt[:, np_u1, np_v]
+        w01 = wt[:, np_u, np_v1]
+        w11 = wt[:, np_u1, np_v1]
+        weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
 
-        # thickness variation
+    # thickness variation
+    mean_area = []
+    if scale_mode == 'ADAPTIVE':
+        verts_area = verts_area[all_verts]
+        if normals_mode == 'FACES':
+            verts_area = verts_area.mean(axis=(1,2)).reshape((n_patches,1,1))
+            mean_area = np.sqrt(verts_area/com_area)
+            a2 = mean_area
+        else:
+            a00 = verts_area[:, np_u, np_v].reshape((n_patches,n_verts1,1))
+            a10 = verts_area[:, np_u1, np_v].reshape((n_patches,n_verts1,1))
+            a01 = verts_area[:, np_u, np_v1].reshape((n_patches,n_verts1,1))
+            a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,n_verts1,1))
+            # remapped z scale
+            a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
+        co3 = co2 + n2 * vz * a2 * weight_thickness
+    else:
+        co3 = co2 + n2 * vz * weight_thickness
+
+    store_coordinates = co3
+
+    if bool_shapekeys:
+        n_sk = len(sk_uv_quads)
+        # ids of face corners for each vertex (n_sk, n_verts1, 4)
+        np_u = sk_uv_quads[:,:,0]
+        np_v = sk_uv_quads[:,:,1]
+        np_u1 = sk_uv_quads[:,:,2]
+        np_v1 = sk_uv_quads[:,:,3]
+        # face corners for each vertex  (n_patches, n_sk, n_verts1, 4)
+        v00 = verts_xyz[:,np_u,np_v]
+        v10 = verts_xyz[:,np_u1,np_v]
+        v01 = verts_xyz[:,np_u,np_v1]
+        v11 = verts_xyz[:,np_u1,np_v1]
+        vx = sk_uv[:,:,0].reshape((1,2,n_verts1,1))
+        vy = sk_uv[:,:,1].reshape((1,2,n_verts1,1))
+        vz = sk_uv[:,:,2].reshape((1,2,n_verts1,1))
+        co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
+
+        if normals_mode == 'FACES':
+            n2 = n2[:,np.newaxis,:,:]
+        else:
+            n00 = verts_norm[:, np_u, np_v].reshape((n_patches,2,n_verts1,3))
+            n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,2,n_verts1,3))
+            n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,2,n_verts1,3))
+            n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,2,n_verts1,3))
+            n2 = np_lerp2(n00,n10,n01,n11,vx,vy)#[:,np.newaxis,:,:]
+
+        # NOTE: weight thickness is based on the base position of the
+        #       vertices, not on the coordinates of the shape keys
+
         if scale_mode == 'ADAPTIVE':
             if normals_mode == 'FACES':
-                patch_area = verts_area[verts_id].mean()
-                a2 = sqrt(patch_area/com_area)
+                a2 = mean_area
             else:
-                areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
-                a00 = areas[np_u, np_v].reshape((n_verts1,1))
-                a10 = areas[np_u1, np_v].reshape((n_verts1,1))
-                a01 = areas[np_u, np_v1].reshape((n_verts1,1))
-                a11 = areas[np_u1, np_v1].reshape((n_verts1,1))
+                a00 = verts_area[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,1))
+                a10 = verts_area[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,1))
+                a01 = verts_area[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,1))
+                a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,1))
                 # remapped z scale
                 a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
             co3 = co2 + n2 * vz * a2 * weight_thickness
         else:
             co3 = co2 + n2 * vz * weight_thickness
-        store_coordinates.append(co3)
 
-        if bool_shapekeys:
-            for i_sk, sk in enumerate(ob1.data.shape_keys.key_blocks):
-                np_verts1_uv = np.array(sk_uv[i_sk])
-                np_sk_uv_quads = np.array(sk_uv_quads[i_sk])
-                u = np_sk_uv_quads[:,0]
-                v = np_sk_uv_quads[:,1]
-                u1 = np_sk_uv_quads[:,2]
-                v1 = np_sk_uv_quads[:,3]
-                v00 = verts_xyz[u,v]
-                v10 = verts_xyz[u1,v]
-                v01 = verts_xyz[u,v1]
-                v11 = verts_xyz[u1,v1]
-                vx = np_verts1_uv[:,0].reshape((n_verts1,1))
-                vy = np_verts1_uv[:,1].reshape((n_verts1,1))
-                vz = np_verts1_uv[:,2].reshape((n_verts1,1))
-                co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
-                n2 = np_lerp2(n00,n10,n01,n11,vx,vy)
-
-                # NOTE: weight thickness is based on the base position of the
-                #       vertices, not on the coordinates of the shape keys
-
-                if scale_mode == 'ADAPTIVE':
-                    areas = np.array([[verts_area[v.index] for v in verts_v] for verts_v in verts])
-                    a00 = areas[u,v].reshape((n_verts1,1))
-                    a10 = areas[u1,v].reshape((n_verts1,1))
-                    a01 = areas[u,v1].reshape((n_verts1,1))
-                    a11 = areas[u1,v1].reshape((n_verts1,1))
-                    # remapped z scale
-                    a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
-                    co3 = co2 + n2 * vz * a2 * weight_thickness
-                else:
-                    co3 = co2 + n2 * vz * weight_thickness
-                store_sk_coordinates[i_sk].append(co3)
+        store_sk_coordinates = co3
 
     new_me = array_mesh(ob1, len(all_verts))
     new_patch = bpy.data.objects.new("tessellate_temp", new_me)
@@ -1390,7 +1414,7 @@ def tessellate_patch(props):
         bm = bmesh.new()
         bm.from_mesh(new_me)
         for i in range(len(store_weight)):
-            np_weight = np.concatenate(store_weight[i], axis=0).flatten()
+            np_weight = store_weight[i].flatten()
             bm = bmesh_set_weight_numpy(bm, i + len(ob1.vertex_groups), np_weight)
         bm.to_mesh(new_me)
         new_me.update()
@@ -1400,8 +1424,8 @@ def tessellate_patch(props):
             sk.value = val
             new_patch.shape_key_add(name=sk.name, from_mix=False)
             new_patch.data.shape_keys.key_blocks[sk.name].value = val
-        for i in range(len(store_sk_coordinates)):
-            coordinates = np.concatenate(store_sk_coordinates[i], axis=0)
+        for i in range(n_sk):
+            coordinates = np.concatenate(store_sk_coordinates[:,i,:,:], axis=0)
             coordinates = coordinates.flatten().tolist()
             new_patch.data.shape_keys.key_blocks[i].data.foreach_set('co', coordinates)
 
@@ -2933,9 +2957,6 @@ class tissue_tessellate(Operator):
             ob1 = bpy.data.objects[self.component]
         except:
             return {'CANCELLED'}
-        #self.target = bpy.data.objects[self.target]
-
-        print(self.target)
 
         self.object_name = "Tessellation"
         # Check if existing object with same name

@@ -199,7 +199,7 @@ if bool_numba:
         return co2
 
     @njit(parallel=True)
-    def numba_lerp2(val, vx, vy):
+    def numba_lerp2__(val, vx, vy):
         n_faces = len(val)
         co2 = np.zeros((n_faces,len(vx),1))
         for i in prange(n_faces):
@@ -207,6 +207,44 @@ if bool_numba:
                 co0 = val[i][0] + (val[i][1] - val[i][0]) * val[j][0]
                 co1 = val[i][3] + (val[i][2] - val[i][3]) * val[j][0]
                 co2[i][j][0] = co0 + (co1 - co0) * vy[j][0]
+        return co2
+
+    @njit(parallel=True)
+    def numba_lerp2(v00, v10, v01, v11, vx, vy):
+        ni = len(v00)
+        nj = len(v00[0])
+        nk = len(v00[0][0])
+        co2 = np.zeros((ni,nj,nk))
+        for i in prange(ni):
+            for j in prange(nj):
+                for k in prange(nk):
+                    _v00 = v00[i,j,k]
+                    _v01 = v01[i,j,k]
+                    _v10 = v10[i,j,k]
+                    _v11 = v11[i,j,k]
+                    co0 = _v00 + (_v10 - _v00) * vx[i,j,k]
+                    co1 = _v01 + (_v11 - _v01) * vx[i,j,k]
+                    co2[i,j,k] = co0 + (co1 - co0) * vy[i,j,k]
+        return co2
+
+    @njit(parallel=True)
+    def numba_lerp2_4(v00, v10, v01, v11, vx, vy):
+        ni = len(v00)
+        nj = len(v00[0])
+        nk = len(v00[0][0])
+        nw = len(v00[0][0][0])
+        co2 = np.zeros((ni,nj,nk,nw))
+        for i in prange(ni):
+            for j in prange(nj):
+                for k in prange(nk):
+                    for w in prange(nw):
+                        _v00 = v00[i,j,k]
+                        _v01 = v01[i,j,k]
+                        _v10 = v10[i,j,k]
+                        _v11 = v11[i,j,k]
+                        co0 = _v00 + (_v10 - _v00) * vx[i,j,k]
+                        co1 = _v01 + (_v11 - _v01) * vx[i,j,k]
+                        co2[i,j,k] = co0 + (co1 - co0) * vy[i,j,k]
         return co2
 
 

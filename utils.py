@@ -16,13 +16,13 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-import bpy
+import bpy, bmesh
 import threading
 import numpy as np
 import multiprocessing
 from multiprocessing import Process, Pool
 from mathutils import Vector
-try: from .numba_functions import numba_lerp2
+try: from .numba_functions import numba_lerp2, numba_lerp2_4
 except: pass
 
 weight = []
@@ -121,15 +121,18 @@ def lerp3(v1, v2, v3, v4, v):
     nor.normalize()
     return loc + nor * v.z
 
+import sys
 def np_lerp2(v00, v10, v01, v11, vx, vy):
-    #import sys
-    #if 'numba' in sys.modules and False:
-    #    co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
+    if 'numba' in sys.modules and False:
+        if len(v00.shape) == 3:
+            co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
+        elif len(v00.shape) == 4:
+            co2 = numba_lerp2_4(v00, v10, v01, v11, vx, vy)
     #except:
-    #else:
-    co0 = v00 + (v10 - v00) * vx
-    co1 = v01 + (v11 - v01) * vx
-    co2 = co0 + (co1 - co0) * vy
+    else:
+        co0 = v00 + (v10 - v00) * vx
+        co1 = v01 + (v11 - v01) * vx
+        co2 = co0 + (co1 - co0) * vy
     return co2
 
 
@@ -248,13 +251,36 @@ def calc_verts_area(me):
     n_faces = len(me.polygons)
     vareas = np.zeros(n_verts)
     vcount = np.zeros(n_verts)
-    for p in me.polygons:
-        verts = np.array(p.vertices)
-        vareas[verts] += p.area
+    parea = [0]*n_faces
+    pverts = [0]*n_faces*4
+    me.polygons.foreach_get('area', parea)
+    me.polygons.foreach_get('vertices', pverts)
+    parea = np.array(parea)
+    pverts = np.array(pverts).reshape((n_faces, 4))
+    for a, verts in zip(parea,pverts):
+        vareas[verts] += a
         vcount[verts] += 1
     return vareas / vcount
 
+def calc_verts_area_bmesh(me):
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    verts_area = np.zeros(len(me.vertices))
+    for v in bm.verts:
+        area = 0
+        faces = v.link_faces
+        for f in faces:
+            area += f.calc_area()
+        area = area/len(faces)
+        verts_area[v.index] = area
+    bm.free()
+    return verts_area
+
+import time
 def get_patches(me_low, me_high, sides, subs):
+
+    start_time = time.time()
     nv = len(me_low.vertices)       # number of vertices
     ne = len(me_low.edges)          # number of edges
     n = 2**subs + 1
@@ -293,8 +319,6 @@ def get_patches(me_low, me_high, sides, subs):
     keys3 = [(k1[0],k0[1]) for k0,k1 in zip(keys0, keys1)]
     edges_inverted = dict.fromkeys(keys2 + keys3, inverted)
     filter_edges = {**edges_straight, **edges_inverted}
-
-
     if sides == 4:
         patches = np.zeros((nf,n,n))
         for count, p in enumerate(polys):
@@ -303,6 +327,7 @@ def get_patches(me_low, me_high, sides, subs):
             verts = p.vertices
 
             # filling corners
+
             patch[0,0] = verts[0]
             patch[n-1,0] = verts[1]
             patch[n-1,n-1] = verts[2]
@@ -340,7 +365,103 @@ def get_patches(me_low, me_high, sides, subs):
             # fill inners
             patch[1:-1,1:-1] = inners + ips[pid]
 
+    end_time = time.time()
+    print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
+
     return patches.astype(dtype='int')
+
+def get_patches_(me_low, me_high, sides, subs):
+
+    start_time = time.time()
+    nv = len(me_low.vertices)       # number of vertices
+    ne = len(me_low.edges)          # number of edges
+    n = 2**subs + 1
+    nev = ne * n            # number of vertices along the subdivided edges
+    nevi = nev - 2*ne          # internal vertices along subdividede edges
+
+    # filtered polygonal faces
+    polys = [p for p in me_low.polygons if len(p.vertices)==sides]
+    n0 = 2**(subs-1) - 1
+    ps = [nv + nevi]
+    for p in me_low.polygons:
+        psides = len(p.vertices)
+        increment = psides * (n0**2 + n0) + 1
+        ps.append(increment)
+    ips = np.array(ps).cumsum()                    # incremental polygon sides
+    nf = len(polys)
+    # when subdivided quad faces follows a different pattern
+    if sides == 4:
+        n_patches = nf
+    else:
+        n_patches = nf*sides
+
+    ek = me_low.edge_keys               # edges keys
+    ek1 = me_high.edge_keys             # edges keys
+    evi = np.arange(nevi) + nv
+    evi = evi.reshape(ne,n-2)           # edges verts
+    straight = np.arange(n-2)+1
+    inverted = np.flip(straight)
+    inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
+
+    edges_dict = {e : e1 for e,e1 in zip(ek,evi)}
+    keys0 = [ek1[i*(n-1)] for i in range(len(ek))]
+    keys1 = [ek1[i*(n-1)+n-2] for i in range(len(ek))]
+    edges_straight = dict.fromkeys(keys0 + keys1, straight)
+    keys2 = [(k0[0],k1[1]) for k0,k1 in zip(keys0, keys1)]
+    keys3 = [(k1[0],k0[1]) for k0,k1 in zip(keys0, keys1)]
+    edges_inverted = dict.fromkeys(keys2 + keys3, inverted)
+    filter_edges = {**edges_straight, **edges_inverted}
+    if sides == 4:
+        patches = np.zeros((nf,n,n))
+        for count, p in enumerate(polys):
+            patch = patches[count]
+            pid = p.index
+            verts = p.vertices
+
+            # filling corners
+
+            patch[0,0] = verts[0]
+            patch[n-1,0] = verts[1]
+            patch[n-1,n-1] = verts[2]
+            patch[0,n-1] = verts[3]
+
+            if subs == 0: continue
+
+            edge_keys = p.edge_keys
+
+            # fill edges
+            e0 = edge_keys[0]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[0], edge_verts[0])
+            ids = filter_edges[e1]
+            patch[ids,0] = edge_verts
+
+            e0 = edge_keys[1]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[1], edge_verts[0])
+            ids = filter_edges[e1]
+            patch[n-1,ids] = evi[ek.index(e0)]
+
+            e0 = edge_keys[2]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[3], edge_verts[0])
+            ids = filter_edges[e1]
+            patch[ids,n-1] = evi[ek.index(e0)]
+
+            e0 = edge_keys[3]
+            edge_verts = edges_dict[e0]
+            e1 = (verts[0], edge_verts[0])
+            ids = filter_edges[e1]
+            patch[0,ids] = evi[ek.index(e0)]
+
+            # fill inners
+            patch[1:-1,1:-1] = inners + ips[pid]
+
+    end_time = time.time()
+    print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
+
+    return patches.astype(dtype='int')
+
 
 def get_vertices_numpy(mesh):
     n_verts = len(mesh.vertices)
