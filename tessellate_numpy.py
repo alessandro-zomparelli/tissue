@@ -1190,8 +1190,8 @@ def tessellate_patch(props):
 
     #end_time = time.time()
     #print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
-
-    all_verts = get_patches(before_subsurf, me0, 4, levels)
+    
+    all_verts = get_patches(before_subsurf, me0, 4, levels, bool_selection, bool_material_id, material_id)
     n_patches = len(all_verts)
 
     ### ROTATE PATCHES ###

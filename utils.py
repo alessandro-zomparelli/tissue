@@ -277,23 +277,36 @@ def calc_verts_area_bmesh(me):
     return verts_area
 
 import time
-def get_patches(me_low, me_high, sides, subs):
+def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, material_id):
     #start_time = time.time()
     nv = len(me_low.vertices)       # number of vertices
     ne = len(me_low.edges)          # number of edges
+    nf = len(me_low.polygons)       # number of polygons
     n = 2**subs + 1
-    nev = ne * n            # number of vertices along the subdivided edges
+    nev = ne * n               # number of vertices along the subdivided edges
     nevi = nev - 2*ne          # internal vertices along subdividede edges
 
-    # filtered polygonal faces
-    polys = [p for p in me_low.polygons if len(p.vertices)==sides]
     n0 = 2**(subs-1) - 1
-    ps = [nv + nevi]
-    for p in me_low.polygons:
-        psides = len(p.vertices)
-        increment = psides * (n0**2 + n0) + 1
-        ps.append(increment)
-    ips = np.array(ps).cumsum()                    # incremental polygon sides
+    mult = n0**2 + n0
+
+    # filtered polygonal faces
+    poly_sides = np.array([len(p.vertices) for p in me_low.polygons])
+    mask = poly_sides == sides
+    if bool_material_id:
+        mask_material = [1]*nf
+        me_low.polygons.foreach_get('material_index',mask_material)
+        mask_material = np.array(mask_material) == material_id
+        mask = np.logical_and(mask,mask_material)
+    if bool_selection:
+        mask_selection = [True]*nf
+        me_low.polygons.foreach_get('select',mask_selection)
+        mask_selection = np.array(mask_selection)
+        mask = np.logical_and(mask,mask_selection)
+    polys = np.array(me_low.polygons)[mask]
+    ps = poly_sides * mult + 1
+    ps = np.insert(ps,0,nv + nevi, axis=0)[:-1]
+
+    ips = ps.cumsum()[mask]                    # incremental polygon sides
     nf = len(polys)
     # when subdivided quad faces follows a different pattern
     if sides == 4:
@@ -318,10 +331,8 @@ def get_patches(me_low, me_high, sides, subs):
     edges_inverted = dict.fromkeys(keys2 + keys3, inverted)
     filter_edges = {**edges_straight, **edges_inverted}
     if sides == 4:
-        patches = np.zeros((nf,n,n))
-        for count, p in enumerate(polys):
-            patch = patches[count]
-            pid = p.index
+        patches = np.zeros((nf,n,n),dtype='int')
+        for _ips, patch, p in zip(ips,patches,polys):
             verts = p.vertices
 
             # filling corners
@@ -361,12 +372,12 @@ def get_patches(me_low, me_high, sides, subs):
             patch[0,ids] = evi[ek.index(e0)]
 
             # fill inners
-            patch[1:-1,1:-1] = inners + ips[pid]
+            patch[1:-1,1:-1] = inners + _ips
 
     #end_time = time.time()
     #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
 
-    return patches.astype(dtype='int')
+    return patches#.astype()
 
 def get_patches_(me_low, me_high, sides, subs):
 
