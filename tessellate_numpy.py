@@ -1310,6 +1310,14 @@ def tessellate_patch(props):
         w01 = wt[:, np_u, np_v1]
         w11 = wt[:, np_u1, np_v1]
         weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
+    try:
+        weight_thickness.shape
+        if invert_vertex_group_thickness:
+            weight_thickness = 1-weight_thickness
+        fact = vertex_group_thickness_factor
+        if fact > 0:
+            weight_thickness = weight_thickness*(1-fact) + fact
+    except: pass
 
     # thickness variation
     mean_area = []

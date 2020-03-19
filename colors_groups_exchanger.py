@@ -1863,7 +1863,9 @@ class weight_contour_curves(Operator):
             v1 = vertices[id1]
             w0 = w0[mask_new_verts]
             w1 = w1[mask_new_verts]
-            param = np.expand_dims((iso_val-w0)/(w1-w0),axis=1)
+            div = (w1-w0)
+            if div == 0: div = 0.000001
+            param = np.expand_dims((iso_val-w0)/div,axis=1)
             verts = v0 + (v1-v0)*param
 
             # indexes of edges with new vertices
