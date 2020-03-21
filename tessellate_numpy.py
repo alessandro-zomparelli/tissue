@@ -493,7 +493,7 @@ class tissue_tessellate_prop(PropertyGroup):
             )
     patch_subs : IntProperty(
             name="Patch Subdivisions",
-            default=1,
+            default=0,
             min=0,
             description="Subdivisions levels for Patch tessellation after the first iteration",
             update = anim_tessellate_active
@@ -1075,13 +1075,6 @@ def tessellate_patch(props):
                 vg = ob0.vertex_groups[vertex_group_rotation]
                 weight_rotation = get_weight_numpy(vg, n_verts0)
 
-    # Adaptive Z
-    com_area = 0
-    if scale_mode == 'ADAPTIVE':
-        com_area = bb[0]*bb[1]
-        if mode != 'BOUNDS' or com_area == 0: com_area = 1
-        areas = calc_verts_area_bmesh(me0)
-        verts_area = np.sqrt(areas*patch_faces/com_area)
 
     random.seed(rand_seed)
     bool_correct = False
@@ -1184,7 +1177,7 @@ def tessellate_patch(props):
     #end_time = time.time()
     #print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
 
-    all_verts = get_patches(before_subsurf, me0, 4, levels, bool_selection, bool_material_id, material_id)
+    all_verts, mask = get_patches(before_subsurf, me0, 4, levels, bool_selection, bool_material_id, material_id)
     n_patches = len(all_verts)
 
     ### ROTATE PATCHES ###
@@ -1268,7 +1261,6 @@ def tessellate_patch(props):
     ### DEFORM PATCHES ###
 
     verts_xyz = verts0_co[all_verts]
-    verts_norm = verts0_normal[all_verts]
     v00 = verts_xyz[:, np_u, np_v]
     v10 = verts_xyz[:, np_u1, np_v]
     v01 = verts_xyz[:, np_u, np_v1]
@@ -1278,9 +1270,13 @@ def tessellate_patch(props):
     vz = np_verts1_uv[:,2].reshape((1,n_verts1,1))
     co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
     if normals_mode == 'FACES':
-        n2 = np.mean(verts_norm, axis=(1,2))
-        n2 = np.expand_dims(n2, axis=1)
+        n2 = [0]*len(mask)*3
+        before_subsurf.polygons.foreach_get('normal',n2)
+        n2 = np.array(n2).reshape(len(mask),3)[mask][:,np.newaxis]
+        #n2 = np.mean(verts_norm, axis=(1,2))
+        #n2 = np.expand_dims(n2, axis=1)
     else:
+        verts_norm = verts0_normal[all_verts]
         n00 = verts_norm[:, np_u, np_v]
         n10 = verts_norm[:, np_u1, np_v]
         n01 = verts_norm[:, np_u, np_v1]
@@ -1322,11 +1318,24 @@ def tessellate_patch(props):
     # thickness variation
     mean_area = []
     if scale_mode == 'ADAPTIVE':
-        verts_area = verts_area[all_verts]
+        com_area = bb[0]*bb[1]
+        if mode != 'BOUNDS' or com_area == 0: com_area = 1
         if normals_mode == 'FACES':
-            verts_area = verts_area.mean(axis=(1,2)).reshape((n_patches,1,1))
-            a2 = verts_area
+            if levels == 0:
+                areas = [0]*len(mask)
+                before_subsurf.polygons.foreach_get('area',areas)
+                areas = np.sqrt(np.array(areas)/com_area)[mask]
+                a2 = areas[:,np.newaxis,np.newaxis]
+            else:
+                areas = calc_verts_area_bmesh(me0)
+                verts_area = np.sqrt(areas*patch_faces/com_area)
+                verts_area = verts_area[all_verts]
+                verts_area = verts_area.mean(axis=(1,2)).reshape((n_patches,1,1))
+                a2 = verts_area
         else:
+            areas = calc_verts_area_bmesh(me0)
+            verts_area = np.sqrt(areas*patch_faces/com_area)
+            verts_area = verts_area[all_verts]
             a00 = verts_area[:, np_u, np_v].reshape((n_patches,n_verts1,1))
             a10 = verts_area[:, np_u1, np_v].reshape((n_patches,n_verts1,1))
             a01 = verts_area[:, np_u, np_v1].reshape((n_patches,n_verts1,1))
@@ -3512,7 +3521,7 @@ class tissue_update_tessellate(Operator):
 
         is_multiple = iterations > 1 or combine_mode != 'LAST'# or bool_multi_components
         if merge and is_multiple:
-            use_bmesh = bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components
+            use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components)
             merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh)
 
         if bool_smooth: bpy.ops.object.shade_smooth()

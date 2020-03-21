@@ -277,6 +277,7 @@ def calc_verts_area_bmesh(me):
     return verts_area
 
 import time
+
 def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, material_id):
     #start_time = time.time()
     nv = len(me_low.vertices)       # number of vertices
@@ -287,7 +288,6 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
     nevi = nev - 2*ne          # internal vertices along subdividede edges
 
     n0 = 2**(subs-1) - 1
-    mult = n0**2 + n0
 
     # filtered polygonal faces
     poly_sides = np.array([len(p.vertices) for p in me_low.polygons])
@@ -303,81 +303,98 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
         mask_selection = np.array(mask_selection)
         mask = np.logical_and(mask,mask_selection)
     polys = np.array(me_low.polygons)[mask]
+    mult = n0**2 + n0
     ps = poly_sides * mult + 1
     ps = np.insert(ps,0,nv + nevi, axis=0)[:-1]
-
     ips = ps.cumsum()[mask]                    # incremental polygon sides
     nf = len(polys)
+
     # when subdivided quad faces follows a different pattern
     if sides == 4:
         n_patches = nf
     else:
         n_patches = nf*sides
 
-    ek = me_low.edge_keys               # edges keys
-    ek1 = me_high.edge_keys             # edges keys
-    evi = np.arange(nevi) + nv
-    evi = evi.reshape(ne,n-2)           # edges verts
-    straight = np.arange(n-2)+1
-    inverted = np.flip(straight)
-    inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
-
-    edges_dict = {e : e1 for e,e1 in zip(ek,evi)}
-    keys0 = [ek1[i*(n-1)] for i in range(len(ek))]
-    keys1 = [ek1[i*(n-1)+n-2] for i in range(len(ek))]
-    edges_straight = dict.fromkeys(keys0 + keys1, straight)
-    keys2 = [(k0[0],k1[1]) for k0,k1 in zip(keys0, keys1)]
-    keys3 = [(k1[0],k0[1]) for k0,k1 in zip(keys0, keys1)]
-    edges_inverted = dict.fromkeys(keys2 + keys3, inverted)
-    filter_edges = {**edges_straight, **edges_inverted}
     if sides == 4:
         patches = np.zeros((nf,n,n),dtype='int')
-        for _ips, patch, p in zip(ips,patches,polys):
-            verts = p.vertices
+        verts = [0]*len(me_low.polygons)*sides
+        me_low.polygons.foreach_get('vertices',verts)
+        verts = np.array(verts).reshape((len(me_low.polygons),sides))
+        verts = verts[mask]
 
-            # filling corners
+        # filling corners
 
-            patch[0,0] = verts[0]
-            patch[n-1,0] = verts[1]
-            patch[n-1,n-1] = verts[2]
-            patch[0,n-1] = verts[3]
+        patches[:,0,0] = verts[:,0]
+        patches[:,n-1,0] = verts[:,1]
+        patches[:,n-1,n-1] = verts[:,2]
+        patches[:,0,n-1] = verts[:,3]
 
-            if subs == 0: continue
+        if subs != 0:
+            shift_verts = np.roll(verts, -1, axis=1)[:,:,np.newaxis]
+            edge_keys = np.concatenate((shift_verts, verts[:,:,np.newaxis]), axis=2)
+            edge_keys.sort()
 
-            edge_keys = p.edge_keys
+            edge_verts = me_low.edge_keys             # edges keys
+            edge_verts = np.array(edge_verts)
+            edges_index = np.zeros((ne,ne),dtype='int')
+            edges_index[edge_verts[:,0],edge_verts[:,1]] = np.arange(ne)
 
-            # fill edges
-            e0 = edge_keys[0]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[0], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[ids,0] = edge_verts
+            evi = np.arange(nevi) + nv
+            evi = evi.reshape(ne,n-2)           # edges inner verts
+            straight = np.arange(n-2)+1
+            inverted = np.flip(straight)
+            inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
 
-            e0 = edge_keys[1]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[1], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[n-1,ids] = evi[ek.index(e0)]
+            ek1 = me_high.edge_keys             # edges keys
+            ek1 = np.array(ek1)                             # edge keys highres
+            keys0 = ek1[np.arange(ne)*(n-1)]                # first inner edge
+            keys1 = ek1[np.arange(ne)*(n-1)+n-2]            # last inner edge
+            edges_dir = np.zeros((nev,nev), dtype='int')
+            edges_dir[keys0[:,0], keys0[:,1]] = 1
+            edges_dir[keys1[:,0], keys1[:,1]] = 1
+            pick_verts = np.array((inverted,straight))
 
-            e0 = edge_keys[2]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[3], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[ids,n-1] = evi[ek.index(e0)]
+            patch_index = np.arange(nf)[:,np.newaxis,np.newaxis]
 
-            e0 = edge_keys[3]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[0], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[0,ids] = evi[ek.index(e0)]
+            # edge 0
+            e0 = edge_keys[:,0]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            dir = edges_dir[verts[:,0], edge_verts[:,0]]       # check correct direction
+            ids = pick_verts[dir][:,np.newaxis,:]                           # indexes order along the side
+            patches[patch_index,ids,0] = edge_verts[:,np.newaxis,:]                   # assign indexes
+
+            # edge 0
+            e0 = edge_keys[:,1]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            dir = edges_dir[verts[:,1], edge_verts[:,0]]       # check correct direction
+            ids = pick_verts[dir][:,:,np.newaxis]                           # indexes order along the side
+            patches[patch_index,n-1,ids] = edge_verts[:,:,np.newaxis]                   # assign indexes
+
+            # edge 0
+            e0 = edge_keys[:,2]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            dir = edges_dir[verts[:,3], edge_verts[:,0]]       # check correct direction
+            ids = pick_verts[dir][:,np.newaxis,:]                           # indexes order along the side
+            patches[patch_index,ids,n-1] = edge_verts[:,np.newaxis,:]                   # assign indexes
+
+            # edge 0
+            e0 = edge_keys[:,3]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            dir = edges_dir[verts[:,0], edge_verts[:,0]]       # check correct direction
+            ids = pick_verts[dir][:,:,np.newaxis]                           # indexes order along the side
+            patches[patch_index,0,ids] = edge_verts[:,:,np.newaxis]                   # assign indexes
 
             # fill inners
-            patch[1:-1,1:-1] = inners + _ips
+            patches[:,1:-1,1:-1] = inners[np.newaxis,:,:] + ips[:,np.newaxis,np.newaxis]
 
     #end_time = time.time()
     #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
 
-    return patches#.astype()
+    return patches, mask
 
 def get_patches_(me_low, me_high, sides, subs):
 
