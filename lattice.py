@@ -391,7 +391,8 @@ class lattice_along_surface(Operator):
 
         # set as parent
         if self.set_parent:
-            lattice.parent = obj
+            override = {'active_object': obj, 'selected_objects' : [lattice,obj]}
+            bpy.ops.object.parent_set(override, type='OBJECT', keep_transform=False)
 
         # reading grid structure
         verts_grid, edges_grid, faces_grid = grid_from_mesh(
