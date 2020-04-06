@@ -2803,7 +2803,7 @@ class start_reaction_diffusion(Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object.type == 'MESH'
+        return context.object.type == 'MESH' and context.mode != 'EDIT_MESH'
 
     def execute(self, context):
         reaction_diffusion_add_handler(self, context)
@@ -2849,7 +2849,7 @@ class reset_reaction_diffusion_weight(Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object.type == 'MESH'
+        return context.object.type == 'MESH' and context.mode != 'EDIT_MESH'
 
     def execute(self, context):
         reaction_diffusion_add_handler(self, context)
@@ -2886,7 +2886,7 @@ class bake_reaction_diffusion(Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.object.type == 'MESH'
+        return context.object.type == 'MESH' and context.mode != 'EDIT_MESH'
 
     def execute(self, context):
         ob = context.object

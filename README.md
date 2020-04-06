@@ -5,13 +5,13 @@ http://www.co-de-it.com/wordpress/code/blender-tissue
 
 Tissue is already shipped with both Blender 2.79b and Blender 2.80. However both versions can be updated manually, for more updated features and more stability.
 
-### Blender 2.80
+### Blender 2.82a
 
-Tissue v0.3.39 for Blender 2.80 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-39
+Tissue v0.3.39 for Blender 2.82a (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-39
 
 Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b280-dev
 
-### Blender 2.79
+### Blender 2.79 (unsupported)
 
 Tissue v0.3.4 for Blender 2.79b (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-4
 
@@ -31,10 +31,18 @@ Development branch (most updated version): https://github.com/alessandro-zompare
 Tissue documentation for Blender 2.80: https://github.com/alessandro-zomparelli/tissue/wiki
 
 
-### Contribute
-Please help me keeping Tissue stable and updated, report any issue here: https://github.com/alessandro-zomparelli/tissue/issues
+### Issues
+Please help me keeping Tissue stable and updated, report any issues or feedback here: https://github.com/alessandro-zomparelli/tissue/issues
 
+### Contribute
 Tissue is free and open-source. I really think that this is the power of Blender and I wanted to give my small contribution to it.
-If you like my work and you want to help to continue the development of Tissue, please consider to make a small donation. Any small contribution is really appreciated, thanks! :-D
+
+If you like my work and you want to help me, please consider to support me on **Patreon**, where I share some tips about Blender, Tissue and scripting: https://www.patreon.com/alessandrozomparelli
+
+[![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
+
+A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory* and *Kairomon*.
+
+Many thanks,
 
 Alessandro
