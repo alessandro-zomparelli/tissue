@@ -22,6 +22,7 @@ import numpy as np
 import multiprocessing
 from multiprocessing import Process, Pool
 from mathutils import Vector
+from math import *
 try: from .numba_functions import numba_lerp2, numba_lerp2_4
 except: pass
 
@@ -763,3 +764,21 @@ def mod_preserve_shape(mod):
         'VERTEX_WEIGHT_PROXIMITY','DYNAMIC_PAINT'
         )
     return mod.type in same_shape_modifiers
+
+
+# find planar vector according to two axis
+def flatten_vector(vec, x, y):
+    vx = vec.project(x)
+    vy = vec.project(y)
+    mult = 1 if vx.dot(x) > 0 else -1
+    vx = mult*vx.length
+    mult = 1 if vy.dot(y) > 0 else -1
+    vy = mult*vy.length
+    return Vector((vx, vy))
+
+# find rotations according to X axis
+def vector_rotation(vec):
+    v0 = Vector((1,0))
+    ang = Vector.angle_signed(vec, v0)
+    if ang < 0: ang = 2*pi + ang
+    return ang

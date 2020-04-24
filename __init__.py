@@ -87,6 +87,7 @@ classes = (
     tessellate_numpy.TISSUE_PT_tessellate_selective,
     tessellate_numpy.TISSUE_PT_tessellate_morphing,
     tessellate_numpy.TISSUE_PT_tessellate_iterations,
+    tessellate_numpy.polyhedra_wireframe,
 
     colors_groups_exchanger.face_area_to_vertex_groups,
     colors_groups_exchanger.vertex_colors_to_vertex_groups,

@@ -72,40 +72,48 @@ def anim_tessellate_object(ob):
 #from bpy.app.handlers import persistent
 
 def anim_tessellate(scene):
+
     try:
         active_object = bpy.context.object
         old_mode = bpy.context.object.mode
         selected_objects = bpy.context.selected_objects
     except: active_object = old_mode = selected_objects = None
-    if old_mode in ('OBJECT', 'PAINT_WEIGHT'):
+
+    if old_mode in ('OBJECT', 'PAINT_WEIGHT') or True:
         update_objects = []
         for ob in scene.objects:
             if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_lock:
                 if ob not in update_objects: update_objects.append(ob)
                 update_objects = list(reversed(update_dependencies(ob, update_objects)))
         for ob in update_objects:
+            '''
             override = {'object': ob}
             '''
-            win      = bpy.data.window_managers[0].windows[0]#bpy.context.window
-            scr      = win.screen
-            areas3d  = [area for area in scr.areas if area.type == 'VIEW_3D']
-            region   = [region for region in areas3d[0].regions if region.type == 'WINDOW']
-            override = {
-                'window':win,
-                'screen':scr,
-                'area'  :areas3d[0],
-                'region':region[0],
-                'scene' :scene,
-                'object': ob
-            }
-            '''
-            bpy.ops.object.tissue_update_tessellate(override)
-    # restore selected objects
-    if old_mode != None:
-        for o in scene.objects:
-            if not o.hide_viewport: o.select_set(o in selected_objects)
-        bpy.context.view_layer.objects.active = active_object
-        bpy.ops.object.mode_set(mode=old_mode)
+            for window in bpy.context.window_manager.windows:
+                screen = window.screen
+                for area in screen.areas:
+                    if area.type == 'VIEW_3D':
+                        override = bpy.context.copy()
+                        override['window'] = window
+                        override['screen'] = screen
+                        override['area'] = area
+                        override['selected_objects'] = [ob]
+                        override['object'] = ob
+                        override['active_object'] = ob
+                        override['selected_editable_objects'] = [ob]
+                        '''
+                        override = {
+                            'window': window,
+                            'screen': screen,
+                            'area': area,
+                            'selected_objects': [ob],
+                            'object': ob,
+                            'selected_editable_objects': [ob],
+                            'active_object': ob
+                        }
+                        '''
+                        bpy.ops.object.tissue_update_tessellate(override)
+                        break
     return
 
 
@@ -3062,10 +3070,10 @@ class tissue_refresh_tessellate(Operator):
         except:
             return False
 
-    @staticmethod
-    def check_gen_comp(checking):
+    #@staticmethod
+    #def check_gen_comp(checking):
         # note pass the stored name key in here to check it out
-        return checking in bpy.data.objects.keys()
+    #    return checking in bpy.data.objects.keys()
 
     def execute(self, context):
         ob = bpy.context.object
@@ -3111,10 +3119,10 @@ class tissue_update_tessellate(Operator):
         except:
             return False
 
-    @staticmethod
-    def check_gen_comp(checking):
+    #@staticmethod
+    #def check_gen_comp(checking):
         # note pass the stored name key in here to check it out
-        return checking in bpy.data.objects.keys()
+    #    return checking in bpy.data.objects.keys()
 
     def execute(self, context):
         start_time = time.time()
@@ -3595,6 +3603,7 @@ class TISSUE_PT_tessellate(Panel):
         col.separator()
         col.label(text="Other:")
         col.operator("object.dual_mesh")
+        col.operator("object.polyhedra_wireframe", icon='MOD_WIREFRAME')
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
 
 
@@ -4572,3 +4581,325 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
                 closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
             for f in closed['faces']: f.material_index = cap_material_index
         bm.to_mesh(ob.data)
+
+class polyhedra_wireframe(Operator):
+    bl_idname = "object.polyhedra_wireframe"
+    bl_label = "Polyhedra Wireframe"
+    bl_description = "Generate wireframes around the faces.\nDoesn't works with boundary edges"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    thickness : FloatProperty(
+        name="Thickness", default=0.1, min=0, soft_max=10,
+        description="Wireframe thickness"
+        )
+
+    dissolve_inners : BoolProperty(
+        name="Dissolve Inners", default=False,
+        description="Dissolve inner edges"
+        )
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            #bool_tessellated = context.object.tissue_tessellate.generator != None
+            ob = context.object
+            return ob.type == 'MESH' and ob.mode == 'OBJECT'# and bool_tessellated
+        except:
+            return False
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        ob = bpy.context.object
+        me = simple_to_mesh(ob)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        double_faces = []
+        for f in bm.faces:
+            verts0 = [v.co for v in f.verts]
+            verts1 = [v.co for v in f.verts]
+            verts1.reverse()
+            double_faces.append(verts0)
+            double_faces.append(verts1)
+
+        bm1 = bmesh.new()
+
+        for verts in double_faces:
+            new_verts = []
+            for v in verts:
+                new_verts.append(bm1.verts.new(v))
+            bm1.faces.new(new_verts)
+
+        bm1.verts.ensure_lookup_table()
+        bm1.edges.ensure_lookup_table()
+        bm1.faces.ensure_lookup_table()
+
+        n_faces = len(bm.faces)
+        n_doubles = len(bm1.faces)
+
+        polyhedra = []
+
+        for e in bm.edges:
+            done = []
+            e_faces = len(e.link_faces)
+            edge_vec =  e.verts[1].co - e.verts[0].co
+            # run first face
+            for i1 in range(e_faces-1):
+                f1 = e.link_faces[i1]
+                #edge_verts1 = [v.index for v in f1.verts if v in e.verts]
+                verts1 = [v.index for v in f1.verts]
+                va1 = verts1.index(e.verts[0].index)
+                vb1 = verts1.index(e.verts[1].index)
+                dir1 = va1 == (vb1+1)%len(verts1)
+                edge_vec1 = edge_vec if dir1 else -edge_vec
+
+                # run second face
+                faces2 = []
+                normals2 = []
+                #print(edge_verts1)
+                for i2 in range(i1+1,e_faces):
+                #for i2 in range(n_faces):
+                    if i1 == i2: continue
+                    f2 = e.link_faces[i2]
+                    #edge_verts2 = [v.index for v in f2.verts if v in e.verts]
+                    verts2 = [v.index for v in f2.verts]
+                    va2 = verts2.index(e.verts[0].index)
+                    vb2 = verts2.index(e.verts[1].index)
+                    dir2 = va2 == (vb2+1)%len(verts2)
+                    #print(edge_verts2)
+                    # check for normal consistency
+                    if dir1 != dir2:
+                        # add face
+                        faces2.append(f2.index+1)
+                        normals2.append(f2.normal)
+                    else:
+                        # add flipped face
+                        faces2.append(-(f2.index+1))
+                        normals2.append(-f2.normal)
+
+                # find first polyhedra (positive)
+                plane_x = f1.normal                     # normal
+                plane_y = plane_x.cross(edge_vec1)      # tangent face perp edge
+                id1 = (f1.index+1)
+
+                # check consistent faces
+                if id1 not in done:
+                    id2 = None
+                    min_angle = 10
+                    for i2, n2 in zip(faces2,normals2):
+                        v2 = flatten_vector(-n2, plane_x, plane_y)
+                        angle = vector_rotation(v2)
+                        if angle < min_angle:
+                            id2 = i2
+                            min_angle = angle
+                    done.append(id2)
+                    add = True
+                    for p in polyhedra:
+                        if id1 in p or id2 in p:
+                            add = False
+                            if id2 not in p: p.append(id2)
+                            if id1 not in p: p.append(id1)
+                            break
+                    if add: polyhedra.append([id1, id2])
+
+                # find second polyhedra (negative)
+                plane_x = -f1.normal                    # normal
+                plane_y = plane_x.cross(-edge_vec1)      # tangent face perp edge
+                id1 = -(f1.index+1)
+
+                if id1 not in done:
+                    id2 = None
+                    min_angle = 10
+                    for i2, n2 in zip(faces2, normals2):
+                        v2 = flatten_vector(n2, plane_x, plane_y)
+                        angle = vector_rotation(v2)
+                        if angle < min_angle:
+                            id2 = -i2
+                            min_angle = angle
+                    done.append(id2)
+                    add = True
+                    for p in polyhedra:
+                        if id1 in p or id2 in p:
+                            add = False
+                            if id2 not in p: p.append(id2)
+                            if id1 not in p: p.append(id1)
+                            break
+                    if add: polyhedra.append([id1, id2])
+
+        for i in range(len(bm1.faces)):
+            for j in (False,True):
+                if j: id = i+1
+                else: id = -(i+1)
+                join = []
+                keep = []
+                for p in polyhedra:
+                    if id in p: join += p
+                    else: keep.append(p)
+                if len(join) > 0:
+                    keep.append(list(dict.fromkeys(join)))
+                    polyhedra = keep
+
+        for p in polyhedra:
+            faces_id = [(f-1)*2 if f > 0 else (-f-1)*2+1 for f in p]
+            merge_verts = []
+            for f in faces_id:
+                merge_verts += [v for v in bm1.faces[f].verts]
+            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.001)
+            bm1.verts.ensure_lookup_table()
+            bm1.edges.ensure_lookup_table()
+            bm1.faces.ensure_lookup_table()
+
+        ############# FRAME #############
+        bm = bm1
+        original_faces = list(bm.faces)
+
+        # detect edge loops
+
+        loops = []
+        boundaries_mat = []
+        neigh_face_center = []
+        face_normals = []
+
+        # compute boundary frames
+        new_faces = []
+        vert_ids = []
+
+        # append regular faces
+        for f in original_faces:#bm.faces:
+            loop = list(f.verts)
+            loops.append(loop)
+            boundaries_mat.append([f.material_index for v in loop])
+            face_normals.append([f.normal for v in loop])
+
+        push_verts = []
+        inner_loops = []
+
+        for loop_index, loop in enumerate(loops):
+            is_boundary = loop_index < len(neigh_face_center)
+            materials = boundaries_mat[loop_index]
+            new_loop = []
+            loop_ext = [loop[-1]] + loop + [loop[0]]
+
+            # calc tangents
+            tangents = []
+            for i in range(len(loop)):
+                # vertices
+                vert0 = loop_ext[i]
+                vert = loop_ext[i+1]
+                vert1 = loop_ext[i+2]
+                # edge vectors
+                vec0 = (vert0.co - vert.co).normalized()
+                vec1 = (vert.co - vert1.co).normalized()
+                # tangent
+                _vec1 = -vec1
+                _vec0 = -vec0
+                ang = (pi - vec0.angle(vec1))/2
+                normal = face_normals[loop_index][i]
+                tan0 = normal.cross(vec0)
+                tan1 = normal.cross(vec1)
+                tangent = (tan0 + tan1).normalized()/sin(ang)*self.thickness/2
+                tangents.append(tangent)
+
+            # calc correct direction for boundaries
+            mult = -1
+            if is_boundary:
+                dir_val = 0
+                for i in range(len(loop)):
+                    surf_point = neigh_face_center[loop_index][i]
+                    tangent = tangents[i]
+                    vert = loop_ext[i+1]
+                    dir_val += tangent.dot(vert.co - surf_point)
+                if dir_val > 0: mult = 1
+
+            # add vertices
+            for i in range(len(loop)):
+                vert = loop_ext[i+1]
+                #if props['frame_mode'] == 'RELATIVE': area = verts_area[vert.index]
+                #else:
+                area = 1
+                new_co = vert.co + tangents[i] * mult * area
+                # add vertex
+                new_vert = bm.verts.new(new_co)
+                new_loop.append(new_vert)
+                vert_ids.append(vert.index)
+            new_loop.append(new_loop[0])
+
+            # add faces
+            materials += [materials[0]]
+            for i in range(len(loop)):
+                 v0 = loop_ext[i+1]
+                 v1 = loop_ext[i+2]
+                 v2 = new_loop[i+1]
+                 v3 = new_loop[i]
+                 face_verts = [v1,v0,v3,v2]
+                 if mult == -1: face_verts = [v0,v1,v2,v3]
+                 new_face = bm.faces.new(face_verts)
+                 new_face.material_index = materials[i+1]
+                 new_face.select = True
+                 new_faces.append(new_face)
+            bm.verts.ensure_lookup_table()
+            push_verts += [v.index for v in loop_ext]
+
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+        corners = [[] for i in range(len(bm.verts))]
+        #corners = [Vector((0,0,0)) for i in range(len(bm.verts))]
+        normals = [0]*len(bm.verts)
+        vertices = [0]*len(bm.verts)
+        for f in new_faces:
+            f.normal_update()
+            v0 = f.verts[0]
+            v1 = f.verts[1]
+            corners[v0.index].append((v1.co - v0.co).normalized())
+            normals[v0.index] = v0.normal
+            vertices[v0.index] = v0
+        for i, vecs in enumerate(corners):
+            if len(vecs) > 0:
+                v = vertices[i]
+                nor = normals[i]
+                ang = 0
+                for vec in vecs:
+                    ang += nor.angle(vec)
+                ang /= len(vecs)
+                div = sin(ang)
+                if div == 0: div = 1
+                v.co += nor*self.thickness/2/div
+
+        for f in original_faces: bm.faces.remove(f)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=self.thickness/100)
+        bm.faces.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.verts.ensure_lookup_table()
+
+        max_subdivisions = 4
+
+        if self.dissolve_inners:
+            bm.to_mesh(me)
+            me.update()
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            dissolve_edges = []
+            for f in bm.faces:
+                e = f.edges[2]
+                if e not in dissolve_edges:
+                    dissolve_edges.append(e)
+            bmesh.ops.dissolve_edges(bm, edges=dissolve_edges, use_verts=True, use_face_split=True)
+
+        bm.to_mesh(me)
+        me.update()
+        bm1.free
+        new_ob = bpy.data.objects.new("Wireframe", me)
+        bpy.context.collection.objects.link(new_ob)
+        for o in context.scene.objects: o.select_set(False)
+        new_ob.select_set(True)
+        context.view_layer.objects.active = new_ob
+        #new_ob.location = ob.location
+        new_ob.matrix_world = ob.matrix_world
+        return {'FINISHED'}
