@@ -36,7 +36,7 @@
 import bpy, bmesh, os
 import numpy as np
 import math, timeit, time
-from math import *#pi, sin
+from math import pi
 from statistics import mean, stdev
 from mathutils import Vector
 from numpy import *
@@ -220,6 +220,7 @@ class reaction_diffusion_prop(PropertyGroup):
         description = 'Directory that contains Reaction-Diffusion cache files'
         )
 
+from numpy import *
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
     verts = ob.data.vertices
     n_verts = len(verts)
@@ -2617,7 +2618,7 @@ class harmonic_weight(Operator):
             for i in range(len(ob.data.vertices)):
                 try: val = ob.vertex_groups[group_id].weight(i)
                 except: val = 0
-                weight = self.amp*(sin(val*self.freq) - self.midlevel)/2 + 0.5 + self.add*val*(1-(1-val)*self.mult)
+                weight = self.amp*(math.sin(val*self.freq) - self.midlevel)/2 + 0.5 + self.add*val*(1-(1-val)*self.mult)
                 ob.vertex_groups[-1].add([i], weight, 'REPLACE')
             ob.data.update()
         else:

@@ -4593,6 +4593,11 @@ class polyhedra_wireframe(Operator):
         description="Wireframe thickness"
         )
 
+    subdivisions : IntProperty(
+        name="Segments", default=1, min=1, soft_max=10,
+        description="Max sumber of segments, used for the longest edge"
+        )
+
     dissolve_inners : BoolProperty(
         name="Dissolve Inners", default=False,
         description="Dissolve inner edges"
@@ -4611,6 +4616,7 @@ class polyhedra_wireframe(Operator):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
+        start_time = time.time()
         ob = bpy.context.object
         me = simple_to_mesh(ob)
         bm = bmesh.new()
@@ -4648,7 +4654,14 @@ class polyhedra_wireframe(Operator):
         for e in bm.edges:
             done = []
             e_faces = len(e.link_faces)
+            if e_faces < 2:
+                bm.free()
+                bm1.free()
+                message = "Only edges with two or more connected faces are allowed"
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
             edge_vec =  e.verts[1].co - e.verts[0].co
+
             # run first face
             for i1 in range(e_faces-1):
                 f1 = e.link_faces[i1]
@@ -4662,17 +4675,16 @@ class polyhedra_wireframe(Operator):
                 # run second face
                 faces2 = []
                 normals2 = []
-                #print(edge_verts1)
                 for i2 in range(i1+1,e_faces):
                 #for i2 in range(n_faces):
                     if i1 == i2: continue
                     f2 = e.link_faces[i2]
+                    f2.normal_update()
                     #edge_verts2 = [v.index for v in f2.verts if v in e.verts]
                     verts2 = [v.index for v in f2.verts]
                     va2 = verts2.index(e.verts[0].index)
                     vb2 = verts2.index(e.verts[1].index)
                     dir2 = va2 == (vb2+1)%len(verts2)
-                    #print(edge_verts2)
                     # check for normal consistency
                     if dir1 != dir2:
                         # add face
@@ -4745,19 +4757,88 @@ class polyhedra_wireframe(Operator):
                     keep.append(list(dict.fromkeys(join)))
                     polyhedra = keep
 
+        end_time = time.time()
+        print('Tissue: Polyhedra wireframe, find polyhedra in {:.4f} sec'.format(end_time-start_time))
+
+        delete_faces = []
+        wireframe_faces = []
+        not_wireframe_faces = []
+        flat_faces = []
+
+        bm.free()
+
+        end_time = time.time()
+        print('Tissue: Polyhedra wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
+
+        bm1.faces.index_update()
+        #merge_verts = []
         for p in polyhedra:
+            delete_faces_poly = []
+            wireframe_faces_poly = []
             faces_id = [(f-1)*2 if f > 0 else (-f-1)*2+1 for f in p]
+            faces_id_neg = [(-f-1)*2 if -f > 0 else (f-1)*2+1 for f in p]
             merge_verts = []
-            for f in faces_id:
-                merge_verts += [v for v in bm1.faces[f].verts]
-            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.001)
-            bm1.verts.ensure_lookup_table()
+            faces = [bm1.faces[f_id] for f_id in faces_id]
+            for f in faces:
+                delete = False
+                if f.index in delete_faces: continue
+                '''
+                cen = f.calc_center_median()
+                for e in f.edges:
+                    mid = (e.verts[0].co + e.verts[1].co)/2
+                    vec1 = e.verts[0].co - e.verts[1].co
+                    vec2 = mid - cen
+                    ang = Vector.angle(vec1,vec2)
+                    length = vec2.length
+                    #length = sin(ang)*length
+                    if length < self.thickness/2:
+                        delete = True
+                '''
+                sides = len(f.verts)
+                for i in range(sides):
+                    v = f.verts[i].co
+                    v0 = f.verts[(i-1)%sides].co
+                    v1 = f.verts[(i+1)%sides].co
+                    vec0 = v0 - v
+                    vec1 = v1 - v
+                    ang = (pi - vec0.angle(vec1))/2
+                    length = min(vec0.length, vec1.length)*sin(ang)
+                    if length < self.thickness/2:
+                        delete = True
+                        break
+
+                if delete:
+                    delete_faces_poly.append(f.index)
+                else:
+                    wireframe_faces_poly.append(f.index)
+                merge_verts += [v for v in f.verts]
+            if len(wireframe_faces_poly) < 2:
+                delete_faces += faces_id
+                not_wireframe_faces += faces_id_neg
+            else:
+                wireframe_faces += wireframe_faces_poly
+                flat_faces += delete_faces_poly
+
+            #wireframe_faces = list(dict.fromkeys(wireframe_faces))
+            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.000001)
             bm1.edges.ensure_lookup_table()
             bm1.faces.ensure_lookup_table()
+            bm1.faces.index_update()
+        wireframe_faces = [i for i in wireframe_faces if i not in not_wireframe_faces]
+        wireframe_faces = list(dict.fromkeys(wireframe_faces))
+
+        flat_faces = list(dict.fromkeys(flat_faces))
+
+
+        end_time = time.time()
+        print('Tissue: Polyhedra wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
+
 
         ############# FRAME #############
-        bm = bm1
-        original_faces = list(bm.faces)
+        bm1.faces.index_update()
+        wireframe_faces = [bm1.faces[i] for i in wireframe_faces]
+        original_faces = wireframe_faces
+        #bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.001)
 
         # detect edge loops
 
@@ -4768,13 +4849,16 @@ class polyhedra_wireframe(Operator):
 
         # compute boundary frames
         new_faces = []
+        wire_length = []
         vert_ids = []
 
         # append regular faces
-        for f in original_faces:#bm.faces:
+
+        for f in original_faces:
             loop = list(f.verts)
             loops.append(loop)
             boundaries_mat.append([f.material_index for v in loop])
+            f.normal_update()
             face_normals.append([f.normal for v in loop])
 
         push_verts = []
@@ -4820,12 +4904,10 @@ class polyhedra_wireframe(Operator):
             # add vertices
             for i in range(len(loop)):
                 vert = loop_ext[i+1]
-                #if props['frame_mode'] == 'RELATIVE': area = verts_area[vert.index]
-                #else:
                 area = 1
                 new_co = vert.co + tangents[i] * mult * area
                 # add vertex
-                new_vert = bm.verts.new(new_co)
+                new_vert = bm1.verts.new(new_co)
                 new_loop.append(new_vert)
                 vert_ids.append(vert.index)
             new_loop.append(new_loop[0])
@@ -4833,33 +4915,49 @@ class polyhedra_wireframe(Operator):
             # add faces
             materials += [materials[0]]
             for i in range(len(loop)):
-                 v0 = loop_ext[i+1]
-                 v1 = loop_ext[i+2]
-                 v2 = new_loop[i+1]
-                 v3 = new_loop[i]
-                 face_verts = [v1,v0,v3,v2]
-                 if mult == -1: face_verts = [v0,v1,v2,v3]
-                 new_face = bm.faces.new(face_verts)
-                 new_face.material_index = materials[i+1]
-                 new_face.select = True
-                 new_faces.append(new_face)
-            bm.verts.ensure_lookup_table()
+                v0 = loop_ext[i+1]
+                v1 = loop_ext[i+2]
+                v2 = new_loop[i+1]
+                v3 = new_loop[i]
+                face_verts = [v1,v0,v3,v2]
+                if mult == -1: face_verts = [v0,v1,v2,v3]
+                new_face = bm1.faces.new(face_verts)
+                #new_face.material_index = int((v0.co - v1.co).length/max_segment)    # materials[i+1]
+                new_face.select = True
+                new_faces.append(new_face)
+                wire_length.append((v0.co - v1.co).length)
+            max_segment = max(wire_length)/self.subdivisions
+            for f,l in zip(new_faces,wire_length):
+                f.material_index = min(int(l/max_segment), self.subdivisions-1)
+            bm1.verts.ensure_lookup_table()
             push_verts += [v.index for v in loop_ext]
 
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-        corners = [[] for i in range(len(bm.verts))]
-        #corners = [Vector((0,0,0)) for i in range(len(bm.verts))]
-        normals = [0]*len(bm.verts)
-        vertices = [0]*len(bm.verts)
+
+        end_time = time.time()
+        print('Tissue: Polyhedra wireframe, frames in {:.4f} sec'.format(end_time-start_time))
+
+        bm1.verts.ensure_lookup_table()
+        bm1.edges.ensure_lookup_table()
+        bm1.faces.ensure_lookup_table()
+        bm1.verts.index_update()
+
+        smooth_corners = [True] * len(bm1.verts)
+
+        corners = [[] for i in range(len(bm1.verts))]
+        normals = [0]*len(bm1.verts)
+        vertices = [0]*len(bm1.verts)
         for f in new_faces:
             f.normal_update()
             v0 = f.verts[0]
             v1 = f.verts[1]
-            corners[v0.index].append((v1.co - v0.co).normalized())
-            normals[v0.index] = v0.normal
-            vertices[v0.index] = v0
+            id = v0.index
+            corners[id].append((v1.co - v0.co).normalized())
+            v0.normal_update()
+            normals[id] = v0.normal
+            vertices[id] = v0
+            smooth_corners[id] = False
+
+        bm1.verts.index_update()
         for i, vecs in enumerate(corners):
             if len(vecs) > 0:
                 v = vertices[i]
@@ -4872,29 +4970,89 @@ class polyhedra_wireframe(Operator):
                 if div == 0: div = 1
                 v.co += nor*self.thickness/2/div
 
-        for f in original_faces: bm.faces.remove(f)
-        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=self.thickness/100)
-        bm.faces.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.verts.ensure_lookup_table()
+        end_time = time.time()
+        print('Tissue: Polyhedra wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
 
-        max_subdivisions = 4
+        flat_faces = [bm1.faces[i] for i in flat_faces]
+        for f in flat_faces:
+            f.material_index = self.subdivisions+1
+            for v in f.verts:
+                if smooth_corners[v.index]:
+                    v.co += v.normal*self.thickness/2
+                    smooth_corners[v.index] = False
+
+
+        delete_faces = delete_faces + [f.index for f in original_faces]
+        delete_faces = list(dict.fromkeys(delete_faces))
+        delete_faces = [bm1.faces[i] for i in delete_faces]
+        bmesh.ops.delete(bm1, geom=delete_faces, context='FACES')
+
+        bmesh.ops.remove_doubles(bm1, verts=bm1.verts, dist=self.thickness/100)
+        bm1.faces.ensure_lookup_table()
+        bm1.edges.ensure_lookup_table()
+        bm1.verts.ensure_lookup_table()
+
+        ### SUBDIVIDE EDGES ###
+
+        bm1.edges.index_update()
+        subs = self.subdivisions
+        cut_faces = [[] for i in range(subs-1)]
+        corners = []
+        if subs > 1:
+            max_segment = max(wire_length)/subs
+            for i in range(subs):
+                edges = []
+                for f in [fm for fm in bm1.faces if fm.material_index == i]:
+                    edges += [f.edges[0].index,f.edges[2].index]
+                    f.material_index = 0
+                    #corners += [v.index for v in f.verts]#[f.verts[0].index, f.verts[1].index]
+                edges = list(dict.fromkeys(edges))
+                edges = [bm1.edges[i] for i in edges]
+                #splitted =
+                bmesh.ops.subdivide_edges(bm1, edges=edges, cuts=i, use_only_quads=False)
+                bm1.verts.ensure_lookup_table()
+                bm1.edges.ensure_lookup_table()
+                bm1.faces.ensure_lookup_table()
+                bm1.verts.index_update()
+            for f in bm1.faces:
+                f.material_index = max(0, f.material_index - subs)
+            '''
+            for v in bm1.verts:
+                vfaces = v.link_faces
+                if len(vfaces) > 4:
+                    print(len(vfaces))
+                    for f in vfaces:
+                        if f.material_index < subs:
+                            f.material_index = 0
+            '''
+                #for f in [fm for fm in bm1.faces if fm.material_index == i]:
+                #    for v in f.verts:
+                #        if v.index in corners:
+                #            f.material_index = 0
+                #            continue
+
+                #bm1.faces.ensure_lookup_table()
+                #bm1.edges.index_update()
+        #for f in [fm for fm in bm1.faces if fm.material_index > 0]:
+            #for v in f.verts:
+                #if v in corners: f.material_index = 0
+
 
         if self.dissolve_inners:
-            bm.to_mesh(me)
-            me.update()
-            bm = bmesh.new()
-            bm.from_mesh(me)
+            bm1.edges.index_update()
             dissolve_edges = []
-            for f in bm.faces:
+            for f in bm1.faces:
                 e = f.edges[2]
                 if e not in dissolve_edges:
                     dissolve_edges.append(e)
-            bmesh.ops.dissolve_edges(bm, edges=dissolve_edges, use_verts=True, use_face_split=True)
+            bmesh.ops.dissolve_edges(bm1, edges=dissolve_edges, use_verts=True, use_face_split=True)
 
-        bm.to_mesh(me)
+
+
+
+        bm1.to_mesh(me)
         me.update()
-        bm1.free
+        bm1.free()
         new_ob = bpy.data.objects.new("Wireframe", me)
         bpy.context.collection.objects.link(new_ob)
         for o in context.scene.objects: o.select_set(False)
@@ -4902,4 +5060,7 @@ class polyhedra_wireframe(Operator):
         context.view_layer.objects.active = new_ob
         #new_ob.location = ob.location
         new_ob.matrix_world = ob.matrix_world
+
+        end_time = time.time()
+        print('Tissue: Polyhedra wireframe in {:.4f} sec'.format(end_time-start_time))
         return {'FINISHED'}
