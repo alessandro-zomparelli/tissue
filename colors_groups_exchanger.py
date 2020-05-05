@@ -48,7 +48,8 @@ except: pass
 
 # Reaction-Diffusion cache
 from pathlib import Path
-import random, string
+import random as rnd
+import string
 
 from bpy.types import (
         Operator,
@@ -2673,6 +2674,8 @@ class tissue_weight_distance(Operator):
         for v in selected: weight[v.index] = 0
         weight = self.fill_neighbors(selected, weight)
 
+        for i in range(len(weight)):
+            if weight[i] == None: weight[i] = 0
         weight = np.array(weight)
         max_dist = np.max(weight)
         if max_dist > 0:
@@ -2680,7 +2683,6 @@ class tissue_weight_distance(Operator):
 
         vg = ob.vertex_groups.new(name='Distance: {:.4f}'.format(max_dist))
         for i, w in enumerate(weight):
-            if w == None: continue
             vg.add([i], w, 'REPLACE')
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         bm.free()
@@ -2939,7 +2941,7 @@ def reaction_diffusion_def(ob, bake=False):
     if bake or props.bool_cache:
         if props.cache_dir == '':
             letters = string.ascii_letters
-            random_name = ''.join(random.choice(letters) for i in range(6))
+            random_name = ''.join(rnd.choice(letters) for i in range(6))
             if bpy.context.blend_data.filepath == '':
                 folder = Path(bpy.context.preferences.filepaths.temporary_directory)
                 folder = folder / 'reaction_diffusion_cache' / random_name
@@ -3096,6 +3098,8 @@ def reaction_diffusion_def(ob, bake=False):
         start = time.time()
 
     if bake:
+        if not(os.path.exists(folder)):
+            os.mkdir(folder)
         file_name = folder / "a_{:04d}".format(scene.frame_current)
         a.tofile(file_name)
         file_name = folder / "b_{:04d}".format(scene.frame_current)

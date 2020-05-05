@@ -3337,7 +3337,7 @@ class tissue_update_tessellate(Operator):
                     subdivide_base = iter == 0 and gen_modifiers
                 if subdivide_base:
                     temp_base_ob = convert_object_to_mesh(base_ob, True, True)
-                    bpy.data.objects.remove(base_ob)
+                    #bpy.data.objects.remove(base_ob)
                     base_ob = temp_base_ob
                     iter_objects = [base_ob]
 
