@@ -318,10 +318,8 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
 
     if sides == 4:
         patches = np.zeros((nf,n,n),dtype='int')
-        verts = [0]*len(me_low.polygons)*sides
-        me_low.polygons.foreach_get('vertices',verts)
-        verts = np.array(verts).reshape((len(me_low.polygons),sides))
-        verts = verts[mask]
+        verts = [[vv for vv in p.vertices] for p in polys if len(p.vertices) == sides]
+        verts = np.array(verts).reshape((-1,sides))
 
         # filling corners
 
@@ -365,7 +363,7 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
             ids = pick_verts[dir][:,np.newaxis,:]                           # indexes order along the side
             patches[patch_index,ids,0] = edge_verts[:,np.newaxis,:]                   # assign indexes
 
-            # edge 0
+            # edge 1
             e0 = edge_keys[:,1]                             # get edge key (faces, 2)
             edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
             edge_verts = evi[edge_id]                       # indexes of inner vertices
@@ -373,7 +371,7 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
             ids = pick_verts[dir][:,:,np.newaxis]                           # indexes order along the side
             patches[patch_index,n-1,ids] = edge_verts[:,:,np.newaxis]                   # assign indexes
 
-            # edge 0
+            # edge 2
             e0 = edge_keys[:,2]                             # get edge key (faces, 2)
             edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
             edge_verts = evi[edge_id]                       # indexes of inner vertices
@@ -381,7 +379,7 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
             ids = pick_verts[dir][:,np.newaxis,:]                           # indexes order along the side
             patches[patch_index,ids,n-1] = edge_verts[:,np.newaxis,:]                   # assign indexes
 
-            # edge 0
+            # edge 3
             e0 = edge_keys[:,3]                             # get edge key (faces, 2)
             edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
             edge_verts = evi[edge_id]                       # indexes of inner vertices

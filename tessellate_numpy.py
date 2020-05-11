@@ -51,6 +51,8 @@ import random, time, copy
 import bmesh
 from .utils import *
 from .numba_functions import *
+import os
+from pathlib import Path
 
 def anim_tessellate_active(self, context):
     ob = context.object
@@ -211,6 +213,7 @@ class tissue_tessellate_prop(PropertyGroup):
         )
     fill_mode : EnumProperty(
         items=(
+            ('TRI', 'Tri', 'Triangulate the base mesh'),
             ('QUAD', 'Quad', 'Regular quad tessellation. Uses only 3 or 4 vertices'),
             ('FAN', 'Fan', 'Radial tessellation for polygonal faces'),
             ('PATCH', 'Patch', 'Curved tessellation according to the last ' +
@@ -791,7 +794,7 @@ def tessellate_patch(props):
     # Check if zero faces are selected
     if _ob0.type == 'MESH':
         bool_cancel = True
-        for p in _me0.polygons:
+        for p in me0.polygons:
             check_sel = check_mat = False
             if not bool_selection or p.select: check_sel = True
             if not bool_material_id or p.material_index == material_id: check_mat = True
@@ -1184,7 +1187,6 @@ def tessellate_patch(props):
 
     #end_time = time.time()
     #print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
-
     all_verts, mask = get_patches(before_subsurf, me0, 4, levels, bool_selection, bool_material_id, material_id)
     n_patches = len(all_verts)
 
@@ -1225,7 +1227,7 @@ def tessellate_patch(props):
             bm = bmesh.new()
             bm.from_mesh(before_subsurf)
             uv_lay = bm.loops.layers.uv.active
-            UV_shift = []
+            UV_shift = [0]*len(mask)
             for f in bm.faces:
                 ll = f.loops
                 if len(ll) == 4:
@@ -1251,8 +1253,10 @@ def tessellate_patch(props):
                     else:                               # horizontal
                         if(dot1203 < 0): shift = 3
                         else: shift = 1
-                    UV_shift.append(shift)
-            UV_shift = np.array(UV_shift)
+                    #UV_shift.append(shift)
+                    UV_shift[f.index] = shift
+            #print(mask.shape)
+            UV_shift = np.array(UV_shift)[mask]
             bm.free()
 
         # Rotate Patch
@@ -1553,6 +1557,7 @@ def tessellate_original(props):
             use_modifiers = True
         if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, props, use_modifiers)
         elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, use_modifiers)
+        elif fill_mode == 'TRI': ob0_sk = convert_to_triangles(target, props, use_modifiers)
         else: ob0_sk = convert_object_to_mesh(target, use_modifiers, True)
         me0_sk = ob0_sk.data
         if normals_mode == 'SHAPEKEYS':
@@ -1561,6 +1566,7 @@ def tessellate_original(props):
 
     if fill_mode == 'FAN': ob0 = convert_to_fan(_ob0, props, gen_modifiers)
     elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, props, gen_modifiers)
+    elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, props, gen_modifiers)
     else: ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
     #ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
     me0 = ob0.data
@@ -2319,6 +2325,7 @@ class tissue_tessellate(Operator):
             )
     fill_mode : EnumProperty(
             items=(
+                ('TRI', 'Tri', 'Triangulate the base mesh'),
                 ('QUAD', 'Quad', 'Regular quad tessellation. Uses only 3 or 4 vertices'),
                 ('FAN', 'Fan', 'Radial tessellation for polygonal faces'),
                 ('PATCH', 'Patch', 'Curved tessellation according to the last ' +
@@ -3076,6 +3083,7 @@ class tissue_refresh_tessellate(Operator):
     #    return checking in bpy.data.objects.keys()
 
     def execute(self, context):
+
         ob = bpy.context.object
         ob0 = ob.tissue_tessellate.generator
         ob1 = ob.tissue_tessellate.component
@@ -4478,7 +4486,7 @@ def convert_to_frame(ob, props, use_modifiers):
     bm.free()
     return new_ob
 
-def convert_to_fan(ob, props, use_modifiers):
+def convert_to_fan_old(ob, props, use_modifiers):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
     # make base object selected and active
     for o in bpy.context.view_layer.objects: o.select_set(False)
@@ -4493,6 +4501,25 @@ def convert_to_fan(ob, props, use_modifiers):
         bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.mesh.poke()
     bpy.ops.object.mode_set(mode='OBJECT')
+    return new_ob
+
+
+def convert_to_fan(ob, props, use_modifiers):
+    new_ob = convert_object_to_mesh(ob, use_modifiers, True)
+    bm = bmesh.new()
+    bm.from_mesh(new_ob.data)
+    bmesh.ops.poke(bm, faces=bm.faces)#, quad_method, ngon_method)
+    bm.to_mesh(new_ob.data)
+    new_ob.data.update()
+    return new_ob
+
+def convert_to_triangles(ob, props, use_modifiers):
+    new_ob = convert_object_to_mesh(ob, use_modifiers, True)
+    bm = bmesh.new()
+    bm.from_mesh(new_ob.data)
+    bmesh.ops.triangulate(bm, faces=bm.faces, quad_method='FIXED', ngon_method='BEAUTY')
+    bm.to_mesh(new_ob.data)
+    new_ob.data.update()
     return new_ob
 
 def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh):
@@ -4585,7 +4612,9 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
 class polyhedra_wireframe(Operator):
     bl_idname = "object.polyhedra_wireframe"
     bl_label = "Polyhedra Wireframe"
-    bl_description = "Generate wireframes around the faces.\nDoesn't works with boundary edges"
+    bl_description = "Generate wireframes around the faces.\
+                      \nDoesn't works with boundary edges.\
+                      \n(Experimental)"
     bl_options = {'REGISTER', 'UNDO'}
 
     thickness : FloatProperty(
