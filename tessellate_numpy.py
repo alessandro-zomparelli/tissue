@@ -512,7 +512,7 @@ class tissue_tessellate_prop(PropertyGroup):
     use_origin_offset : BoolProperty(
             name="Align to Origins",
             default=False,
-            description="Define offset according to components origin",
+            description="Define offset according to components origin and local Z coordinate",
             update = anim_tessellate_active
             )
 
@@ -983,8 +983,8 @@ def tessellate_patch(props):
             vert[0] = vert[0] / bb[0] if bb[0] != 0 else 0.5
             vert[1] = vert[1] / bb[1] if bb[1] != 0 else 0.5
             if scale_mode == 'CONSTANT':
-                vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
                 if not use_origin_offset:
+                    vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
                     vert[2] = vert[2] - 0.5 + offset * 0.5
             else:
                 if not use_origin_offset:
@@ -1134,8 +1134,8 @@ def tessellate_patch(props):
                     sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
                     sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
                     if scale_mode == 'CONSTANT':
-                        sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
                         if not use_origin_offset:
+                            sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
                             sk_vert[2] = sk_vert[2] - 0.5 + offset * 0.5
                     else:
                         if not use_origin_offset:
@@ -1798,8 +1798,8 @@ def tessellate_original(props):
         else:
             vz = vz - min_c[2]
         if scale_mode == 'CONSTANT':
-            vz = vz / bb[2] if bb[2] != 0 else 0
             if not use_origin_offset:
+                vz = vz / bb[2] if bb[2] != 0 else 0
                 vz = (vz - 0.5 + offset * 0.5) * zscale
             else: vz *= zscale
         else:
@@ -1852,8 +1852,8 @@ def tessellate_original(props):
                     vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
                     vert[2] = v.co.z
                     if scale_mode == 'CONSTANT':
-                        vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
                         if not use_origin_offset:
+                            vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
                             vert[2] = vert[2] - 0.5 + offset * 0.5
                     else:
                         if not use_origin_offset:
@@ -2568,7 +2568,7 @@ class tissue_tessellate(Operator):
     use_origin_offset : BoolProperty(
             name="Align to Origins",
             default=False,
-            description="Define offset according to components origin"
+            description="Define offset according to components origin and local Z coordinate"
             )
 
     vertex_group_thickness : StringProperty(
