@@ -20,11 +20,10 @@ Development branch (most updated version): https://github.com/alessandro-zompare
 
 ### Installation:
 
-1. Start Blender. Open User Preferences, the addons tab
-2. Search for Tissue add-on and remove existing version
-3. Click "install from file" and point Blender at the downloaded zip ("Install..." for Blender 2.80)
-4. Activate Tissue add-on from user preferences
-5. Save user preferences if you want to have it on at startup. (This could be not necessary for Blender 2.80 if "Auto-Save Preferences" id on)
+1. Start Blender. Go to "Edit" and then "Preferences"
+2. Open the "Add-ons" preferences
+3. Click "install..." and point Blender at the downloaded zip file (on OSX it may have extracted the zip automatically, that won't work, so you have to zip the extracted folder again)
+4. You may see now two different versions of Tissue, activate only the second one and ignore the first one
 
 ### Documentation
 
