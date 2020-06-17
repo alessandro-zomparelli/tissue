@@ -2745,9 +2745,11 @@ class TISSUE_PT_weight(Panel):
         col.operator("object.edges_deformation", icon="DRIVER_DISTANCE")#FULLSCREEN_ENTER")
         col.operator("object.edges_bending", icon="DRIVER_ROTATIONAL_DIFFERENCE")#"MOD_SIMPLEDEFORM")
         col.separator()
-        col.label(text="Weight Contour:")
+        col.label(text="Weight Curves:")
         #col.operator("object.weight_contour_curves", icon="MOD_CURVE")
+        col.operator("object.tissue_weight_streamlines", icon="ANIM")
         col.operator("object.tissue_weight_contour_curves_pattern", icon="FORCE_TURBULENCE")
+        col.separator()
         col.operator("object.weight_contour_displace", icon="MOD_DISPLACE")
         col.operator("object.weight_contour_mask", icon="MOD_MASK")
         col.separator()
@@ -3604,3 +3606,281 @@ def contour_bmesh(me, bm, weight, iso_val):
     weight = np.concatenate((weight, np.ones(len(verts))*iso_val))
 
     return me, bm, weight
+
+
+
+
+class tissue_weight_streamlines(Operator):
+    bl_idname = "object.tissue_weight_streamlines"
+    bl_label = "Streamlines Curves"
+    bl_description = ("")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    mode : EnumProperty(
+        items=(
+            ('VERTS', "Verts", "Follow vertices"),
+            ('EDGES', "Edges", "Follow Edges")
+            ),
+        default='VERTS',
+        name="Streamlines path mode"
+        )
+
+    use_modifiers : BoolProperty(
+        name="Use Modifiers", default=True,
+        description="Apply all the modifiers")
+
+    same_weight : BoolProperty(
+        name="Same Weight", default=True,
+        description="Continue the streamlines when the weight is the same")
+
+    min_iso : FloatProperty(
+        name="Min Value", default=0., soft_min=0, soft_max=1,
+        description="Minimum weight value")
+    max_iso : FloatProperty(
+        name="Max Value", default=1, soft_min=0, soft_max=1,
+        description="Maximum weight value")
+
+    rand_seed : IntProperty(
+        name="Seed", default=0, min=0, soft_max=10,
+        description="Random Seed")
+    n_curves : IntProperty(
+        name="Curves", default=50, soft_min=1, soft_max=100000,
+        description="Number of Curves")
+    min_rad = 1
+    max_rad = 1
+
+    pos_steps : IntProperty(
+        name="High Steps", default=50, min=0, soft_max=100,
+        description="Number of steps in the direction of high weight")
+    neg_steps : IntProperty(
+        name="Low Steps", default=50, min=0, soft_max=100,
+        description="Number of steps in the direction of low weight")
+
+    bevel_depth : FloatProperty(
+        name="Bevel Depth", default=0.1, min=0, soft_max=1,
+        description="")
+    min_bevel_depth : FloatProperty(
+        name="Min Bevel Depth", default=0.1, min=0, soft_max=1,
+        description="")
+    max_bevel_depth : FloatProperty(
+        name="Max Bevel Depth", default=1, min=0, soft_max=1,
+        description="")
+
+    rand_dir : FloatProperty(
+        name="Randomize", default=0, min=0, max=1,
+        description="Randomize streamlines directions (Slower)")
+
+    vertex_group_seeds : StringProperty(
+        name="Displace", default='',
+        description="Vertex Group used for pattern displace")
+
+    vertex_group_bevel : StringProperty(
+        name="Bevel", default='',
+        description="Variable Bevel depth")
+
+    object_name : StringProperty(
+        name="Active Object", default='',
+        description="")
+
+    try: vg_name = bpy.context.object.vertex_groups.active.name
+    except: vg_name = ''
+
+    vertex_group_streamlines : StringProperty(
+        name="Flow", default=vg_name,
+        description="Vertex Group used for streamlines")
+
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.object
+        return ob and len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=250)
+
+    def draw(self, context):
+        if not context.object.type == 'CURVE':
+            self.object_name = context.object.name
+        ob = bpy.data.objects[self.object_name]
+        if self.vertex_group_streamlines not in [vg.name for vg in ob.vertex_groups]:
+            self.vertex_group_streamlines = ob.vertex_groups.active.name
+        layout = self.layout
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.prop(self, 'mode', expand=True,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        col.prop(self, "use_modifiers")
+        col.label(text="Streamlines Curves:")
+        col.prop_search(self, 'vertex_group_streamlines', ob, "vertex_groups", text='')
+        row = col.row(align=True)
+        col.prop(self,'n_curves')
+        col.prop(self,'rand_seed')
+        row = col.row(align=True)
+        row.prop(self,'neg_steps')
+        row.prop(self,'pos_steps')
+        #row = col.row(align=True)
+        #row.prop(self,'min_iso')
+        #row.prop(self,'max_iso')
+        col.prop(self, "same_weight")
+        col.separator()
+        col.label(text='Curves Bevel:')
+        col.prop_search(self, 'vertex_group_bevel', ob, "vertex_groups", text='')
+        if self.vertex_group_bevel != '':
+            row = col.row(align=True)
+            row.prop(self,'min_bevel_depth')
+            row.prop(self,'max_bevel_depth')
+        else:
+            col.prop(self,'bevel_depth')
+        col.separator()
+        col.prop(self, "rand_dir")
+
+    def execute(self, context):
+        start_time = timeit.default_timer()
+        try:
+            check = context.object.vertex_groups[0]
+        except:
+            self.report({'ERROR'}, "The object doesn't have Vertex Groups")
+            return {'CANCELLED'}
+        ob = bpy.data.objects[self.object_name]
+        ob.select_set(False)
+
+        dg = context.evaluated_depsgraph_get()
+        ob = ob.evaluated_get(dg)
+        me = ob.data
+        n_verts = len(me.vertices)
+        n_edges = len(me.edges)
+        n_faces = len(me.polygons)
+
+        # generate new bmesh
+        bm = bmesh.new()
+        bm.from_mesh(me)
+
+        # store weight values
+        try:
+            weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_streamlines], n_verts)
+        except:
+            bm.free()
+            self.report({'ERROR'}, "Please select a Vertex Group for streamlines")
+            return {'CANCELLED'}
+
+        variable_bevel = False
+        try:
+            bevel_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_bevel], n_verts)
+            variable_bevel = True
+        except:
+            bevel_weight = np.full((n_verts), self.bevel_depth)
+
+        seeds = []
+
+        if bpy.context.mode == 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            ob = bpy.context.object
+            me = simple_to_mesh(ob)
+            for v in me.vertices:
+                if v.select: seeds.append(v.index)
+
+        if not seeds:
+            np.random.seed(self.rand_seed)
+            seeds = np.random.randint(n_verts, size=self.n_curves)
+
+        #weight = np.array(get_weight(ob.vertex_groups.active, n_verts))
+
+        curves_pts = []
+        curves_weight = []
+
+        neigh = [[] for i in range(n_verts)]
+        if self.mode == 'EDGES':
+            # store neighbors
+            for e in me.edges:
+                ev = e.vertices
+                neigh[ev[0]].append(ev[1])
+                neigh[ev[1]].append(ev[0])
+
+        elif self.mode == 'VERTS':
+            # store neighbors
+            for p in me.polygons:
+                face_verts = [v for v in p.vertices]
+                for i in range(len(face_verts)):
+                    fv = face_verts.copy()
+                    neigh[fv.pop(i)] += fv
+
+        neigh_weight = [weight[n].tolist() for n in neigh]
+
+        # evaluate direction
+        next_vert = [-1]*n_verts
+
+        if self.rand_dir > 0:
+            for i in range(n_verts):
+                n = neigh[i]
+                nw = neigh_weight[i]
+                sorted_nw = neigh_weight[i].copy()
+                sorted_nw.sort()
+                for w in sorted_nw:
+                    neigh[i] = [n[nw.index(w)] for w in sorted_nw]
+        else:
+            if self.pos_steps > 0:
+                for i in range(n_verts):
+                    n = neigh[i]
+                    nw = neigh_weight[i]
+                    max_w = max(nw)
+                    if self.same_weight:
+                        if max_w >= weight[i]:
+                            next_vert[i] = n[nw.index(max(nw))]
+                    else:
+                        if max_w > weight[i]:
+                            next_vert[i] = n[nw.index(max(nw))]
+
+            if self.neg_steps > 0:
+                prev_vert = [-1]*n_verts
+                for i in range(n_verts):
+                    n = neigh[i]
+                    nw = neigh_weight[i]
+                    min_w = min(nw)
+                    if self.same_weight:
+                        if min_w <= weight[i]:
+                            prev_vert[i] = n[nw.index(min(nw))]
+                    else:
+                        if min_w < weight[i]:
+                            prev_vert[i] = n[nw.index(min(nw))]
+
+        co = [0]*3*n_verts
+        me.vertices.foreach_get('co', co)
+        co = np.array(co).reshape((-1,3))
+
+        # create streamlines
+        curves = []
+        for i in seeds:
+            next_pts = [i]
+            for j in range(self.pos_steps):
+                if self.rand_dir > 0:
+                    n = neigh[next_pts[-1]]
+                    next = n[int(len(n) * (1-random.random() * self.rand_dir))]
+                else:
+                    next = next_vert[next_pts[-1]]
+                if next > 0:
+                    if next not in next_pts: next_pts.append(next)
+                else: break
+
+            prev_pts = [i]
+            for j in range(self.neg_steps):
+                if self.rand_dir > 0:
+                    n = neigh[prev_pts[-1]]
+                    prev = n[int(len(n) * random.random() * self.rand_dir)]
+                else:
+                    prev = prev_vert[prev_pts[-1]]
+                if prev > 0:
+                    if prev not in prev_pts:
+                        prev_pts.append(prev)
+                else: break
+
+            next_pts = np.array(next_pts).astype('int')
+            prev_pts = np.flip(prev_pts[1:]).astype('int')
+            all_pts = np.concatenate((prev_pts, next_pts))
+            if len(all_pts) > 1:
+                curves.append(all_pts)
+
+        crv = nurbs_from_vertices(curves, co, bevel_weight, ob.name + '_PathCurves', True)
+
+        print("Streamlines Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
+        return {'FINISHED'}

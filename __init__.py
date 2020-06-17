@@ -46,7 +46,7 @@ bl_info = {
 if "bpy" in locals():
     import importlib
     importlib.reload(tessellate_numpy)
-    importlib.reload(colors_groups_exchanger)
+    importlib.reload(weight_tools)
     importlib.reload(dual_mesh)
     importlib.reload(lattice)
     importlib.reload(uv_to_mesh)
@@ -56,7 +56,7 @@ if "bpy" in locals():
 
 else:
     from . import tessellate_numpy
-    from . import colors_groups_exchanger
+    from . import weight_tools
     from . import dual_mesh
     from . import lattice
     from . import uv_to_mesh
@@ -89,34 +89,35 @@ classes = (
     tessellate_numpy.TISSUE_PT_tessellate_iterations,
     tessellate_numpy.polyhedra_wireframe,
 
-    colors_groups_exchanger.face_area_to_vertex_groups,
-    colors_groups_exchanger.vertex_colors_to_vertex_groups,
-    colors_groups_exchanger.vertex_group_to_vertex_colors,
-    colors_groups_exchanger.TISSUE_PT_weight,
-    colors_groups_exchanger.TISSUE_PT_color,
-    colors_groups_exchanger.weight_contour_curves,
-    colors_groups_exchanger.tissue_weight_contour_curves_pattern,
-    colors_groups_exchanger.weight_contour_mask,
-    colors_groups_exchanger.weight_contour_displace,
-    colors_groups_exchanger.harmonic_weight,
-    colors_groups_exchanger.edges_deformation,
-    colors_groups_exchanger.edges_bending,
-    colors_groups_exchanger.weight_laplacian,
-    colors_groups_exchanger.reaction_diffusion,
-    colors_groups_exchanger.start_reaction_diffusion,
-    colors_groups_exchanger.TISSUE_PT_reaction_diffusion,
-    colors_groups_exchanger.TISSUE_PT_reaction_diffusion_weight,
-    colors_groups_exchanger.reset_reaction_diffusion_weight,
-    colors_groups_exchanger.formula_prop,
-    colors_groups_exchanger.reaction_diffusion_prop,
-    colors_groups_exchanger.weight_formula,
-    colors_groups_exchanger.update_weight_formula,
-    colors_groups_exchanger.curvature_to_vertex_groups,
-    colors_groups_exchanger.weight_formula_wiki,
-    colors_groups_exchanger.tissue_weight_distance,
-    colors_groups_exchanger.random_weight,
-    colors_groups_exchanger.bake_reaction_diffusion,
-    colors_groups_exchanger.reaction_diffusion_free_data,
+    weight_tools.face_area_to_vertex_groups,
+    weight_tools.vertex_colors_to_vertex_groups,
+    weight_tools.vertex_group_to_vertex_colors,
+    weight_tools.TISSUE_PT_weight,
+    weight_tools.TISSUE_PT_color,
+    weight_tools.weight_contour_curves,
+    weight_tools.tissue_weight_contour_curves_pattern,
+    weight_tools.weight_contour_mask,
+    weight_tools.weight_contour_displace,
+    weight_tools.harmonic_weight,
+    weight_tools.edges_deformation,
+    weight_tools.edges_bending,
+    weight_tools.weight_laplacian,
+    weight_tools.reaction_diffusion,
+    weight_tools.start_reaction_diffusion,
+    weight_tools.TISSUE_PT_reaction_diffusion,
+    weight_tools.TISSUE_PT_reaction_diffusion_weight,
+    weight_tools.reset_reaction_diffusion_weight,
+    weight_tools.formula_prop,
+    weight_tools.reaction_diffusion_prop,
+    weight_tools.weight_formula,
+    weight_tools.update_weight_formula,
+    weight_tools.curvature_to_vertex_groups,
+    weight_tools.weight_formula_wiki,
+    weight_tools.tissue_weight_distance,
+    weight_tools.random_weight,
+    weight_tools.bake_reaction_diffusion,
+    weight_tools.reaction_diffusion_free_data,
+    weight_tools.tissue_weight_streamlines,
 
     dual_mesh.dual_mesh,
     dual_mesh.dual_mesh_tessellated,
@@ -138,13 +139,13 @@ def register():
                                             type=tessellate_numpy.tissue_tessellate_prop
                                             )
     bpy.types.Object.formula_settings = CollectionProperty(
-                                            type=colors_groups_exchanger.formula_prop
+                                            type=weight_tools.formula_prop
                                             )
     bpy.types.Object.reaction_diffusion_settings = PointerProperty(
-                        type=colors_groups_exchanger.reaction_diffusion_prop
+                        type=weight_tools.reaction_diffusion_prop
                         )
-    # colors_groups_exchanger
-    bpy.app.handlers.frame_change_post.append(colors_groups_exchanger.reaction_diffusion_def)
+    # weight_tools
+    bpy.app.handlers.frame_change_post.append(weight_tools.reaction_diffusion_def)
     #bpy.app.handlers.frame_change_post.append(tessellate_numpy.anim_tessellate)
 
 def unregister():

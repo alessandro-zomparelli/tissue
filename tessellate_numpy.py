@@ -3623,6 +3623,7 @@ class TISSUE_PT_tessellate(Panel):
                 col.separator()
                 col.label(text="Weight:")
                 col.operator("object.tissue_weight_distance", icon="TRACKING")
+                col.operator("object.tissue_weight_streamlines", icon="ANIM")
 
         col.separator()
         col.label(text="Materials:")

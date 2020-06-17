@@ -26,62 +26,6 @@ from math import *
 try: from .numba_functions import numba_lerp2, numba_lerp2_4
 except: pass
 
-weight = []
-n_threads = multiprocessing.cpu_count()
-
-class ThreadVertexGroup(threading.Thread):
-    def __init__ ( self, id, vertex_group, n_verts):
-        self.id = id
-        self.vertex_group = vertex_group
-        self.n_verts = n_verts
-        threading.Thread.__init__ ( self )
-
-    def run (self):
-        global weight
-        global n_threads
-        verts = np.arange(int(self.n_verts/8))*8 + self.id
-        for v in verts:
-            try:
-                weight[v] = self.vertex_group.weight(v)
-            except:
-                pass
-
-def thread_read_weight(_weight, vertex_group):
-    global weight
-    global n_threads
-    #print(n_threads)
-    weight = _weight
-    n_verts = len(weight)
-    threads = [ThreadVertexGroup(i, vertex_group, n_verts) for i in range(n_threads)]
-    for t in threads: t.start()
-    for t in threads: t.join()
-    return weight
-
-def process_read_weight(id, vertex_group, n_verts):
-    global weight
-    global n_threads
-    verts = np.arange(int(self.n_verts/8))*8 + self.id
-    for v in verts:
-        try:
-            weight[v] = self.vertex_group.weight(v)
-        except:
-            pass
-
-
-def read_weight(_weight, vertex_group):
-    global weight
-    global n_threads
-    #print(n_threads)
-    weight = _weight
-    n_verts = len(weight)
-    n_cores = multiprocessing.cpu_count()
-    pool = Pool(processes=n_cores)
-    multiple_results = [pool.apply_async(process_read_weight, (i, vertex_group, n_verts)) for i in range(n_cores)]
-    #processes = [Process(target=process_read_weight, args=(i, vertex_group, n_verts)) for i in range(n_threads)]
-    #for t in processes: t.start()
-    #for t in processes: t.join()
-    return weight
-
 #Recursivly transverse layer_collection for a particular name
 def recurLayerCollection(layerColl, collName):
     found = None
@@ -702,6 +646,31 @@ def curve_from_vertices(indexes, verts, name='Curve'):
         s.points.add(len(c))
         for i,p in enumerate(c): s.points[i].co = verts[p].co.xyz + [1]
     ob_curve = bpy.data.objects.new(name,curve)
+    return ob_curve
+
+def nurbs_from_vertices(indexes, co, radii=[], name='Curve', set_active=True):
+    curve = bpy.data.curves.new(name,'CURVE')
+    curve.dimensions = '3D'
+    curve.resolution_u = 2
+    curve.bevel_depth = 0.01
+    curve.bevel_resolution = 0
+    for pts in indexes:
+        s = curve.splines.new('NURBS')
+        n_pts = len(pts)
+        s.points.add(n_pts-1)
+        w = np.ones(n_pts).reshape((n_pts,1))
+        curve_co = np.concatenate((co[pts],w),axis=1).reshape((n_pts*4))
+        s.points.foreach_set('co',curve_co)
+        try:
+            s.points.foreach_set('radius',radii[pts])
+        except: pass
+        s.use_endpoint_u = True
+
+    ob_curve = bpy.data.objects.new(name,curve)
+    bpy.context.collection.objects.link(ob_curve)
+    if set_active:
+        bpy.context.view_layer.objects.active = ob_curve
+        ob_curve.select_set(True)
     return ob_curve
 
 ### WEIGHT FUNCTIONS ###
