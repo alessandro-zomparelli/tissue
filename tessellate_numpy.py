@@ -254,7 +254,7 @@ class tissue_tessellate_prop(PropertyGroup):
         )
     merge_thres : FloatProperty(
         name="Distance",
-        default=0.001,
+        default=0.0001,
         soft_min=0,
         soft_max=10,
         description="Limit below which to merge vertices",
@@ -2361,7 +2361,7 @@ class tissue_tessellate(Operator):
             )
     merge_thres : FloatProperty(
             name="Distance",
-            default=0.001,
+            default=0.0001,
             soft_min=0,
             soft_max=10,
             description="Limit below which to merge vertices"
@@ -3248,6 +3248,7 @@ class tissue_update_tessellate(Operator):
             context.collection.objects.link(base_ob)
         base_ob.name = '_tissue_tmp_base'
 
+        '''
         # In Blender 2.80 cache of copied objects is lost, must be re-baked
         bool_update_cloth = False
         for m in base_ob.modifiers:
@@ -3258,6 +3259,7 @@ class tissue_update_tessellate(Operator):
             bpy.ops.ptcache.free_bake_all()
             bpy.ops.ptcache.bake_all()
         base_ob.modifiers.update()
+        '''
 
         # clear vertex groups before creating new ones
         ob.vertex_groups.clear()
@@ -4587,7 +4589,8 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
 
         bm = bmesh.new()
         bm.from_mesh(ob.data.copy())
-        boundary_verts = [v for v in bm.verts if v.is_boundary]
+        #boundary_verts = [v for v in bm.verts if v.is_boundary or v.is_wire]
+        boundary_verts = bm.verts
         bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=merge_thres)
 
         if bool_dissolve_seams:

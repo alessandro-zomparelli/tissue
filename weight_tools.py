@@ -3625,6 +3625,15 @@ class tissue_weight_streamlines(Operator):
         name="Streamlines path mode"
         )
 
+    interpolation : EnumProperty(
+        items=(
+            ('POLY', "Poly", "Generate Polylines"),
+            ('NURBS', "NURBS", "Generate Nurbs curves")
+            ),
+        default='POLY',
+        name="Interpolation mode"
+        )
+
     use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
@@ -3712,6 +3721,11 @@ class tissue_weight_streamlines(Operator):
             full_event=False, emboss=True, index=-1)
         col.prop(self, "use_modifiers")
         col.label(text="Streamlines Curves:")
+        row = col.row(align=True)
+        row.prop(self, 'interpolation', expand=True,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        col.separator()
         col.prop_search(self, 'vertex_group_streamlines', ob, "vertex_groups", text='')
         row = col.row(align=True)
         col.prop(self,'n_curves')
@@ -3753,8 +3767,8 @@ class tissue_weight_streamlines(Operator):
         n_faces = len(me.polygons)
 
         # generate new bmesh
-        bm = bmesh.new()
-        bm.from_mesh(me)
+        #bm = bmesh.new()
+        #bm.from_mesh(me)
 
         # store weight values
         try:
@@ -3765,11 +3779,23 @@ class tissue_weight_streamlines(Operator):
             return {'CANCELLED'}
 
         variable_bevel = False
+        bevel_weight = None
+        bevel_depth = self.bevel_depth
         try:
-            bevel_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_bevel], n_verts)
+            if self.min_bevel_depth == self.max_bevel_depth:
+                #bevel_weight = np.ones((n_verts))
+                bevel_depth = self.min_bevel_depth
+            else:
+                b0 = min(self.min_bevel_depth, self.max_bevel_depth)
+                b1 = max(self.min_bevel_depth, self.max_bevel_depth)
+                bevel_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_bevel], n_verts)
+                if self.min_bevel_depth > self.max_bevel_depth:
+                    bevel_weight = 1-bevel_weight
+                bevel_weight = b0/b1 + bevel_weight*((b1-b0)/b1)
+                bevel_depth = b1
             variable_bevel = True
         except:
-            bevel_weight = np.full((n_verts), self.bevel_depth)
+            pass#bevel_weight = np.ones((n_verts))
 
         seeds = []
 
@@ -3879,8 +3905,9 @@ class tissue_weight_streamlines(Operator):
             all_pts = np.concatenate((prev_pts, next_pts))
             if len(all_pts) > 1:
                 curves.append(all_pts)
-
-        crv = nurbs_from_vertices(curves, co, bevel_weight, ob.name + '_PathCurves', True)
+        crv = nurbs_from_vertices(curves, co, bevel_weight, ob.name + '_PathCurves', True, self.interpolation)
+        crv.data.bevel_depth = bevel_depth
+        crv.matrix_world = ob.matrix_world
 
         print("Streamlines Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}

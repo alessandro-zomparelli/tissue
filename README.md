@@ -5,9 +5,9 @@ http://www.co-de-it.com/wordpress/code/blender-tissue
 
 Tissue is already shipped with both Blender 2.79b and Blender 2.80. However both versions can be updated manually, for more updated features and more stability.
 
-### Blender 2.82a
+### Blender 2.83.1
 
-Tissue v0.3.41 for Blender 2.82a (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-41
+Tissue v0.3.42 for Blender 2.83.1 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-42
 
 Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b280-dev
 
@@ -41,7 +41,7 @@ If you like my work and you want to help me, please consider to support me on **
 
 [![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
 
-A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory*, *Kairomon* and *Scott Shorter*.
+A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory*, *Kairomon*, *Scott Shorter* and *Garrett Post*.
 
 Many thanks,
 

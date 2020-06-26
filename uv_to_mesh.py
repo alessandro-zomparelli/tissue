@@ -64,18 +64,14 @@ class uv_to_mesh(Operator):
             )
 
     def execute(self, context):
+        if context.mode == 'EDIT_MESH': on_selection = True
+        else: on_selection = False
+
         bpy.ops.object.mode_set(mode='OBJECT')
-        ob0 = bpy.context.object
+        ob0 = context.object
         for o in bpy.context.view_layer.objects: o.select_set(False)
         ob0.select_set(True)
 
-        #if self.apply_modifiers:
-        #    bpy.ops.object.duplicate_move()
-        #    bpy.ops.object.convert(target='MESH')
-
-#        me0 = ob0.to_mesh(bpy.context.depsgraph, apply_modifiers=self.apply_modifiers)
-        #if self.apply_modifiers: me0 = simple_to_mesh(ob0)
-        #else: me0 = ob0.data.copy()
         name0 = ob0.name
         ob0 = convert_object_to_mesh(ob0, apply_modifiers=self.apply_modifiers, preserve_status=False)
         me0 = ob0.data
@@ -84,7 +80,11 @@ class uv_to_mesh(Operator):
         verts = []
         faces = []
         face_materials = []
-        for face in me0.polygons:
+
+        if on_selection: polygons = [f for f in me0.polygons if f.select]
+        else: polygons = me0.polygons
+
+        for face in polygons:
             area += face.area
             uv_face = []
             store = False
@@ -134,7 +134,7 @@ class uv_to_mesh(Operator):
             for group in ob0.vertex_groups:
                 index = group.index
                 ob.vertex_groups.new(name=group.name)
-                for p in me0.polygons:
+                for p in polygons:
                     for vert, loop in zip(p.vertices, p.loop_indices):
                         try:
                             ob.vertex_groups[index].add([loop], group.weight(vert), 'REPLACE')

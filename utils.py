@@ -648,14 +648,14 @@ def curve_from_vertices(indexes, verts, name='Curve'):
     ob_curve = bpy.data.objects.new(name,curve)
     return ob_curve
 
-def nurbs_from_vertices(indexes, co, radii=[], name='Curve', set_active=True):
+def nurbs_from_vertices(indexes, co, radii=[], name='Curve', set_active=True, interpolation='POLY'):
     curve = bpy.data.curves.new(name,'CURVE')
     curve.dimensions = '3D'
     curve.resolution_u = 2
     curve.bevel_depth = 0.01
     curve.bevel_resolution = 0
     for pts in indexes:
-        s = curve.splines.new('NURBS')
+        s = curve.splines.new(interpolation)
         n_pts = len(pts)
         s.points.add(n_pts-1)
         w = np.ones(n_pts).reshape((n_pts,1))
