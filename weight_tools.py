@@ -3638,6 +3638,10 @@ class tissue_weight_streamlines(Operator):
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
 
+    use_selected : BoolProperty(
+        name="Use Selected Vertices", default=False,
+        description="Use selected vertices as Seed")
+
     same_weight : BoolProperty(
         name="Same Weight", default=True,
         description="Continue the streamlines when the weight is the same")
@@ -3666,7 +3670,7 @@ class tissue_weight_streamlines(Operator):
         description="Number of steps in the direction of low weight")
 
     bevel_depth : FloatProperty(
-        name="Bevel Depth", default=0.1, min=0, soft_max=1,
+        name="Bevel Depth", default=0, min=0, soft_max=1,
         description="")
     min_bevel_depth : FloatProperty(
         name="Min Bevel Depth", default=0.1, min=0, soft_max=1,
@@ -3698,7 +3702,6 @@ class tissue_weight_streamlines(Operator):
         name="Flow", default=vg_name,
         description="Vertex Group used for streamlines")
 
-
     @classmethod
     def poll(cls, context):
         ob = context.object
@@ -3727,9 +3730,13 @@ class tissue_weight_streamlines(Operator):
             full_event=False, emboss=True, index=-1)
         col.separator()
         col.prop_search(self, 'vertex_group_streamlines', ob, "vertex_groups", text='')
-        row = col.row(align=True)
-        col.prop(self,'n_curves')
-        col.prop(self,'rand_seed')
+        if not (self.use_selected or context.mode == 'EDIT_MESH'):
+            row = col.row(align=True)
+            row.prop(self,'n_curves')
+            #row.enabled = context.mode != 'EDIT_MESH'
+            row = col.row(align=True)
+            row.prop(self,'rand_seed')
+            #row.enabled = context.mode != 'EDIT_MESH'
         row = col.row(align=True)
         row.prop(self,'neg_steps')
         row.prop(self,'pos_steps')
@@ -3800,6 +3807,7 @@ class tissue_weight_streamlines(Operator):
         seeds = []
 
         if bpy.context.mode == 'EDIT_MESH':
+            self.use_selected = True
             bpy.ops.object.mode_set(mode='OBJECT')
             ob = bpy.context.object
             me = simple_to_mesh(ob)
@@ -3905,7 +3913,7 @@ class tissue_weight_streamlines(Operator):
             all_pts = np.concatenate((prev_pts, next_pts))
             if len(all_pts) > 1:
                 curves.append(all_pts)
-        crv = nurbs_from_vertices(curves, co, bevel_weight, ob.name + '_PathCurves', True, self.interpolation)
+        crv = nurbs_from_vertices(curves, co, bevel_weight, ob.name + '_Streamlines', True, self.interpolation)
         crv.data.bevel_depth = bevel_depth
         crv.matrix_world = ob.matrix_world
 

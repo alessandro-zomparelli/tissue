@@ -41,7 +41,7 @@ If you like my work and you want to help me, please consider to support me on **
 
 [![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
 
-A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory*, *Kairomon*, *Scott Shorter* and *Garrett Post*.
+A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory*, *Scott Shorter*, *Garrett Post* and *Lucia Krux*.
 
 Many thanks,
 
