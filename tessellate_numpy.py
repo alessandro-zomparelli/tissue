@@ -4827,18 +4827,19 @@ class polyhedra_wireframe(Operator):
                     if length < self.thickness/2:
                         delete = True
                 '''
-                sides = len(f.verts)
-                for i in range(sides):
-                    v = f.verts[i].co
-                    v0 = f.verts[(i-1)%sides].co
-                    v1 = f.verts[(i+1)%sides].co
-                    vec0 = v0 - v
-                    vec1 = v1 - v
-                    ang = (pi - vec0.angle(vec1))/2
-                    length = min(vec0.length, vec1.length)*sin(ang)
-                    if length < self.thickness/2:
-                        delete = True
-                        break
+                if False:
+                    sides = len(f.verts)
+                    for i in range(sides):
+                        v = f.verts[i].co
+                        v0 = f.verts[(i-1)%sides].co
+                        v1 = f.verts[(i+1)%sides].co
+                        vec0 = v0 - v
+                        vec1 = v1 - v
+                        ang = (pi - vec0.angle(vec1))/2
+                        length = min(vec0.length, vec1.length)*sin(ang)
+                        if length < self.thickness/2:
+                            delete = True
+                            break
 
                 if delete:
                     delete_faces_poly.append(f.index)
