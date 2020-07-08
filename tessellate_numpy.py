@@ -420,7 +420,8 @@ class tissue_tessellate_prop(PropertyGroup):
             items=(
                 ('NONE', 'None', 'Keep the mesh open'),
                 ('CAP', 'Cap Holes', 'Automatically cap open loops'),
-                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs')),
+                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs'),
+                ('BRIDGE_CAP', 'Bridge weight and Cap Holes (Experimental)', 'Bridge loop pairs with weight 1 and cap holes')),
             default='NONE',
             name="Close Mesh",
             update = anim_tessellate_active
@@ -2489,7 +2490,8 @@ class tissue_tessellate(Operator):
             items=(
                 ('NONE', 'None', 'Keep the mesh open'),
                 ('CAP', 'Cap Holes', 'Automatically cap open loops'),
-                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs')),
+                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs'),
+                ('BRIDGE_CAP', 'Bridge weight and Cap Holes (Experimental)', 'Bridge loop pairs with weight 1 and cap holes')),
             default='NONE',
             name="Close Mesh"
             )
@@ -3248,7 +3250,7 @@ class tissue_update_tessellate(Operator):
             context.collection.objects.link(base_ob)
         base_ob.name = '_tissue_tmp_base'
 
-        '''
+
         # In Blender 2.80 cache of copied objects is lost, must be re-baked
         bool_update_cloth = False
         for m in base_ob.modifiers:
@@ -3256,10 +3258,17 @@ class tissue_update_tessellate(Operator):
                 m.point_cache.frame_end = context.scene.frame_current
                 bool_update_cloth = True
         if bool_update_cloth:
-            bpy.ops.ptcache.free_bake_all()
-            bpy.ops.ptcache.bake_all()
+            for scene in bpy.data.scenes:
+                for mod in base_ob.modifiers:
+                    if mod.type == 'CLOTH':
+                        override = {'scene': scene, 'active_object': base_ob, 'point_cache': mod.point_cache}
+                        bpy.ops.ptcache.bake(override, bake=True)
+                        break
+            #bpy.ops.ptcache.free_bake_all()
+            #bpy.ops.ptcache.bake_all()
+            #bpy.ops.ptcache.bake(override, bake=True)
         base_ob.modifiers.update()
-        '''
+
 
         # clear vertex groups before creating new ones
         ob.vertex_groups.clear()
@@ -4608,7 +4617,17 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
                     closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
                 except:
                     return 'bridge_error'
-            if close_mesh == 'CAP':
+            if close_mesh == 'BRIDGE_CAP':
+                try:
+                    dvert_lay = bm.verts.layers.deform.active
+                    group_index = ob.vertex_groups["Bridge"].index
+                    bw = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                    bridge_edges = [e for e in boundary_edges if bw[e.verts[0].index]*bw[e.verts[1].index] >= 1]
+                    closed = bmesh.ops.bridge_loops(bm, edges=bridge_edges, use_pairs=True)
+                    for f in closed['faces']: f.material_index = cap_material_index
+                    boundary_edges = [e for e in bm.edges if e.is_boundary]
+                except: pass
+            if close_mesh in ('CAP', 'BRIDGE_CAP'):
                 closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
             for f in closed['faces']: f.material_index = cap_material_index
         bm.to_mesh(ob.data)

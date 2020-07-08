@@ -2938,8 +2938,9 @@ def reaction_diffusion_scene(scene, bake=False):
 def reaction_diffusion_def(ob, bake=False):
     scene = bpy.context.scene
     start = time.time()
+    if type(ob) == bpy.types.Scene: return None
     props = ob.reaction_diffusion_settings
-
+    
     if bake or props.bool_cache:
         if props.cache_dir == '':
             letters = string.ascii_letters
