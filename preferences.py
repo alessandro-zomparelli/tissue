@@ -12,6 +12,9 @@ class tissuePreferences(bpy.types.AddonPreferences):
     )
 
     def draw(self, context):
+
+        from .utils_pip import Pip
+        Pip._ensure_user_site_package()
         layout = self.layout
         import importlib
         numba_spec = importlib.util.find_spec('numba')
