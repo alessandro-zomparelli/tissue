@@ -2940,7 +2940,7 @@ def reaction_diffusion_def(ob, bake=False):
     start = time.time()
     if type(ob) == bpy.types.Scene: return None
     props = ob.reaction_diffusion_settings
-    
+
     if bake or props.bool_cache:
         if props.cache_dir == '':
             letters = string.ascii_letters
@@ -3059,7 +3059,7 @@ def reaction_diffusion_def(ob, bake=False):
         timeElapsed = time.time() - start
         print('       Preparation Time:',timeElapsed)
         start = time.time()
-
+        
         try:
             edge_verts = np.array(edge_verts)
             _f = f if type(f) is np.ndarray else np.array((f,))

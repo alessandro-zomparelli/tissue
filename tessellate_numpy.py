@@ -3258,15 +3258,12 @@ class tissue_update_tessellate(Operator):
                 m.point_cache.frame_end = context.scene.frame_current
                 bool_update_cloth = True
         if bool_update_cloth:
-            for scene in bpy.data.scenes:
-                for mod in base_ob.modifiers:
-                    if mod.type == 'CLOTH':
-                        override = {'scene': scene, 'active_object': base_ob, 'point_cache': mod.point_cache}
-                        bpy.ops.ptcache.bake(override, bake=True)
-                        break
-            #bpy.ops.ptcache.free_bake_all()
-            #bpy.ops.ptcache.bake_all()
-            #bpy.ops.ptcache.bake(override, bake=True)
+            scene = context.scene
+            for mod in base_ob.modifiers:
+                if mod.type == 'CLOTH':
+                    override = {'scene': scene, 'active_object': base_ob, 'point_cache': mod.point_cache}
+                    bpy.ops.ptcache.bake(override, bake=True)
+                    break
         base_ob.modifiers.update()
 
 

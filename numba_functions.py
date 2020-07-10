@@ -23,6 +23,8 @@ import sys
 bool_numba = False
 
 try:
+    from .utils_pip import Pip
+    Pip._ensure_user_site_package()
     from numba import jit, njit, guvectorize, float64, int32, prange
     bool_numba = True
 except:
