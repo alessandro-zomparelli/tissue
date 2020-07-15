@@ -506,18 +506,18 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Bridge Cuts",
             update = anim_tessellate_active
             )
-    cap_material_index : IntProperty(
-            name="Material",
+    cap_material_offset : IntProperty(
+            name="Material Offset",
             default=0,
             min=0,
-            description="Material index for the cap faces",
+            description="Material index offset for the cap faces",
             update = anim_tessellate_active
             )
-    bridge_material_index : IntProperty(
-            name="Material",
+    bridge_material_offset : IntProperty(
+            name="Material Offset",
             default=0,
             min=0,
-            description="Material index for the bridge faces",
+            description="Material index offset for the bridge faces",
             update = anim_tessellate_active
             )
     patch_subs : IntProperty(
@@ -651,7 +651,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.fill_frame = operator.fill_frame
     ob.tissue_tessellate.frame_boundary_mat = operator.frame_boundary_mat
     ob.tissue_tessellate.fill_frame_mat = operator.fill_frame_mat
-    ob.tissue_tessellate.cap_material_index = operator.cap_material_index
+    ob.tissue_tessellate.cap_material_offset = operator.cap_material_offset
     ob.tissue_tessellate.patch_subs = operator.patch_subs
     ob.tissue_tessellate.use_origin_offset = operator.use_origin_offset
     ob.tissue_tessellate.vertex_group_thickness = operator.vertex_group_thickness
@@ -708,7 +708,7 @@ def load_parameters(operator, ob):
     operator.close_mesh = ob.tissue_tessellate.close_mesh
     operator.bridge_cuts = ob.tissue_tessellate.bridge_cuts
     operator.bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
-    operator.cap_material_index = ob.tissue_tessellate.cap_material_index
+    operator.cap_material_offset = ob.tissue_tessellate.cap_material_offset
     operator.patch_subs = ob.tissue_tessellate.patch_subs
     operator.frame_boundary = ob.tissue_tessellate.frame_boundary
     operator.fill_frame = ob.tissue_tessellate.fill_frame
@@ -2661,17 +2661,17 @@ class tissue_tessellate(Operator):
             max=20,
             description="Bridge Cuts"
             )
-    cap_material_index : IntProperty(
-            name="Material",
+    cap_material_offset : IntProperty(
+            name="Material Offset",
             default=0,
             min=0,
-            description="Material index for the cap faces"
+            description="Material index offset for the cap faces"
             )
-    bridge_material_index : IntProperty(
-            name="Material",
+    bridge_material_offset : IntProperty(
+            name="Material Offset",
             default=0,
             min=0,
-            description="Material index for the bridge faces"
+            description="Material index offset for the bridge faces"
             )
     patch_subs : IntProperty(
             name="Patch Subdivisions",
@@ -2971,40 +2971,36 @@ class tissue_tessellate(Operator):
                         col.separator()
                         col.label(text='Bridge Vertex Group:')
                         row = col.row(align=True)
-                        row.prop(self, "vertex_group_bridge_owner", expand=True,
-                            slider=False, toggle=False, icon_only=False, event=False,
-                            full_event=False, emboss=True, index=-1)
-                        #row = col.row(align=True)
                         if self.vertex_group_bridge_owner == 'BASE': ob_bridge = ob0
                         else: ob_bridge = ob1
                         row.prop_search(self, 'vertex_group_bridge',
                             ob_bridge, "vertex_groups", text='')
                         row.prop(self, "invert_vertex_group_bridge", text="",
                             toggle=True, icon='ARROW_LEFTRIGHT')
+                        row.prop(self, "vertex_group_bridge_owner", expand=True,
+                            slider=False, toggle=False, icon_only=False, event=False,
+                            full_event=False, emboss=True, index=-1)
                     row = col.row(align=True)
                     row.prop(self, "bridge_edges_crease", text="Crease")
-                    row.prop(self, "bridge_material_index")
+                    row.prop(self, "bridge_material_offset")
 
                 if self.close_mesh in ('CAP', 'BRIDGE_CAP'):
                     if self.close_mesh == 'BRIDGE_CAP':
                         col.separator()
                         col.label(text='Cap Vertex Group:')
                         row = col.row(align=True)
-                        row.prop(self, "vertex_group_cap_owner", expand=True,
-                            slider=False, toggle=False, icon_only=False, event=False,
-                            full_event=False, emboss=True, index=-1)
-                        #row = col.row(align=True)
                         if self.vertex_group_cap_owner == 'BASE': ob_cap = ob0
                         else: ob_cap = ob1
                         row.prop_search(self, 'vertex_group_cap',
                             ob_cap, "vertex_groups", text='')
-                        col2 = row.column(align=True)
-                        row2 = col2.row(align=True)
-                        row2.prop(self, "invert_vertex_group_cap", text="",
+                        row.prop(self, "invert_vertex_group_cap", text="",
                             toggle=True, icon='ARROW_LEFTRIGHT')
+                        row.prop(self, "vertex_group_cap_owner", expand=True,
+                            slider=False, toggle=False, icon_only=False, event=False,
+                            full_event=False, emboss=True, index=-1)
                     row = col.row(align=True)
                     row.prop(self, "open_edges_crease", text="Crease")
-                    row.prop(self, "cap_material_index")
+                    row.prop(self, "cap_material_offset")
                     '''
                     if self.close_mesh == 'BRIDGE' and False:
                         row = col.row(align=True)
@@ -3365,8 +3361,8 @@ class tissue_update_tessellate(Operator):
             frame_boundary_mat = ob.tissue_tessellate.frame_boundary_mat
             fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
             bridge_cuts = ob.tissue_tessellate.bridge_cuts
-            cap_material_index = ob.tissue_tessellate.cap_material_index
-            bridge_material_index = ob.tissue_tessellate.bridge_material_index
+            cap_material_offset = ob.tissue_tessellate.cap_material_offset
+            bridge_material_offset = ob.tissue_tessellate.bridge_material_offset
             patch_subs = ob.tissue_tessellate.patch_subs
             use_origin_offset = ob.tissue_tessellate.use_origin_offset
             vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
@@ -4218,7 +4214,7 @@ class TISSUE_PT_tessellate_options(Panel):
                         col2 = row.column(align=True)
                         row2 = col2.row(align=True)
                     col.prop(props, "bridge_edges_crease", text="Crease")
-                    col.prop(props, "bridge_material_index", text='Material Index')
+                    col.prop(props, "bridge_material_offset", text='Material Offset')
                     '''
                     if props.close_mesh == 'BRIDGE' and False:
                         col.separator()
@@ -4241,7 +4237,7 @@ class TISSUE_PT_tessellate_options(Panel):
                             slider=False, toggle=False, icon_only=False, event=False,
                             full_event=False, emboss=True, index=-1)
                     col.prop(props, "open_edges_crease", text="Crease")
-                    col.prop(props, "cap_material_index", text='Material Index')
+                    col.prop(props, "cap_material_offset", text='Material Offset')
                 if props.warning_message_merge:
                     col.separator()
                     col.label(text=props.warning_message_merge, icon='ERROR')
@@ -4808,7 +4804,7 @@ def merge_components(ob, props, use_bmesh):
                 bpy.ops.mesh.edge_face_add()
                 bpy.ops.object.mode_set(mode='OBJECT')
                 for f in ob.data.polygons:
-                    if f.select: f.material_index = props.cap_material_index
+                    if f.select: f.material_index += props.cap_material_offset
             elif props.close_mesh == 'BRIDGE':
                 try:
                     if props.bridge_edges_crease != 0:
@@ -4820,7 +4816,7 @@ def merge_components(ob, props, use_bmesh):
                         smoothness=props.bridge_smoothness)
                     bpy.ops.object.mode_set(mode='OBJECT')
                     for f in ob.data.polygons:
-                        if f.select: f.material_index = props.cap_material_index
+                        if f.select: f.material_index += props.bridge_material_offset
                 except: pass
             elif props.close_mesh == 'BRIDGE_CAP':
                 # BRIDGE
@@ -4840,7 +4836,7 @@ def merge_components(ob, props, use_bmesh):
                         interpolation='SURFACE',
                         smoothness=props.bridge_smoothness)
                     for f in ob.data.polygons:
-                        if f.select: f.material_index = props.bridge_material_index
+                        if f.select: f.material_index += props.bridge_material_offset
                     bpy.ops.mesh.select_all(action='DESELECT')
                     bpy.ops.mesh.select_non_manifold(
                         extend=False, use_wire=False, use_boundary=True,
@@ -4860,7 +4856,7 @@ def merge_components(ob, props, use_bmesh):
                         bpy.ops.transform.edge_crease(value=props.open_edges_crease)
                     bpy.ops.mesh.edge_face_add()
                     for f in ob.data.polygons:
-                        if f.select: f.material_index = props.cap_material_index
+                        if f.select: f.material_index += props.cap_material_offset
                     bpy.ops.object.mode_set(mode='OBJECT')
                 except: pass
     else:
@@ -4885,14 +4881,14 @@ def merge_components(ob, props, use_bmesh):
                     for e in boundary_edges:
                         e[crease_layer] = props.bridge_edges_crease
                     closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
-                    for f in closed['faces']: f.material_index = props.bridge_material_index
+                    for f in closed['faces']: f.material_index += props.bridge_material_offset
                 except:
                     return 'bridge_error'
             elif props.close_mesh == 'CAP':
                 for e in boundary_edges:
                     e[crease_layer] = props.open_edges_crease
                 closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
-                for f in closed['faces']: f.material_index = props.cap_material_index
+                for f in closed['faces']: f.material_index += props.cap_material_offset
             elif props.close_mesh == 'BRIDGE_CAP':
                 # BRIDGE
                 dvert_lay = bm.verts.layers.deform.active
@@ -4905,7 +4901,7 @@ def merge_components(ob, props, use_bmesh):
                     for e in bridge_edges:
                         e[crease_layer] = props.bridge_edges_crease
                     closed = bmesh.ops.bridge_loops(bm, edges=bridge_edges, use_pairs=True)
-                    for f in closed['faces']: f.material_index = props.bridge_material_index
+                    for f in closed['faces']: f.material_index += props.bridge_material_offset
                     boundary_edges = [e for e in bm.edges if e.is_boundary]
                 except: pass
                 # CAP
@@ -4918,7 +4914,7 @@ def merge_components(ob, props, use_bmesh):
                     for e in cap_edges:
                         e[crease_layer] = props.open_edges_crease
                     closed = bmesh.ops.holes_fill(bm, edges=cap_edges)
-                    for f in closed['faces']: f.material_index = props.cap_material_index
+                    for f in closed['faces']: f.material_index += props.cap_material_offset
                 except: pass
         bm.to_mesh(ob.data)
 
