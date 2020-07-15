@@ -106,15 +106,16 @@ class dual_mesh_tessellated(Operator):
             bpy.ops.object.editmode_toggle()
             ob1.select_set(False)
             # hide component
-            ob1.hide_select = True
+            #ob1.hide_select = True
             ob1.hide_render = True
-            ob1.hide_viewport = True
+            #ob1.hide_viewport = True
         ob = convert_object_to_mesh(ob0,False,False)
         ob.name = 'DualMesh'
         #ob = bpy.data.objects.new("DualMesh", convert_object_to_mesh(ob0,False,False))
         #context.collection.objects.link(ob)
         #context.view_layer.objects.active = ob
         #ob.select_set(True)
+        ob.tissue_tessellate.bool_lock = True
         ob.tissue_tessellate.component = ob1
         ob.tissue_tessellate.generator = ob0
         ob.tissue_tessellate.gen_modifiers = self.apply_modifiers
@@ -122,6 +123,7 @@ class dual_mesh_tessellated(Operator):
         ob.tissue_tessellate.bool_dissolve_seams = True
         if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'FAN'
         bpy.ops.object.tissue_update_tessellate()
+        ob.tissue_tessellate.bool_lock = False
         ob.location = ob0.location
         ob.matrix_world = ob0.matrix_world
         return {'FINISHED'}
@@ -243,9 +245,7 @@ class dual_mesh(Operator):
                 if ob.modifiers[0].name == "dual_mesh_subsurf":
                     break
 
-            bpy.ops.object.modifier_apply(
-                    apply_as='DATA', modifier='dual_mesh_subsurf'
-                    )
+            bpy.ops.object.modifier_apply(modifier='dual_mesh_subsurf')
 
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_all(action='DESELECT')
@@ -336,7 +336,7 @@ class dual_mesh(Operator):
             for o in clones:
                 o.data = ob.data
             bm.free()
-        
+
         for o in sel:
             o.select_set(True)
 

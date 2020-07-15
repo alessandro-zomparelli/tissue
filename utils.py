@@ -89,7 +89,7 @@ def set_animatable_fix_handler(self, context):
         if "turn_off_animatable" in str(h):
             old_handlers.append(h)
     for h in old_handlers: blender_handlers.remove(h)
-    ################ blender_handlers.append(turn_off_animatable)
+    blender_handlers.append(turn_off_animatable)
     return
 
 def turn_off_animatable(scene):

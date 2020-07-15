@@ -74,7 +74,7 @@ classes = (
     tessellate_numpy.tissue_tessellate_prop,
     tessellate_numpy.tissue_tessellate,
     tessellate_numpy.tissue_update_tessellate,
-    tessellate_numpy.tissue_refresh_tessellate,
+    tessellate_numpy.tissue_update_tessellate_deps,
     tessellate_numpy.TISSUE_PT_tessellate,
     tessellate_numpy.tissue_rotate_face_left,
     tessellate_numpy.tissue_rotate_face_right,
@@ -88,6 +88,7 @@ classes = (
     tessellate_numpy.TISSUE_PT_tessellate_morphing,
     tessellate_numpy.TISSUE_PT_tessellate_iterations,
     tessellate_numpy.polyhedra_wireframe,
+    tessellate_numpy.tissue_render_animation,
 
     weight_tools.face_area_to_vertex_groups,
     weight_tools.vertex_colors_to_vertex_groups,
