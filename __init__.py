@@ -51,8 +51,9 @@ if "bpy" in locals():
     importlib.reload(lattice)
     importlib.reload(uv_to_mesh)
     importlib.reload(utils)
-    importlib.reload(preferences)
+    importlib.reload(config)
     importlib.reload(material_tools)
+    importlib.reload(curves_tools)
 
 else:
     from . import tessellate_numpy
@@ -61,15 +62,17 @@ else:
     from . import lattice
     from . import uv_to_mesh
     from . import utils
-    from . import preferences
+    from . import config
     from . import material_tools
+    from . import curves_tools
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
 
+
 classes = (
-    preferences.tissuePreferences,
-    preferences.tissue_install_numba,
+    config.tissuePreferences,
+    config.tissue_install_numba,
 
     tessellate_numpy.tissue_tessellate_prop,
     tessellate_numpy.tissue_tessellate,
@@ -128,6 +131,11 @@ classes = (
     material_tools.random_materials,
     material_tools.weight_to_materials,
 
+    curves_tools.tissue_to_curve_prop,
+    curves_tools.tissue_convert_to_curve,
+    curves_tools.tissue_convert_to_curve_update,
+    curves_tools.TISSUE_PT_convert_to_curve,
+
     uv_to_mesh.uv_to_mesh
 )
 
@@ -138,6 +146,9 @@ def register():
     #bpy.utils.register_module(__name__)
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tessellate_numpy.tissue_tessellate_prop
+                                            )
+    bpy.types.Object.tissue_to_curve = PointerProperty(
+                                            type=curves_tools.tissue_to_curve_prop
                                             )
     bpy.types.Object.formula_settings = CollectionProperty(
                                             type=weight_tools.formula_prop

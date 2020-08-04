@@ -54,6 +54,8 @@ from .numba_functions import *
 import os
 from pathlib import Path
 
+from . import config
+
 def anim_tessellate_active(self, context):
     ob = context.object
     props = ob.tissue_tessellate
@@ -73,8 +75,14 @@ def anim_tessellate_object(ob):
 
 #from bpy.app.handlers import persistent
 
-def anim_tessellate(scene):
+def anim_tessellate(scene, depsgraph):
     print('Tissue: animating tessellations...')
+
+    #global evaluatedDepsgraph
+    #print(evaluatedDepsgraph)
+    print(config.evaluatedDepsgraph)
+    config.evaluatedDepsgraph = depsgraph
+    print(config.evaluatedDepsgraph)
 
     try:
         active_object = bpy.context.object
@@ -108,6 +116,10 @@ def anim_tessellate(scene):
                         override['view_layer'] = scene.view_layers[0]
                         break
             bpy.ops.object.tissue_update_tessellate(override)
+
+    config.evaluatedDepsgraph = None
+    print('end')
+    print(config.evaluatedDepsgraph)
     return
 
 def remove_tessellate_handler():
@@ -3824,6 +3836,11 @@ class TISSUE_PT_tessellate(Panel):
         col.label(text="Materials:")
         col.operator("object.random_materials", icon='COLOR')
         col.operator("object.weight_to_materials", icon='GROUP_VERTEX')
+
+        col.separator()
+        col.label(text="Curves:")
+        col.operator("object.tissue_convert_to_curve", icon='OUTLINER_DATA_CURVE')
+        col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
 
 class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'

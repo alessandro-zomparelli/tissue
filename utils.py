@@ -26,6 +26,8 @@ from math import *
 try: from .numba_functions import numba_lerp2, numba_lerp2_4
 except: pass
 
+from . import config
+
 #Recursivly transverse layer_collection for a particular name
 def recurLayerCollection(layerColl, collName):
     found = None
@@ -136,8 +138,14 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         bpy.context.view_layer.objects.active = new_ob
     return new_ob
 
+#evaluatedDepsgraph = 'pippo'
+
 def simple_to_mesh(ob):
-    dg = bpy.context.evaluated_depsgraph_get()
+    #global evaluatedDepsgraph
+    #print(config.evaluatedDepsgraph)
+    if config.evaluatedDepsgraph == None:
+        dg = bpy.context.evaluated_depsgraph_get()
+    else: dg = config.evaluatedDepsgraph
     ob_eval = ob.evaluated_get(dg)
     me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
     me.calc_normals()
@@ -149,7 +157,10 @@ def join_objects(objects, link_to_scene=True, make_active=False):
 
     materials = {}
     faces_materials = []
-    dg = C.evaluated_depsgraph_get()
+    if config.evaluatedDepsgraph == None:
+        dg = C.evaluated_depsgraph_get()
+    else: dg = config.evaluatedDepsgraph
+
     for o in objects:
         bm.from_object(o, dg)
         # add object's material to the dictionary
@@ -603,13 +614,18 @@ def curve_from_points(points, name='Curve'):
     ob_curve = bpy.data.objects.new(name,curve)
     return ob_curve
 
-def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True):
+def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True, only_data=False):
     curve = bpy.data.curves.new(name,'CURVE')
     curve.dimensions = '3D'
+    use_rad = True
     for c in indexes:
         # cleanup
         pts = np.array([points[i] for i in c])
-        rad = np.array([radii[i] for i in c])
+        try:
+            rad = np.array([radii[i] for i in c])
+        except:
+            use_rad = False
+            rad = 1
         if merge_distance > 0:
             pts1 = np.roll(pts,1,axis=0)
             dist = np.linalg.norm(pts1-pts, axis=1)
@@ -621,7 +637,7 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
                 if count > merge_distance: count = 0
                 else: mask[i] = False
             pts = pts[mask]
-            rad = rad[mask]
+            if use_rad: rad = rad[mask]
 
         bool_cyclic = c[0] == c[-1]
         if skip_open and not bool_cyclic: continue
@@ -631,13 +647,51 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
         w = np.ones(n_pts).reshape((n_pts,1))
         co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
         s.points.foreach_set('co',co)
-        s.points.foreach_set('radius',rad)
+        if use_rad: s.points.foreach_set('radius',rad)
         s.use_cyclic_u = bool_cyclic
-    ob_curve = bpy.data.objects.new(name,curve)
-    bpy.context.collection.objects.link(ob_curve)
-    if set_active:
-        bpy.context.view_layer.objects.active = ob_curve
-    return ob_curve
+    if only_data:
+        return curve
+    else:
+        ob_curve = bpy.data.objects.new(name,curve)
+        bpy.context.collection.objects.link(ob_curve)
+        if set_active:
+            bpy.context.view_layer.objects.active = ob_curve
+        return ob_curve
+
+def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
+    curve.splines.clear()
+    use_rad = True
+    for c in indexes:
+        # cleanup
+        pts = np.array([points[i] for i in c if i != None])
+        try:
+            rad = np.array([radii[i] for i in c])
+        except:
+            use_rad = False
+            rad = 1
+        if merge_distance > 0:
+            pts1 = np.roll(pts,1,axis=0)
+            dist = np.linalg.norm(pts1-pts, axis=1)
+            count = 0
+            n = len(dist)
+            mask = np.ones(n).astype('bool')
+            for i in range(n):
+                count += dist[i]
+                if count > merge_distance: count = 0
+                else: mask[i] = False
+            pts = pts[mask]
+            if use_rad: rad = rad[mask]
+
+        bool_cyclic = c[0] == c[-1]
+        #if skip_open and not bool_cyclic: continue
+        s = curve.splines.new('POLY')
+        n_pts = len(pts)
+        s.points.add(n_pts-1)
+        w = np.ones(n_pts).reshape((n_pts,1))
+        co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
+        s.points.foreach_set('co',co)
+        if use_rad: s.points.foreach_set('radius',rad)
+        s.use_cyclic_u = bool_cyclic
 
 def curve_from_vertices(indexes, verts, name='Curve'):
     curve = bpy.data.curves.new(name,'CURVE')
