@@ -16,11 +16,6 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-# --------------------------------- DUAL MESH -------------------------------- #
-# -------------------------------- version 0.3 ------------------------------- #
-#                                                                              #
-# Convert a generic mesh to its dual. With open meshes it can get some wired   #
-# effect on the borders.                                                       #
 #                                                                              #
 #                        (c)   Alessandro Zomparelli                           #
 #                                    (2017)                                    #
@@ -33,6 +28,7 @@
 import bpy, bmesh
 from bpy.types import Operator
 from bpy.props import (
+        IntProperty,
         BoolProperty,
         EnumProperty,
         PointerProperty,
@@ -51,7 +47,8 @@ from .utils import (
         find_curves,
         update_curve_from_pydata,
         simple_to_mesh,
-        convert_object_to_mesh
+        convert_object_to_mesh,
+        get_weight_numpy
         )
 
 
@@ -82,16 +79,27 @@ class tissue_to_curve_prop(PropertyGroup):
         description="Automatically apply Modifiers and Shape Keys",
         update = anim_curve_active
         )
+    use_endpoint_u : BoolProperty(
+        name="Endpoint U",
+        default=False,
+        description="Make all open nurbs curve meet the endpoints",
+        update = anim_curve_active
+        )
     clean_distance : FloatProperty(
         name="Merge Distance", default=0, min=0, soft_max=10,
         description="Merge Distance",
         update = anim_curve_active
         )
+    nurbs_order : IntProperty(
+        name="Order", default=4, min=2, max=6,
+        description="Nurbs order",
+        update = anim_curve_active
+        )
     spline_type : EnumProperty(
         items=(
+                ('POLY', "Poly", ""),
                 ('BEZIER', "Bezier", ""),
-                ('NURBS', "NURBS", ""),
-                ('POLY', "Poly", "")
+                ('NURBS', "NURBS", "")
                 ),
         default='POLY',
         name="Spline Type",
@@ -99,12 +107,29 @@ class tissue_to_curve_prop(PropertyGroup):
         )
     mode : EnumProperty(
         items=(
+                ('BOUNDS', "Boundaries", ""),
                 ('EDGES', "Edges", ""),
-                ('CONTINUOUS', "Continuous", ""),
-                ('BOUNDS', "Boundaries", "")
+                ('CONTINUOUS', "Continuous", "")
                 ),
-        default='EDGES',
+        default='BOUNDS',
         name="Conversion Mode",
+        update = anim_curve_active
+        )
+    vertex_group : StringProperty(
+        name="Radius", default='',
+        description="Vertex Group used for variable radius",
+        update = anim_curve_active
+        )
+    invert_vertex_group : BoolProperty(default=False,
+        description='Inverte the value of the Vertex Group',
+        update = anim_curve_active
+        )
+    vertex_group_factor : FloatProperty(
+        name="Factor",
+        default=0,
+        min=0,
+        max=1,
+        description="Depth bevel factor to use for zero vertex group influence",
         update = anim_curve_active
         )
 
@@ -129,28 +154,52 @@ class tissue_convert_to_curve(Operator):
         default=False,
         description="Automatically apply Modifiers and Shape Keys"
         )
+    use_endpoint_u : BoolProperty(
+        name="Endpoint U",
+        default=False,
+        description="Make all open nurbs curve meet the endpoints"
+        )
+    nurbs_order : IntProperty(
+        name="Order", default=4, min=2, max=6,
+        description="Nurbs order"
+        )
     clean_distance : FloatProperty(
         name="Merge Distance", default=0, min=0, soft_max=10,
         description="Merge Distance"
         )
     spline_type : EnumProperty(
         items=(
+                ('POLY', "Poly", ""),
                 ('BEZIER', "Bezier", ""),
-                ('NURBS', "NURBS", ""),
-                ('POLY', "Poly", "")
+                ('NURBS', "NURBS", "")
                 ),
         default='POLY',
         name="Spline Type"
         )
     mode : EnumProperty(
         items=(
+                ('BOUNDS', "Boundaries", ""),
                 ('EDGES', "Edges", ""),
-                ('CONTINUOUS', "Continuous", ""),
-                ('BOUNDS', "Boundaries", "")
+                ('CONTINUOUS', "Continuous", "")
                 ),
-        default='EDGES',
+        default='BOUNDS',
         name="Conversion Mode"
         )
+    vertex_group : StringProperty(
+        name="Radius", default='',
+        description="Vertex Group used for variable radius"
+        )
+    invert_vertex_group : BoolProperty(default=False,
+        description='Inverte the value of the Vertex Group'
+        )
+    vertex_group_factor : FloatProperty(
+        name="Factor",
+        default=0,
+        min=0,
+        max=1,
+        description="Depth bevel factor to use for zero vertex group influence"
+        )
+
 
     @classmethod
     def poll(cls, context):
@@ -160,6 +209,51 @@ class tissue_convert_to_curve(Operator):
             return ob.type in ('MESH','CURVE','SURFACE','FONT') and ob.mode == 'OBJECT'# and bool_tessellated
         except:
             return False
+
+    def invoke(self, context, event):
+        self.object = context.object.name
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        ob = context.object
+        ob0 = bpy.data.objects[self.object]
+        #props = ob.tissue_to_curve
+        layout = self.layout
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.label(text='Object: ' + self.object)
+        #row.prop_search(self, "object", context.scene, "objects")
+        row.prop(self, "use_modifiers")#, icon='MODIFIER', text='')
+        col.separator()
+        col.label(text='Conversion Mode:')
+        row = col.row(align=True)
+        row.prop(
+            self, "mode", text="Conversion Mode", icon='NONE', expand=True,
+            slider=False, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        col.separator()
+        col.label(text='Spline Type:')
+        row = col.row(align=True)
+        row.prop(
+            self, "spline_type", text="Spline Type", icon='NONE', expand=True,
+            slider=False, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        if self.spline_type == 'NURBS':
+            col.separator()
+            col.label(text='Nurbs splines:')
+            row = col.row(align=True)
+            row.prop(self, "use_endpoint_u")
+            row.prop(self, "nurbs_order")
+        if ob0.type == 'MESH':
+            col.separator()
+            col.label(text='Variable Radius:')
+            row = col.row(align=True)
+            row.prop_search(self, 'vertex_group', ob0, "vertex_groups", text='')
+            row.prop(self, "invert_vertex_group", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+            row.prop(self, "vertex_group_factor")
+        col.separator()
+        col.label(text='Clean curves:')
+        col.prop(self, "clean_distance")
 
     def execute(self, context):
         ob = context.active_object
@@ -181,6 +275,11 @@ class tissue_convert_to_curve(Operator):
         props.clean_distance = self.clean_distance
         props.spline_type = self.spline_type
         props.mode = self.mode
+        props.use_endpoint_u = self.use_endpoint_u
+        props.nurbs_order = self.nurbs_order
+        props.vertex_group = self.vertex_group
+        props.vertex_group_factor = self.vertex_group_factor
+        props.invert_vertex_group = self.invert_vertex_group
 
         bpy.ops.object.tissue_convert_to_curve_update()
 
@@ -212,6 +311,11 @@ class tissue_convert_to_curve_update(Operator):
             bm.from_mesh(me)
             bm.edges.ensure_lookup_table()
             edges = [me.edges[e.index] for e in bm.edges if e.is_boundary]
+        #elif props.mode == 'CONTINUOUS':
+        #    bm = bmesh.new()
+        #    bm.from_mesh(me)
+        #    bm.edges.ensure_lookup_table()
+        #    edges = loops_from_bmesh(bm)
         else:
             edges = me.edges
         edges = [e.vertices for e in edges]
@@ -227,9 +331,23 @@ class tissue_convert_to_curve_update(Operator):
             except:
                 bpy.data.objects.remove(ob0)
                 return {'CANCELLED'}
-        update_curve_from_pydata(ob.data, verts, None, ordered_points, merge_distance=props.clean_distance)
+
+        try:
+            weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group], n_verts)
+            if props.invert_vertex_group: weight = 1-weight
+            fact = props.vertex_group_factor
+            if fact > 0:
+                weight = weight*(1-fact) + fact
+        except:
+            weight = None
+
+        update_curve_from_pydata(ob.data, verts, weight, ordered_points, merge_distance=props.clean_distance)
         for s in ob.data.splines:
             s.type = props.spline_type
+            if s.type == 'NURBS':
+                s.use_endpoint_u = props.use_endpoint_u
+                s.order_u = props.nurbs_order
+        ob.data.splines.update()
         bpy.data.objects.remove(ob0)
 
         return {'FINISHED'}
@@ -239,7 +357,7 @@ class TISSUE_PT_convert_to_curve(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"
-    bl_label = "Convert to Curve Settings"
+    bl_label = "Tissue - Convert to Curve"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
@@ -275,5 +393,19 @@ class TISSUE_PT_convert_to_curve(Panel):
             props, "spline_type", text="Spline Type", icon='NONE', expand=True,
             slider=False, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
+        if props.spline_type == 'NURBS':
+            col.separator()
+            col.label(text='Nurbs Splines:')
+            row = col.row(align=True)
+            row.prop(props, "use_endpoint_u")
+            row.prop(props, "nurbs_order")
+        if props.object.type == 'MESH':
+            col.separator()
+            col.label(text='Variable Radius:')
+            row = col.row(align=True)
+            row.prop_search(props, 'vertex_group', props.object, "vertex_groups", text='')
+            row.prop(props, "invert_vertex_group", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+            row.prop(props, "vertex_group_factor")
         col.separator()
+        col.label(text='Clean Curves:')
         col.prop(props, "clean_distance")

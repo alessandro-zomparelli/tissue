@@ -619,6 +619,8 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
     curve.dimensions = '3D'
     use_rad = True
     for c in indexes:
+        bool_cyclic = c[0] == c[-1]
+        if bool_cyclic: c.pop(-1)
         # cleanup
         pts = np.array([points[i] for i in c])
         try:
@@ -639,7 +641,6 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             pts = pts[mask]
             if use_rad: rad = rad[mask]
 
-        bool_cyclic = c[0] == c[-1]
         if skip_open and not bool_cyclic: continue
         s = curve.splines.new('POLY')
         n_pts = len(pts)
@@ -662,10 +663,13 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
     curve.splines.clear()
     use_rad = True
     for c in indexes:
+        bool_cyclic = c[0] == c[-1]
+        if bool_cyclic: c.pop(-1)
+
         # cleanup
         pts = np.array([points[i] for i in c if i != None])
         try:
-            rad = np.array([radii[i] for i in c])
+            rad = np.array([radii[i] for i in c if i != None])
         except:
             use_rad = False
             rad = 1
@@ -681,8 +685,6 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
                 else: mask[i] = False
             pts = pts[mask]
             if use_rad: rad = rad[mask]
-
-        bool_cyclic = c[0] == c[-1]
         #if skip_open and not bool_cyclic: continue
         s = curve.splines.new('POLY')
         n_pts = len(pts)
@@ -692,6 +694,41 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
         s.points.foreach_set('co',co)
         if use_rad: s.points.foreach_set('radius',rad)
         s.use_cyclic_u = bool_cyclic
+
+
+def loops_from_bmesh(bm):
+    edge_loops = []
+    edges = list(bm.edges)
+    while len(edges)>0:
+        edge = edges[0]
+        while True:
+            skip_edges = []
+            for f in edge.link_faces:
+                skip_edges += list(f.edges)
+            vert0 = edge.verts[0]
+            edges0 = vert0.link_edges
+            if len(edges0) == 4:
+                for e in edges0:
+                    if e not in skip_edges and edge in edges:
+                        edges.remove(e)
+                        edge_loop.append(e.other_vert(vert0))
+                        edge = e
+
+        loops.append(loop)
+        for e in loop:
+            edges.remove(e)
+    return loops
+
+def _loops_from_bmesh(bm):
+    loops = []
+    edges = list(bm.edges)
+    while len(edges)>0:
+        e = edges[0]
+        loop = e.link_loops
+        loops.append(loop)
+        for e in loop:
+            edges.remove(e)
+    return loops
 
 def curve_from_vertices(indexes, verts, name='Curve'):
     curve = bpy.data.curves.new(name,'CURVE')

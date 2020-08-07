@@ -2260,7 +2260,9 @@ class vertex_colors_to_vertex_groups(Operator):
 
     @classmethod
     def poll(cls, context):
-        return len(context.object.data.vertex_colors) > 0
+        try:
+            return len(context.object.data.vertex_colors) > 0
+        except: return False
 
     def execute(self, context):
         obj = context.active_object
@@ -3059,7 +3061,7 @@ def reaction_diffusion_def(ob, bake=False):
         timeElapsed = time.time() - start
         print('       Preparation Time:',timeElapsed)
         start = time.time()
-        
+
         try:
             edge_verts = np.array(edge_verts)
             _f = f if type(f) is np.ndarray else np.array((f,))

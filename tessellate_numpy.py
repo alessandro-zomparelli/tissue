@@ -3839,8 +3839,9 @@ class TISSUE_PT_tessellate(Panel):
 
         col.separator()
         col.label(text="Curves:")
-        col.operator("object.tissue_convert_to_curve", icon='OUTLINER_DATA_CURVE')
-        col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
+        row = col.row(align=True)
+        row.operator("object.tissue_convert_to_curve", icon='OUTLINER_DATA_CURVE')
+        row.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='')
 
 class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'
