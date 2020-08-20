@@ -59,7 +59,7 @@ from . import config
 def anim_tessellate_active(self, context):
     ob = context.object
     props = ob.tissue_tessellate
-    if not (props.bool_lock or props.bool_hold):
+    if not (ob.tissue.bool_lock or props.bool_hold):
         try:
             props.generator.name
             props.component.name
@@ -75,7 +75,57 @@ def anim_tessellate_object(ob):
 
 #from bpy.app.handlers import persistent
 
-def anim_tessellate(scene, depsgraph):
+
+def anim_tessellate(scene, depsgraph=None):
+    print('Tissue: animating tessellations...')
+
+    #config.evaluatedDepsgraph = depsgraph
+
+    try:
+        active_object = bpy.context.object
+        old_mode = bpy.context.object.mode
+        selected_objects = bpy.context.selected_objects
+    except: active_object = old_mode = selected_objects = None
+
+    if old_mode in ('OBJECT', 'PAINT_WEIGHT'):
+        update_objects = []
+        for ob in scene.objects:
+            if ob.tissue.bool_run and not ob.tissue.bool_lock:
+                if ob not in update_objects: update_objects.append(ob)
+                update_objects = list(reversed(update_dependencies(ob, update_objects)))
+        for ob in update_objects:
+            #override = {'object': ob}
+            for window in bpy.context.window_manager.windows:
+                screen = window.screen
+                for area in screen.areas:
+                    if area.type == 'VIEW_3D':
+                        override = bpy.context.copy()
+                        override['window'] = window
+                        override['screen'] = screen
+                        override['area'] = area
+                        override['selected_objects'] = [ob]
+                        override['object'] = ob
+                        override['active_object'] = ob
+                        override['selected_editable_objects'] = [ob]
+                        override['mode'] = 'OBJECT'
+                        override['view_layer'] = scene.view_layers[0]
+                        break
+            if ob.tissue.tissue_type == 'TESSELLATE':
+                bpy.ops.object.tissue_update_tessellate(override)
+            elif ob.tissue.tissue_type == 'TO_CURVE':
+                bpy.ops.object.tissue_convert_to_curve_update(override)
+
+        if old_mode != None:
+            objects = bpy.context.view_layer.objects
+            objects.active = active_object
+            for o in objects: o.select_set(o in selected_objects)
+            bpy.ops.object.mode_set(mode=old_mode)
+
+    config.evaluatedDepsgraph = None
+    print('end')
+    return
+
+def OLD_anim_tessellate(scene, depsgraph):
     print('Tissue: animating tessellations...')
 
     #global evaluatedDepsgraph
@@ -93,7 +143,7 @@ def anim_tessellate(scene, depsgraph):
     if old_mode in ('OBJECT', 'PAINT_WEIGHT') or True:
         update_objects = []
         for ob in scene.objects:
-            if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_lock:
+            if ob.tissue.bool_run and not ob.tissue.bool_lock:
                 if ob not in update_objects: update_objects.append(ob)
                 update_objects = list(reversed(update_dependencies(ob, update_objects)))
         for ob in update_objects:
@@ -134,23 +184,53 @@ def set_tessellate_handler(self, context):
 
     remove_tessellate_handler()
     for o in context.scene.objects:
-        if o.tissue_tessellate.bool_run:
+        if o.tissue.bool_run:
             blender_handlers = bpy.app.handlers.frame_change_post
             blender_handlers.append(anim_tessellate)
             break
     return
 
-class tissue_tessellate_prop(PropertyGroup):
+class tissue_prop(PropertyGroup):
     bool_lock : BoolProperty(
         name="Lock",
         description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
         default=False
         )
+    bool_dependencies : BoolProperty(
+        name="Update Dependencies",
+        description="Automatically updates source objects, when possible",
+        default=False
+        )
+    bool_run : BoolProperty(
+        name="Animatable",
+        description="Automatically recompute the geometry when the frame is changed. Tessellations may not work using the default Render Animation",
+        default = False,
+        update = set_tessellate_handler
+        )
+    tissue_type : EnumProperty(
+        items=(
+                ('NONE', "None", ""),
+                ('TESSELLATE', "Tessellate", ""),
+                ('TO_CURVE', "To Curve", "")
+                ),
+        default='NONE',
+        name=""
+        )
+
+class tissue_tessellate_prop(PropertyGroup):
+    '''
+    bool_lock : BoolProperty(
+        name="Lock",
+        description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
+        default=False
+        )
+    '''
     bool_hold : BoolProperty(
         name="Hold",
         description="Wait...",
         default=False
         )
+    '''
     bool_dependencies : BoolProperty(
         name="Update Dependencies",
         description="Automatically updates base and components as well, if results of other tessellations",
@@ -162,6 +242,7 @@ class tissue_tessellate_prop(PropertyGroup):
         default = False,
         update = set_tessellate_handler
         )
+    '''
     zscale : FloatProperty(
         name="Scale", default=1, soft_min=0, soft_max=10,
         description="Scale factor for the component thickness",
@@ -616,8 +697,8 @@ class tissue_tessellate_prop(PropertyGroup):
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
-    ob.tissue_tessellate.bool_lock = operator.bool_lock
-    ob.tissue_tessellate.bool_dependencies = operator.bool_dependencies
+    #ob.tissue.bool_lock = operator.bool_lock
+    #ob.tissue.bool_dependencies = operator.bool_dependencies
     ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
     ob.tissue_tessellate.component = bpy.data.objects[operator.component]
     if operator.target in bpy.data.objects.keys():
@@ -681,8 +762,8 @@ def store_parameters(operator, ob):
     return ob
 
 def load_parameters(operator, ob):
-    operator.bool_lock = ob.tissue_tessellate.bool_lock
-    operator.bool_dependencies = ob.tissue_tessellate.bool_dependencies
+    #operator.bool_lock = ob.tissue.bool_lock
+    #operator.bool_dependencies = ob.tissue.bool_dependencies
     operator.generator = ob.tissue_tessellate.generator.name
     operator.component = ob.tissue_tessellate.component.name
     operator.zscale = ob.tissue_tessellate.zscale
@@ -2364,6 +2445,7 @@ class tissue_tessellate(Operator):
             description="Wait...",
             default=False
     )
+    '''
     bool_lock : BoolProperty(
             name="Lock",
             description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
@@ -2374,6 +2456,7 @@ class tissue_tessellate(Operator):
             description="Automatically updates base and components as well, if results of other tessellations",
             default=False
     )
+    '''
     object_name : StringProperty(
             name="",
             description="Name of the generated object"
@@ -3227,32 +3310,31 @@ class tissue_tessellate(Operator):
                 #self.working_on = self.object_name
                 new_ob.location = ob0.location
                 new_ob.matrix_world = ob0.matrix_world
-
+            new_ob.tissue.tissue_type = 'TESSELLATE'
             return {'FINISHED'}
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
 def update_dependencies(ob, objects):
-    if ob.tissue_tessellate.bool_dependencies:
-        ob0 = ob.tissue_tessellate.generator
-        ob1 = ob.tissue_tessellate.component
-        deps = [ob0, ob1]
+    type = ob.tissue.tissue_type
+    if type == 'NONE': return objects
+    if ob.tissue.bool_dependencies:
+        deps = get_deps(ob)
         for o in deps:
-            if o.tissue_tessellate.bool_lock: continue
-            o0 = o.tissue_tessellate.generator
-            o1 = o.tissue_tessellate.component
-            deps_deps = [o0, o1]
-            try:
-                o0.name
-                o1.name
-                if o0 not in objects and o1 not in objects:
-                    objects.append(o)
-                    objects = update_dependencies(o, objects)
-            except:
+            if o.tissue.tissue_type == 'NONE' or o.tissue.bool_lock or o in objects:
                 continue
+            objects.append(o)
+            objects = update_dependencies(o, objects)
     return objects
 
+def get_deps(ob):
+    type = ob.tissue.tissue_type
+    if type == 'TESSELLATE':
+        return [ob.tissue_tessellate.generator, ob.tissue_tessellate.component]
+    elif type == 'TO_CURVE':
+        return [ob.tissue_to_curve.object]
+    else: return []
 
 class tissue_update_tessellate_deps(Operator):
     bl_idname = "object.tissue_update_tessellate_deps"
@@ -3266,8 +3348,11 @@ class tissue_update_tessellate_deps(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            return context.object.tissue_tessellate.generator != None and \
-                context.object.tissue_tessellate.component != None
+            ob = context.object
+            tess_props = ob.tissue_tessellate
+            tessellated = tess_props.generator != None and tess_props.component != None
+            to_curve = ob.tissue_to_curve.object != None
+            return tessellated or to_curve
         except:
             return False
 
@@ -3278,7 +3363,9 @@ class tissue_update_tessellate_deps(Operator):
 
     def execute(self, context):
 
-        ob = context.object
+        active_ob = context.object
+        selected_objects = context.selected_objects
+        '''
         ob0 = ob.tissue_tessellate.generator
         ob1 = ob.tissue_tessellate.component
         try:
@@ -3288,14 +3375,31 @@ class tissue_update_tessellate_deps(Operator):
             self.report({'ERROR'},
                         "Active object must be Tessellate before Update")
             return {'CANCELLED'}
-
-        update_objects = list(reversed(update_dependencies(ob, [ob])))
+        '''
+        ### TO-DO: sorting according to dependencies
+        update_objects = [o for o in selected_objects if o.tissue.tissue_type != 'NONE']
+        for ob in selected_objects:
+            update_objects = list(reversed(update_dependencies(ob, update_objects)))
+            #update_objects = list(reversed(update_dependencies(ob, [ob])))
         for o in update_objects:
-            override = {'object': o}
-            try:
-                bpy.ops.object.tissue_update_tessellate(override)
-            except:
-                self.report({'ERROR'}, "Can't Tessellate :-(")
+            override = {
+                'object': o,
+                'selected_objects' : [o]
+                }
+            if o.type == 'MESH':
+                try:
+                    bpy.ops.object.tissue_update_tessellate(override)
+                except:
+                    self.report({'ERROR'}, "Can't Tessellate :-(")
+            else:
+                try:
+                    bpy.ops.object.tissue_convert_to_curve_update(override)
+                except:
+                    self.report({'ERROR'}, "Can't compute Curve :-(")
+
+        context.view_layer.objects.active = active_ob
+        for o in context.view_layer.objects:
+            o.select_set(o in selected_objects)
 
         return {'FINISHED'}
 
@@ -3803,9 +3907,15 @@ class TISSUE_PT_tessellate(Panel):
         layout = self.layout
 
         col = layout.column(align=True)
-        col.label(text="Tessellate:")
+        col.label(text="Generate:")
         col.operator("object.tissue_tessellate", text='Tessellate')
         col.operator("object.dual_mesh_tessellated", text='Dual Mesh')
+        col.separator()
+
+        #col.label(text="Curves:")
+        col.operator("object.tissue_convert_to_curve", icon='OUTLINER_OB_CURVE', text="Convert to Curve")
+        #row.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='')
+
         col.separator()
         col.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') #####
 
@@ -3838,16 +3948,14 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.weight_to_materials", icon='GROUP_VERTEX')
 
         col.separator()
-        col.label(text="Curves:")
-        row = col.row(align=True)
-        row.operator("object.tissue_convert_to_curve", icon='OUTLINER_DATA_CURVE')
-        row.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='')
+        col.label(text="Utils:")
+        col.operator("render.tissue_render_animation", icon='RENDER_ANIMATION')
 
 class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"
-    bl_label = "Tessellate Settings"
+    bl_label = "Tissue Tessellate"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
@@ -3858,6 +3966,7 @@ class TISSUE_PT_tessellate_object(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
+        tissue_props = ob.tissue
         allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
 
         try:
@@ -3879,14 +3988,14 @@ class TISSUE_PT_tessellate_object(Panel):
             set_tessellate_handler(self,context)
             ###### set_animatable_fix_handler(self,context)
             row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
-            lock_icon = 'LOCKED' if props.bool_lock else 'UNLOCKED'
+            lock_icon = 'LOCKED' if tissue_props.bool_lock else 'UNLOCKED'
             #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
-            deps_icon = 'LINKED' if props.bool_dependencies else 'UNLINKED'
-            row.prop(props, "bool_dependencies", text="", icon=deps_icon)
-            row.prop(props, "bool_lock", text="", icon=lock_icon)
+            deps_icon = 'LINKED' if tissue_props.bool_dependencies else 'UNLINKED'
+            row.prop(tissue_props, "bool_dependencies", text="", icon=deps_icon)
+            row.prop(tissue_props, "bool_lock", text="", icon=lock_icon)
             col2 = row.column(align=True)
-            col2.prop(props, "bool_run", text="",icon='TIME')
-            col2.enabled = not props.bool_lock
+            col2.prop(tissue_props, "bool_run", text="",icon='TIME')
+            col2.enabled = not tissue_props.bool_lock
             layout.use_property_split = True
             layout.use_property_decorate = False  # No animation.
             col = layout.column(align=True)
@@ -4479,7 +4588,7 @@ class tissue_rotate_face_right(Operator):
             context.view_layer.objects.active = o
 
             #override = {'object': o, 'mode': 'OBJECT', 'selected_objects': [o]}
-            if not o.tissue_tessellate.bool_lock:
+            if not o.tissue.bool_lock:
                 bpy.ops.object.tissue_update_tessellate()
             o.select_set(False)
         ob.select_set(True)
@@ -4532,7 +4641,7 @@ class tissue_rotate_face_left(Operator):
         for o in [obj for obj in bpy.data.objects if
                   obj.tissue_tessellate.generator == ob and obj.visible_get()]:
             context.view_layer.objects.active = o
-            if not o.tissue_tessellate.bool_lock:
+            if not o.tissue.bool_lock:
                 bpy.ops.object.tissue_update_tessellate()
             o.select_set(False)
         ob.select_set(True)
@@ -5435,9 +5544,18 @@ class tissue_render_animation(Operator):
     def draw(self, context):
         layout = self.layout
         col = layout.column(align=True)
-        col.label(text="All frames will be rendered, press ESC to abort.")
+        col.label(text="All frames will be rendered in the background.")
+        col.label(text="Press ESC to abort.")
 
     def modal(self, context, event):
+        '''
+        # check render format
+        format = context.scene.render.image_settings.file_format
+        if format in ('FFMPEG', 'AVI_RAW', 'AVI_JPEG'):
+            message = "Please use an image format as render output"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+        '''
         remove_tessellate_handler()
         scene = context.scene
         if event.type == 'ESC' or scene.frame_current >= scene.frame_end:
@@ -5457,6 +5575,13 @@ class tissue_render_animation(Operator):
         return {'RUNNING_MODAL'}
 
     def execute(self, context):
+        # check output format
+        format = context.scene.render.image_settings.file_format
+        if format in ('FFMPEG', 'AVI_RAW', 'AVI_JPEG'):
+            message = "Please use an image format as render output"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+
         scene = context.scene
         if self.start:
             remove_tessellate_handler()

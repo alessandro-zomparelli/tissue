@@ -140,12 +140,14 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
 
 #evaluatedDepsgraph = 'pippo'
 
-def simple_to_mesh(ob):
+def simple_to_mesh(ob, depsgraph=None):
     #global evaluatedDepsgraph
-    #print(config.evaluatedDepsgraph)
-    if config.evaluatedDepsgraph == None:
-        dg = bpy.context.evaluated_depsgraph_get()
-    else: dg = config.evaluatedDepsgraph
+    if depsgraph == None:
+        if config.evaluatedDepsgraph == None:
+            dg = bpy.context.evaluated_depsgraph_get()
+        else: dg = config.evaluatedDepsgraph
+    else:
+        dg = depsgraph
     ob_eval = ob.evaluated_get(dg)
     me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
     me.calc_normals()
@@ -196,7 +198,9 @@ def array_mesh(ob, n):
     arr.relative_offset_displace[0] = 0
     arr.count = n
     ob.modifiers.update()
-    me = simple_to_mesh(ob)
+
+    dg = bpy.context.evaluated_depsgraph_get()
+    me = simple_to_mesh(ob, depsgraph=dg)
     ob.modifiers.remove(arr)
     return me
 

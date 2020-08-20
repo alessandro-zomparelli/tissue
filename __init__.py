@@ -74,6 +74,7 @@ classes = (
     config.tissuePreferences,
     config.tissue_install_numba,
 
+    tessellate_numpy.tissue_prop,
     tessellate_numpy.tissue_tessellate_prop,
     tessellate_numpy.tissue_tessellate,
     tessellate_numpy.tissue_update_tessellate,
@@ -144,6 +145,9 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     #bpy.utils.register_module(__name__)
+    bpy.types.Object.tissue = PointerProperty(
+                                    type=tessellate_numpy.tissue_prop
+                                    )
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tessellate_numpy.tissue_tessellate_prop
                                             )

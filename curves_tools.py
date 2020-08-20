@@ -57,7 +57,8 @@ def anim_curve_active(self, context):
     props = ob.tissue_to_curve
     try:
         props.object.name
-        bpy.ops.object.tissue_convert_to_curve_update()
+        if not ob.tissue.bool_lock:
+            bpy.ops.object.tissue_convert_to_curve_update()
     except: pass
 
 
@@ -68,7 +69,25 @@ class tissue_to_curve_prop(PropertyGroup):
         description="Source object",
         update = anim_curve_active
     )
-    animate : BoolProperty(
+    bool_smooth : BoolProperty(
+        name="Smooth Shading",
+        default=True,
+        description="Output faces with smooth shading rather than flat shaded",
+        update = anim_curve_active
+        )
+    bool_lock : BoolProperty(
+        name="Lock",
+        description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
+        default=False,
+        update = anim_curve_active
+        )
+    bool_dependencies : BoolProperty(
+        name="Update Dependencies",
+        description="Automatically updates source object as well, when possible",
+        default=False,
+        update = anim_curve_active
+        )
+    bool_run : BoolProperty(
         name="Animatable Curve",
         description="Automatically recompute the conversion when the frame is changed.",
         default = False
@@ -144,11 +163,28 @@ class tissue_convert_to_curve(Operator):
         description="Source object",
         default = ""
     )
-    animate : BoolProperty(
+    bool_smooth : BoolProperty(
+        name="Smooth Shading",
+        default=True,
+        description="Output faces with smooth shading rather than flat shaded"
+        )
+    '''
+    bool_lock : BoolProperty(
+        name="Lock",
+        description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
+        default=False
+        )
+    bool_dependencies : BoolProperty(
+        name="Update Dependencies",
+        description="Automatically updates source object as well, when possible",
+        default=False
+        )
+    bool_run : BoolProperty(
         name="Animatable Curve",
         description="Automatically recompute the conversion when the frame is changed.",
         default = False
         )
+    '''
     use_modifiers : BoolProperty(
         name="Use Modifiers",
         default=False,
@@ -200,7 +236,6 @@ class tissue_convert_to_curve(Operator):
         description="Depth bevel factor to use for zero vertex group influence"
         )
 
-
     @classmethod
     def poll(cls, context):
         try:
@@ -244,6 +279,8 @@ class tissue_convert_to_curve(Operator):
             row = col.row(align=True)
             row.prop(self, "use_endpoint_u")
             row.prop(self, "nurbs_order")
+        col.separator()
+        col.prop(self, "bool_smooth")
         if ob0.type == 'MESH':
             col.separator()
             col.label(text='Variable Radius:')
@@ -268,9 +305,10 @@ class tissue_convert_to_curve(Operator):
         ob.select_set(False)
         new_ob.matrix_world = ob.matrix_world
 
+        new_ob.tissue.tissue_type = 'TO_CURVE'
         props = new_ob.tissue_to_curve
         props.object = ob
-        props.animate = self.animate
+        #props.bool_run = self.bool_run
         props.use_modifiers = self.use_modifiers
         props.clean_distance = self.clean_distance
         props.spline_type = self.spline_type
@@ -280,6 +318,9 @@ class tissue_convert_to_curve(Operator):
         props.vertex_group = self.vertex_group
         props.vertex_group_factor = self.vertex_group_factor
         props.invert_vertex_group = self.invert_vertex_group
+        props.bool_smooth = self.bool_smooth
+        #props.bool_lock = self.bool_lock
+        #props.bool_dependencies = self.bool_dependencies
 
         bpy.ops.object.tissue_convert_to_curve_update()
 
@@ -301,7 +342,7 @@ class tissue_convert_to_curve_update(Operator):
             return False
 
     def execute(self, context):
-        ob = context.active_object
+        ob = context.object
         props = ob.tissue_to_curve
         ob0 = props.object
         ob0 = convert_object_to_mesh(ob0, apply_modifiers=props.use_modifiers)
@@ -349,6 +390,7 @@ class tissue_convert_to_curve_update(Operator):
                 s.order_u = props.nurbs_order
         ob.data.splines.update()
         bpy.data.objects.remove(ob0)
+        if not props.bool_smooth: bpy.ops.object.shade_flat()
 
         return {'FINISHED'}
 
@@ -357,14 +399,15 @@ class TISSUE_PT_convert_to_curve(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"
-    bl_label = "Tissue - Convert to Curve"
+    bl_label = "Tissue Convert to Curve"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
     def poll(cls, context):
         try:
             #bool_curve = context.object.tissue_to_curve.object != None
-            return context.object.type == 'CURVE'# and bool_curve
+            ob = context.object
+            return ob.type == 'CURVE' and ob.tissue.tissue_type == 'TO_CURVE'
         except:
             return False
 
@@ -374,7 +417,18 @@ class TISSUE_PT_convert_to_curve(Panel):
 
         layout = self.layout
         col = layout.column(align=True)
-        col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
+        row = col.row(align=True)
+        #col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
+        row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
+        lock_icon = 'LOCKED' if ob.tissue.bool_lock else 'UNLOCKED'
+        #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
+        deps_icon = 'LINKED' if ob.tissue.bool_dependencies else 'UNLINKED'
+        row.prop(ob.tissue, "bool_dependencies", text="", icon=deps_icon)
+        row.prop(ob.tissue, "bool_lock", text="", icon=lock_icon)
+        col2 = row.column(align=True)
+        col2.prop(ob.tissue, "bool_run", text="",icon='TIME')
+        col2.enabled = not ob.tissue.bool_lock
+
         col.separator()
         row = col.row(align=True)
         row.prop_search(props, "object", context.scene, "objects")
@@ -399,6 +453,8 @@ class TISSUE_PT_convert_to_curve(Panel):
             row = col.row(align=True)
             row.prop(props, "use_endpoint_u")
             row.prop(props, "nurbs_order")
+        col.separator()
+        col.prop(props, "bool_smooth")
         if props.object.type == 'MESH':
             col.separator()
             col.label(text='Variable Radius:')
