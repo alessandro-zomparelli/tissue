@@ -115,7 +115,8 @@ class dual_mesh_tessellated(Operator):
         #context.collection.objects.link(ob)
         #context.view_layer.objects.active = ob
         #ob.select_set(True)
-        ob.tissue_tessellate.bool_lock = True
+        ob.tissue.tissue_type = 'TESSELLATE'
+        ob.tissue.bool_lock = True
         ob.tissue_tessellate.component = ob1
         ob.tissue_tessellate.generator = ob0
         ob.tissue_tessellate.gen_modifiers = self.apply_modifiers
@@ -123,7 +124,7 @@ class dual_mesh_tessellated(Operator):
         ob.tissue_tessellate.bool_dissolve_seams = True
         if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'FAN'
         bpy.ops.object.tissue_update_tessellate()
-        ob.tissue_tessellate.bool_lock = False
+        ob.tissue.bool_lock = False
         ob.location = ob0.location
         ob.matrix_world = ob0.matrix_world
         return {'FINISHED'}

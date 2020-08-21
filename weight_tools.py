@@ -3166,7 +3166,7 @@ class TISSUE_PT_reaction_diffusion(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"
-    bl_label = "Tissue - Reaction-Diffusion"
+    bl_label = "Tissue Reaction-Diffusion"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
