@@ -114,6 +114,11 @@ class tissue_to_curve_prop(PropertyGroup):
         description="Nurbs order",
         update = anim_curve_active
         )
+    system : IntProperty(
+        name="System", default=0, min=0,
+        description="Particle system index",
+        update = anim_curve_active
+        )
     spline_type : EnumProperty(
         items=(
                 ('POLY', "Poly", ""),
@@ -128,7 +133,8 @@ class tissue_to_curve_prop(PropertyGroup):
         items=(
                 ('BOUNDS', "Boundaries", ""),
                 ('EDGES', "Edges", ""),
-                ('CONTINUOUS', "Continuous", "")
+                ('CONTINUOUS', "Continuous", ""),
+                ('PARTICLES', "Particles", "")
                 ),
         default='BOUNDS',
         name="Conversion Mode",
@@ -199,6 +205,10 @@ class tissue_convert_to_curve(Operator):
         name="Order", default=4, min=2, max=6,
         description="Nurbs order"
         )
+    system : IntProperty(
+        name="System", default=0, min=0,
+        description="Particle system index"
+        )
     clean_distance : FloatProperty(
         name="Merge Distance", default=0, min=0, soft_max=10,
         description="Merge Distance"
@@ -216,7 +226,8 @@ class tissue_convert_to_curve(Operator):
         items=(
                 ('BOUNDS', "Boundaries", ""),
                 ('EDGES', "Edges", ""),
-                ('CONTINUOUS', "Continuous", "")
+                ('CONTINUOUS', "Continuous", ""),
+                ('PARTICLES', "Particles", "")
                 ),
         default='BOUNDS',
         name="Conversion Mode"
@@ -266,6 +277,9 @@ class tissue_convert_to_curve(Operator):
             self, "mode", text="Conversion Mode", icon='NONE', expand=True,
             slider=False, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
+        if self.mode == 'PARTICLES':
+            col.separator()
+            col.prop(self, "system")
         col.separator()
         col.label(text='Spline Type:')
         row = col.row(align=True)
@@ -319,6 +333,7 @@ class tissue_convert_to_curve(Operator):
         props.vertex_group_factor = self.vertex_group_factor
         props.invert_vertex_group = self.invert_vertex_group
         props.bool_smooth = self.bool_smooth
+        props.system = self.system
         #props.bool_lock = self.bool_lock
         #props.bool_dependencies = self.bool_dependencies
 
@@ -345,51 +360,78 @@ class tissue_convert_to_curve_update(Operator):
         ob = context.object
         props = ob.tissue_to_curve
         ob0 = props.object
-        ob0 = convert_object_to_mesh(ob0, apply_modifiers=props.use_modifiers)
-        me = ob0.data
-        if props.mode == 'BOUNDS':
-            bm = bmesh.new()
-            bm.from_mesh(me)
-            bm.edges.ensure_lookup_table()
-            edges = [me.edges[e.index] for e in bm.edges if e.is_boundary]
-        #elif props.mode == 'CONTINUOUS':
-        #    bm = bmesh.new()
-        #    bm.from_mesh(me)
-        #    bm.edges.ensure_lookup_table()
-        #    edges = loops_from_bmesh(bm)
+        if props.mode == 'PARTICLES':
+            eval_ob = ob0.evaluated_get(context.evaluated_depsgraph_get())
+            system_id = min(props.system, len(eval_ob.particle_systems))
+            psystem = eval_ob.particle_systems[system_id]
+            ob.data.splines.clear()
+            particles = psystem.particles
+            for id,p in enumerate(particles):
+                s = ob.data.splines.new('POLY')
+                if psystem.settings.type == 'HAIR':
+                    n_pts = len(p.hair_keys)
+                    pts = [0]*3*n_pts
+                    p.hair_keys.foreach_get('co',pts)
+                    co = np.array(pts).reshape((-1,3))
+                else:
+                    n_pts = 2**psystem.settings.display_step + 1
+                    pts = []
+                    for i in range(n_pts):
+                        vec = psystem.co_hair(eval_ob, particle_no=id,step=i)
+                        vec = ob0.matrix_world.inverted() @ vec
+                        pts.append(vec)
+                    co = np.array(pts)
+                w = np.ones(n_pts).reshape((n_pts,1))
+                co = np.concatenate((co,w),axis=1).reshape((n_pts*4))
+                s.points.add(n_pts-1)
+                s.points.foreach_set('co',co)
+
         else:
-            edges = me.edges
-        edges = [e.vertices for e in edges]
-        n_verts = len(me.vertices)
-        verts = [0]*n_verts*3
-        me.vertices.foreach_get('co',verts)
-        verts = np.array(verts).reshape((-1,3))
-        if props.mode == 'EDGES':
-            ordered_points = edges
-        else:
+            ob0 = convert_object_to_mesh(ob0, apply_modifiers=props.use_modifiers)
+            me = ob0.data
+            if props.mode == 'BOUNDS':
+                bm = bmesh.new()
+                bm.from_mesh(me)
+                bm.edges.ensure_lookup_table()
+                edges = [me.edges[e.index] for e in bm.edges if e.is_boundary]
+            #elif props.mode == 'CONTINUOUS':
+            #    bm = bmesh.new()
+            #    bm.from_mesh(me)
+            #    bm.edges.ensure_lookup_table()
+            #    edges = loops_from_bmesh(bm)
+            else:
+                edges = me.edges
+            edges = [e.vertices for e in edges]
+            n_verts = len(me.vertices)
+            verts = [0]*n_verts*3
+            me.vertices.foreach_get('co',verts)
+            verts = np.array(verts).reshape((-1,3))
+            if props.mode == 'EDGES':
+                ordered_points = edges
+            else:
+                try:
+                    ordered_points = find_curves(edges, n_verts)
+                except:
+                    bpy.data.objects.remove(ob0)
+                    return {'CANCELLED'}
+
             try:
-                ordered_points = find_curves(edges, n_verts)
+                weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group], n_verts)
+                if props.invert_vertex_group: weight = 1-weight
+                fact = props.vertex_group_factor
+                if fact > 0:
+                    weight = weight*(1-fact) + fact
             except:
-                bpy.data.objects.remove(ob0)
-                return {'CANCELLED'}
+                weight = None
 
-        try:
-            weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group], n_verts)
-            if props.invert_vertex_group: weight = 1-weight
-            fact = props.vertex_group_factor
-            if fact > 0:
-                weight = weight*(1-fact) + fact
-        except:
-            weight = None
-
-        update_curve_from_pydata(ob.data, verts, weight, ordered_points, merge_distance=props.clean_distance)
+            update_curve_from_pydata(ob.data, verts, weight, ordered_points, merge_distance=props.clean_distance)
+            bpy.data.objects.remove(ob0)
         for s in ob.data.splines:
             s.type = props.spline_type
             if s.type == 'NURBS':
                 s.use_endpoint_u = props.use_endpoint_u
                 s.order_u = props.nurbs_order
         ob.data.splines.update()
-        bpy.data.objects.remove(ob0)
         if not props.bool_smooth: bpy.ops.object.shade_flat()
 
         return {'FINISHED'}
@@ -416,6 +458,8 @@ class TISSUE_PT_convert_to_curve(Panel):
         props = ob.tissue_to_curve
 
         layout = self.layout
+        #layout.use_property_split = True
+        #layout.use_property_decorate = False
         col = layout.column(align=True)
         row = col.row(align=True)
         #col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
@@ -437,9 +481,12 @@ class TISSUE_PT_convert_to_curve(Panel):
         col.label(text='Conversion Mode:')
         row = col.row(align=True)
         row.prop(
-            props, "mode", text="Conversion Mode", icon='NONE', expand=True,
+            props, "mode", icon='NONE', expand=True,
             slider=False, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
+        if props.mode == 'PARTICLES':
+            col.separator()
+            col.prop(props, "system")
         col.separator()
         col.label(text='Spline Type:')
         row = col.row(align=True)
