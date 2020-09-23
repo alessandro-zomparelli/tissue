@@ -624,34 +624,6 @@ class weight_laplacian(Operator):
     bl_description = ("Compute the Vertex Group Laplacian")
     bl_options = {'REGISTER', 'UNDO'}
 
-    steps : IntProperty(
-        name="Steps", default=10, min=0, soft_max=50,
-        description="Number of Steps")
-
-    dt : FloatProperty(
-        name="dt", default=0.2, min=0, soft_max=0.2,
-        description="Time Step")
-
-    diff_a : FloatProperty(
-        name="Diff A", default=1, min=0, soft_max=2,
-        description="Diffusion A")
-
-    diff_b : FloatProperty(
-        name="Diff B", default=0.5, min=0, soft_max=2,
-        description="Diffusion B")
-
-    f : FloatProperty(
-        name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
-        description="Feed Rate")
-
-    k : FloatProperty(
-        name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
-        description="Kill Rate")
-
-    diff_mult : FloatProperty(
-        name="Scale", default=1, min=0, soft_max=1, max=2, precision=2,
-        description="Multiplier for the diffusion of both substances")
-
     bounds_string = ""
 
     frame = None
@@ -672,26 +644,22 @@ class weight_laplacian(Operator):
         bm.from_mesh(me)
         bm.edges.ensure_lookup_table()
 
+        group_id = ob.vertex_groups.active_index
+        input_group = ob.vertex_groups[group_id].name
+
+        group_name = "Laplacian"
+        ob.vertex_groups.new(name=group_name)
+
         # store weight values
         a = []
-        b = []
         for v in me.vertices:
             try:
-                a.append(ob.vertex_groups["A"].weight(v.index))
+                a.append(ob.vertex_groups[input_group].weight(v.index))
             except:
                 a.append(0)
-            try:
-                b.append(ob.vertex_groups["B"].weight(v.index))
-            except:
-                b.append(0)
 
         a = array(a)
-        b = array(b)
-        f = self.f
-        k = self.k
-        diff_a = self.diff_a * self.diff_mult
-        diff_b = self.diff_b * self.diff_mult
-        dt = self.dt
+
 
         # initialize
         n_verts = len(bm.verts)
@@ -704,44 +672,37 @@ class weight_laplacian(Operator):
             max_edges = max(max_edges, n_edges)
             n_neighbors.append(n_edges)
             neighbors = []
-            for e in link_edges:
+            for e in v.link_edges:
                 for v1 in e.verts:
                     if v != v1: neighbors.append(v1.index)
             id_neighbors.append(neighbors)
         n_neighbors = array(n_neighbors)
 
 
-        a = [[] for i in range(n_verts)]
-        lap_map = []
-
+        lap_map = [[] for i in range(n_verts)]
+        #lap_map = []
+        '''
         for e in bm.edges:
             id0 = e.verts[0].index
             id1 = e.verts[1].index
             lap_map[id0].append(id1)
             lap_map[id1].append(id0)
-
-        e1 = array(e1)
-        e2 = array(e2)
-        lap_a = a[e1]
-
-        for i in range(self.steps):
-
-            lap_a = zeros((n_verts))#[0]*n_verts
-            lap_b = zeros((n_verts))#[0]*n_verts
-            for e in bm.edges:
-                id0 = e.verts[0].index
-                id1 = e.verts[1].index
-                lap_a[id0] += a[id1] - a[id0]
-                lap_a[id1] += a[id0] - a[id1]
-                lap_b[id0] += b[id1] - b[id0]
-                lap_b[id1] += b[id0] - b[id1]
-            ab2 = a*b**2
-            a += (diff_a*lap_a - ab2 + f*(1-a))*dt
-            b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
+        '''
+        lap = zeros((n_verts))#[0]*n_verts
+        n_records = zeros((n_verts))
+        for e in bm.edges:
+            id0 = e.verts[0].index
+            id1 = e.verts[1].index
+            length = max(0.00000001, e.calc_length())
+            lap[id0] += (a[id1] - a[id0])/length
+            lap[id1] += (a[id0] - a[id1])/length
+            n_records[id0]+=1
+            n_records[id1]+=1
+        lap /= n_records
+        lap /= max(lap)
 
         for i in range(n_verts):
-            ob.vertex_groups['A'].add([i], a[i], 'REPLACE')
-            ob.vertex_groups['B'].add([i], b[i], 'REPLACE')
+            ob.vertex_groups['Laplacian'].add([i], lap[i], 'REPLACE')
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
@@ -1974,6 +1935,10 @@ class tissue_weight_contour_curves_pattern(Operator):
         name="Use Modifiers", default=True,
         description="Apply all the modifiers")
 
+    auto_bevel : BoolProperty(
+        name="Automatic Bevel", default=False,
+        description="Bevel depends on weight density")
+
     min_iso : FloatProperty(
         name="Min Value", default=0., soft_min=0, soft_max=1,
         description="Minimum weight value")
@@ -2071,8 +2036,10 @@ class tissue_weight_contour_curves_pattern(Operator):
         col.prop(self,'n_curves')
         col.separator()
         col.label(text='Curves Bevel:')
-        col.prop_search(self, 'vertex_group_bevel', ob, "vertex_groups", text='')
-        if self.vertex_group_bevel != '':
+        col.prop(self,'auto_bevel')
+        if not self.auto_bevel:
+            col.prop_search(self, 'vertex_group_bevel', ob, "vertex_groups", text='')
+        if self.vertex_group_bevel != '' or self.auto_bevel:
             row = col.row(align=True)
             row.prop(self,'min_bevel_depth')
             row.prop(self,'max_bevel_depth')
@@ -2135,6 +2102,14 @@ class tissue_weight_contour_curves_pattern(Operator):
         except:
             bevel_weight = np.ones(len(me0.vertices))
 
+        if self.auto_bevel:
+            # calc weight density
+            edges_length = np.array([e.calc_length() for e in bm.edges])
+            edges_dw = np.array([abs(weight[e.verts[0].index]-weight[e.verts[1].index]) for e in bm.edges])
+            dens = edges_dw/edges_length
+            dens = (dens - min(dens))/(max(dens) - min(dens))
+            variable_bevel = True
+
         #filtered_edges = bm.edges
         total_verts = np.zeros((0,3))
         total_radii = np.zeros((0,1))
@@ -2175,9 +2150,13 @@ class tissue_weight_contour_curves_pattern(Operator):
             count = len(total_verts)
 
             new_filtered_edges, edges_index, verts, bevel = contour_edges_pattern(self, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight)
+
             if len(edges_index) > 0:
+                if self.auto_bevel:
+                    bevel = 1-dens[edges_index]
+                    bevel = bevel[:,np.newaxis]
                 if self.max_bevel_depth != self.min_bevel_depth:
-                    min_radius = self.min_bevel_depth / self.max_bevel_depth
+                    min_radius = self.min_bevel_depth / max(0.0001,self.max_bevel_depth)
                     radii = min_radius + bevel*(1 - min_radius)
                 else:
                     radii = bevel

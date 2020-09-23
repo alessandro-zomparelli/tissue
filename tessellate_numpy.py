@@ -5134,6 +5134,7 @@ class polyhedra_wireframe(Operator):
                 verts1 = [v.index for v in f1.verts]
                 va1 = verts1.index(e.verts[0].index)
                 vb1 = verts1.index(e.verts[1].index)
+                # chech if order of the edge matches the order of the face
                 dir1 = va1 == (vb1+1)%len(verts1)
                 edge_vec1 = edge_vec if dir1 else -edge_vec
 
@@ -5149,6 +5150,7 @@ class polyhedra_wireframe(Operator):
                     verts2 = [v.index for v in f2.verts]
                     va2 = verts2.index(e.verts[0].index)
                     vb2 = verts2.index(e.verts[1].index)
+                    # chech if order of the edge matches the order of the face
                     dir2 = va2 == (vb2+1)%len(verts2)
                     # check for normal consistency
                     if dir1 != dir2:
@@ -5165,10 +5167,12 @@ class polyhedra_wireframe(Operator):
                 plane_y = plane_x.cross(edge_vec1)      # tangent face perp edge
                 id1 = (f1.index+1)
 
+                min_angle0 = 10
+
                 # check consistent faces
                 if id1 not in done:
                     id2 = None
-                    min_angle = 10
+                    min_angle = min_angle0
                     for i2, n2 in zip(faces2,normals2):
                         v2 = flatten_vector(-n2, plane_x, plane_y)
                         angle = vector_rotation(v2)
@@ -5192,7 +5196,7 @@ class polyhedra_wireframe(Operator):
 
                 if id1 not in done:
                     id2 = None
-                    min_angle = 10
+                    min_angle = min_angle0
                     for i2, n2 in zip(faces2, normals2):
                         v2 = flatten_vector(n2, plane_x, plane_y)
                         angle = vector_rotation(v2)
@@ -5223,7 +5227,7 @@ class polyhedra_wireframe(Operator):
                     polyhedra = keep
 
         end_time = time.time()
-        print('Tissue: Polyhedra wireframe, find polyhedra in {:.4f} sec'.format(end_time-start_time))
+        print('Tissue: Polyhedra wireframe, found {} polyhedra in {:.4f} sec'.format(len(polyhedra), end_time-start_time))
 
         delete_faces = []
         wireframe_faces = []
@@ -5286,7 +5290,8 @@ class polyhedra_wireframe(Operator):
                 flat_faces += delete_faces_poly
 
             #wireframe_faces = list(dict.fromkeys(wireframe_faces))
-            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.000001)
+            merge_dist = self.thickness*0.001
+            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=merge_dist)
             bm1.edges.ensure_lookup_table()
             bm1.faces.ensure_lookup_table()
             bm1.faces.index_update()
@@ -5475,7 +5480,9 @@ class polyhedra_wireframe(Operator):
                 edges = list(dict.fromkeys(edges))
                 edges = [bm1.edges[i] for i in edges]
                 #splitted =
-                bmesh.ops.subdivide_edges(bm1, edges=edges, cuts=i, use_only_quads=False)
+                subdivided = bmesh.ops.subdivide_edges(bm1, edges=edges, cuts=i, use_only_quads=False)
+                #if len(subdivided['geom_inner'])>0:
+                print(subdivided['geom_inner'])
                 bm1.verts.ensure_lookup_table()
                 bm1.edges.ensure_lookup_table()
                 bm1.faces.ensure_lookup_table()
