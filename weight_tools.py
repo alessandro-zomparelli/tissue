@@ -618,7 +618,7 @@ class _weight_laplacian(Operator):
         bm.free()
         return {'FINISHED'}
 
-class weight_laplacian(Operator):
+class ok_weight_laplacian(Operator):
     bl_idname = "object.weight_laplacian"
     bl_label = "Weight Laplacian"
     bl_description = ("Compute the Vertex Group Laplacian")
@@ -693,7 +693,10 @@ class weight_laplacian(Operator):
         for e in bm.edges:
             id0 = e.verts[0].index
             id1 = e.verts[1].index
-            length = max(0.00000001, e.calc_length())
+            length = e.calc_length()
+            if length == 0: continue
+            #lap[id0] += abs(a[id1] - a[id0])/length
+            #lap[id1] += abs(a[id0] - a[id1])/length
             lap[id0] += (a[id1] - a[id0])/length
             lap[id1] += (a[id0] - a[id1])/length
             n_records[id0]+=1
@@ -703,6 +706,82 @@ class weight_laplacian(Operator):
 
         for i in range(n_verts):
             ob.vertex_groups['Laplacian'].add([i], lap[i], 'REPLACE')
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+        bm.free()
+        return {'FINISHED'}
+
+class weight_laplacian(Operator):
+    bl_idname = "object.weight_laplacian"
+    bl_label = "Weight Laplacian"
+    bl_description = ("Compute the Vertex Group Laplacian")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    bounds_string = ""
+
+    frame = None
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
+
+
+    def execute(self, context):
+        try: ob = context.object
+        except:
+            self.report({'ERROR'}, "Please select an Object")
+            return {'CANCELLED'}
+
+        me = ob.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.edges.ensure_lookup_table()
+        n_verts = len(me.vertices)
+
+        group_id = ob.vertex_groups.active_index
+        input_group = ob.vertex_groups[group_id].name
+
+        group_name = "Laplacian"
+        vg = ob.vertex_groups.new(name=group_name)
+
+        # store weight values
+        dvert_lay = bm.verts.layers.deform.active
+        weight = bmesh_get_weight_numpy(group_id, dvert_lay, bm.verts)
+
+        #verts, normals = get_vertices_and_normals_numpy(me)
+
+        #lap = zeros((n_verts))#[0]*n_verts
+        lap = [Vector((0,0,0)) for i in range(n_verts)]
+        n_records = zeros((n_verts))
+        for e in bm.edges:
+            vert0 = e.verts[0]
+            vert1 = e.verts[1]
+            id0 = vert0.index
+            id1 = vert1.index
+            v0 = vert0.co
+            v1 = vert1.co
+            v01 = v1-v0
+            v10 = -v01
+            v01 -= v01.project(vert0.normal)
+            v10 -= v10.project(vert1.normal)
+            length = e.calc_length()
+            if length == 0: continue
+            dw = (weight[id1] - weight[id0])/length
+            lap[id0] += v01.normalized() * dw
+            lap[id1] -= v10.normalized() * dw
+            n_records[id0]+=1
+            n_records[id1]+=1
+        #lap /= n_records[:,np.newaxis]
+        lap = [l.length/r for r,l in zip(n_records,lap)]
+
+        lap = np.array(lap)
+        lap /= np.max(lap)
+        lap = list(lap)
+        print(lap)
+
+        for i in range(n_verts):
+            vg.add([i], lap[i], 'REPLACE')
         ob.vertex_groups.update()
         ob.data.update()
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
@@ -2104,10 +2183,21 @@ class tissue_weight_contour_curves_pattern(Operator):
 
         if self.auto_bevel:
             # calc weight density
+            bevel_weight = np.ones(len(me0.vertices))*10000
+            bevel_weight = np.zeros(len(me0.vertices))
             edges_length = np.array([e.calc_length() for e in bm.edges])
-            edges_dw = np.array([abs(weight[e.verts[0].index]-weight[e.verts[1].index]) for e in bm.edges])
-            dens = edges_dw/edges_length
-            dens = (dens - min(dens))/(max(dens) - min(dens))
+            edges_dw = np.array([max(abs(weight[e.verts[0].index]-weight[e.verts[1].index]),0.000001) for e in bm.edges])
+            dens = edges_length/edges_dw
+            n_records = np.zeros(len(me0.vertices))
+            for i, e in enumerate(bm.edges):
+                for v in e.verts:
+                    id = v.index
+                    #bevel_weight[id] = min(bevel_weight[id], dens[i])
+                    bevel_weight[id] += dens[i]
+                    n_records[id] += 1
+            bevel_weight = bevel_weight/n_records
+            bevel_weight = (bevel_weight - min(bevel_weight))/(max(bevel_weight) - min(bevel_weight))
+            #bevel_weight = 1-bevel_weight
             variable_bevel = True
 
         #filtered_edges = bm.edges
@@ -2137,6 +2227,9 @@ class tissue_weight_contour_curves_pattern(Operator):
             except:
                 iso_val = (min_iso + max_iso)/2
 
+            #if c == 0 and self.auto_bevel:
+
+
             # remove passed faces
             bool_mask = iso_val < fw_max
             bm_faces = bm_faces[bool_mask]
@@ -2152,7 +2245,7 @@ class tissue_weight_contour_curves_pattern(Operator):
             new_filtered_edges, edges_index, verts, bevel = contour_edges_pattern(self, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight)
 
             if len(edges_index) > 0:
-                if self.auto_bevel:
+                if self.auto_bevel and False:
                     bevel = 1-dens[edges_index]
                     bevel = bevel[:,np.newaxis]
                 if self.max_bevel_depth != self.min_bevel_depth:
@@ -2714,7 +2807,7 @@ class TISSUE_PT_weight(Panel):
         col.separator()
 
         # TO BE FIXED
-        #col.operator("object.weight_laplacian", icon="SMOOTHCURVE")
+        col.operator("object.weight_laplacian", icon="SMOOTHCURVE")
 
         col.label(text="Weight Edit:")
         col.operator("object.harmonic_weight", icon="IPO_ELASTIC")

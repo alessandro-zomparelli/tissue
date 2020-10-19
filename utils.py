@@ -204,6 +204,27 @@ def array_mesh(ob, n):
     ob.modifiers.remove(arr)
     return me
 
+def get_mesh_before_subs(ob):
+    not_allowed  = ('FLUID_SIMULATION', 'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD',
+                    'DECIMATE', 'EDGE_SPLIT', 'MASK', 'MIRROR', 'REMESH',
+                    'SCREW', 'SOLIDIFY', 'TRIANGULATE', 'WIREFRAME', 'SKIN',
+                    'EXPLODE', 'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SMOKE')
+    subs = 0
+    hide_mods = []
+    mods_visibility = []
+    for m in ob.modifiers:
+        hide_mods.append(m)
+        mods_visibility.append(m.show_viewport)
+        if m.type in ('SUBSURF','MULTIRES'): subs = m.levels
+        elif m.type in not_allowed:
+            subs = 0
+            hide_mods = []
+            mods_visibility = []
+    for m in hide_mods: m.show_viewport = False
+    me = simple_to_mesh(ob)
+    for m, vis in zip(hide_mods,mods_visibility): m.show_viewport = vis
+    return me, subs
+
 ### MESH FUNCTIONS
 
 def calc_verts_area(me):
@@ -464,6 +485,13 @@ def get_vertices_and_normals_numpy(mesh):
     normals = np.array(normals).reshape((n_verts,3))
     return verts, normals
 
+def get_normals_numpy(mesh):
+    n_verts = len(mesh.vertices)
+    normals = [0]*n_verts*3
+    mesh.vertices.foreach_get('normal', normals)
+    normals = np.array(normals).reshape((n_verts,3))
+    return normals
+
 def get_edges_numpy(mesh):
     n_edges = len(mesh.edges)
     edges = [0]*n_edges*2
@@ -500,60 +528,6 @@ def get_faces_edges_numpy(mesh):
     faces = [v.edge_keys for f in mesh.polygons]
     return np.array(faces)
 
-#try:
-#from numba import jit, njit
-#from numba.typed import List
-'''
-@jit
-def find_curves(edges, n_verts):
-    #verts_dict = {key:[] for key in range(n_verts)}
-    verts_dict = {}
-    for key in range(n_verts): verts_dict[key] = []
-    for e in edges:
-        verts_dict[e[0]].append(e[1])
-        verts_dict[e[1]].append(e[0])
-    curves = []#List()
-    loop1 = True
-    while loop1:
-        if len(verts_dict) == 0:
-            loop1 = False
-            continue
-        # next starting point
-        v = list(verts_dict.keys())[0]
-        # neighbors
-        v01 = verts_dict[v]
-        if len(v01) == 0:
-            verts_dict.pop(v)
-            continue
-        curve = []#List()
-        curve.append(v)         # add starting point
-        curve.append(v01[0])    # add neighbors
-        verts_dict.pop(v)
-        loop2 = True
-        while loop2:
-            last_point = curve[-1]
-            #if last_point not in verts_dict: break
-            v01 = verts_dict[last_point]
-            # curve end
-            if len(v01) == 1:
-                verts_dict.pop(last_point)
-                loop2 = False
-                continue
-            if v01[0] == curve[-2]:
-                curve.append(v01[1])
-                verts_dict.pop(last_point)
-            elif v01[1] == curve[-2]:
-                curve.append(v01[0])
-                verts_dict.pop(last_point)
-            else:
-                loop2 = False
-                continue
-            if curve[0] == curve[-1]:
-                loop2 = False
-                continue
-        curves.append(curve)
-    return curves
-'''
 def find_curves(edges, n_verts):
     verts_dict = {key:[] for key in range(n_verts)}
     for e in edges:
@@ -663,9 +637,10 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             bpy.context.view_layer.objects.active = ob_curve
         return ob_curve
 
-def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
+def update_curve_from_pydata(curve, points, radii, tilt, indexes, merge_distance=1):
     curve.splines.clear()
     use_rad = True
+    use_tilt = True
     for c in indexes:
         bool_cyclic = c[0] == c[-1]
         if bool_cyclic: c.pop(-1)
@@ -677,6 +652,11 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
         except:
             use_rad = False
             rad = 1
+        try:
+            rot = np.array([tilt[i] for i in c if i != None])
+        except:
+            use_tilt = False
+            rot = 0
         if merge_distance > 0:
             pts1 = np.roll(pts,1,axis=0)
             dist = np.linalg.norm(pts1-pts, axis=1)
@@ -697,49 +677,76 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
         co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
         s.points.foreach_set('co',co)
         if use_rad: s.points.foreach_set('radius',rad)
+        if use_tilt: s.points.foreach_set('tilt',rot)
         s.use_cyclic_u = bool_cyclic
 
 
-def loops_from_bmesh(bm):
+def loops_from_bmesh(edges):
+    todo_edges = list(edges)
+    #todo_edges = [e.index for e in bm.edges]
+    vert_loops = []
     edge_loops = []
-    edges = list(bm.edges)
-    while len(edges)>0:
-        edge = edges[0]
-        while True:
-            skip_edges = []
-            for f in edge.link_faces:
-                skip_edges += list(f.edges)
-            vert0 = edge.verts[0]
-            edges0 = vert0.link_edges
-            if len(edges0) == 4:
-                for e in edges0:
-                    if e not in skip_edges and edge in edges:
-                        edges.remove(e)
-                        edge_loop.append(e.other_vert(vert0))
+    while True:
+        edge = todo_edges[0]
+        vert_loop, edge_loop = run_edge_loop(edge)
+        for e in edge_loop:
+            todo_edges.remove(e)
+        edge_loops.append(edge_loop)
+        vert_loops.append(vert_loop)
+        if len(todo_edges) == 0: break
+    return vert_loops, edge_loops
+
+def run_edge_loop_direction(edge,vert):
+    edge0 = edge
+    edge_loop = [edge]
+    vert_loop = [vert]
+    while True:
+        link_edges = list(vert.link_edges)
+        link_edges.remove(edge)
+        n_edges = len(link_edges)
+        if n_edges == 1:
+            edge = link_edges[0]
+        elif n_edges < 4:
+            link_faces = edge.link_faces
+            edge = None
+            for e in link_edges:
+                link_faces1 = e.link_faces
+                if len(link_faces) == len(link_faces1):
+                    common_faces = [f for f in link_faces1 if f in link_faces]
+                    if len(common_faces) == 0:
                         edge = e
+                        break
+        else: break
+        if edge == None: break
+        edge_loop.append(edge)
+        vert = edge.other_vert(vert)
+        vert_loop.append(vert)
+        if edge == edge0: break
+    return vert_loop, edge_loop
 
-        loops.append(loop)
-        for e in loop:
-            edges.remove(e)
-    return loops
-
-def _loops_from_bmesh(bm):
-    loops = []
-    edges = list(bm.edges)
-    while len(edges)>0:
-        e = edges[0]
-        loop = e.link_loops
-        loops.append(loop)
-        for e in loop:
-            edges.remove(e)
-    return loops
+def run_edge_loop(edge):
+    vert0 = edge.verts[0]
+    vert_loop0, edge_loop0 = run_edge_loop_direction(edge, vert0)
+    if len(edge_loop0) == 1 or edge_loop0[0] != edge_loop0[-1]:
+        vert1 = edge.verts[1]
+        vert_loop1, edge_loop1 = run_edge_loop_direction(edge, vert1)
+        edge_loop0.reverse()
+        vert_loop0.reverse()
+        edge_loop = edge_loop0[:-1] + edge_loop1
+        vert_loop = vert_loop0 + vert_loop1
+    else:
+        edge_loop = edge_loop0[1:]
+        vert_loop = vert_loop0
+    return vert_loop, edge_loop
 
 def curve_from_vertices(indexes, verts, name='Curve'):
     curve = bpy.data.curves.new(name,'CURVE')
     for c in indexes:
         s = curve.splines.new('POLY')
         s.points.add(len(c))
-        for i,p in enumerate(c): s.points[i].co = verts[p].co.xyz + [1]
+        for i,p in enumerate(c):
+            s.points[i].co = verts[p].co.xyz + [1]
+            s.points[i].tilt = degrees(asin(verts[p].co.z))
     ob_curve = bpy.data.objects.new(name,curve)
     return ob_curve
 

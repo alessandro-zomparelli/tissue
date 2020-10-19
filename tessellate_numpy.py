@@ -389,6 +389,14 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Random seed",
         update = anim_tessellate_active
         )
+    rand_step : IntProperty(
+        name="Steps",
+        default=1,
+        min=1,
+        soft_max=2,
+        description="Random step",
+        update = anim_tessellate_active
+        )
     bool_vertex_group : BoolProperty(
         name="Map Vertex Group",
         default=False,
@@ -717,6 +725,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.scale_mode = operator.scale_mode
     ob.tissue_tessellate.bool_random = operator.bool_random
     ob.tissue_tessellate.rand_seed = operator.rand_seed
+    ob.tissue_tessellate.rand_step = operator.rand_step
     ob.tissue_tessellate.fill_mode = operator.fill_mode
     ob.tissue_tessellate.bool_vertex_group = operator.bool_vertex_group
     ob.tissue_tessellate.bool_selection = operator.bool_selection
@@ -780,6 +789,7 @@ def load_parameters(operator, ob):
     operator.scale_mode = ob.tissue_tessellate.scale_mode
     operator.bool_random = ob.tissue_tessellate.bool_random
     operator.rand_seed = ob.tissue_tessellate.rand_seed
+    operator.rand_step = ob.tissue_tessellate.rand_step
     operator.fill_mode = ob.tissue_tessellate.fill_mode
     operator.bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
     operator.bool_selection = ob.tissue_tessellate.bool_selection
@@ -839,6 +849,7 @@ def props_to_dict(ob):
     tessellate_dict['rotation_shift'] = props.rotation_shift
     tessellate_dict['rotation_direction'] = props.rotation_direction
     tessellate_dict['rand_seed'] = props.rand_seed
+    tessellate_dict['rand_step'] = props.rand_step
     tessellate_dict['fill_mode'] = props.fill_mode
     tessellate_dict['bool_vertex_group'] = props.bool_vertex_group
     tessellate_dict['bool_selection'] = props.bool_selection
@@ -883,6 +894,7 @@ def tessellate_patch(props):
     rotation_mode = props['rotation_mode']
     rotation_shift = props['rotation_shift']
     rand_seed = props['rand_seed']
+    rand_step = props['rand_step']
     bool_vertex_group = props['bool_vertex_group']
     bool_selection = props['bool_selection']
     bool_shapekeys = props['bool_shapekeys']
@@ -1399,7 +1411,7 @@ def tessellate_patch(props):
         random_shift = 0
         if rotation_mode == 'RANDOM':
             np.random.seed(rand_seed)
-            random_shift = np.random.randint(0,4,size=n_patches)
+            random_shift = np.random.randint(0,4,size=n_patches)*rand_step
 
         # UV rotation
         UV_shift = 0
@@ -1679,6 +1691,7 @@ def tessellate_original(props):
     rotation_shift = props['rotation_shift']
     rotation_direction = props['rotation_direction']
     rand_seed = props['rand_seed']
+    rand_step = props['rand_step']
     fill_mode = props['fill_mode']
     bool_vertex_group = props['bool_vertex_group']
     bool_selection = props['bool_selection']
@@ -2132,7 +2145,7 @@ def tessellate_original(props):
         if rotation_mode == 'RANDOM':
             shifted_vertices = []
             n_poly_verts = len(p.vertices)
-            rand = random.randint(0, n_poly_verts)
+            rand = random.randint(0, n_poly_verts)*rand_step
             for i in range(n_poly_verts):
                 shifted_vertices.append(p.vertices[(i + rand) % n_poly_verts])
             if scale_mode == 'ADAPTIVE':
@@ -2572,6 +2585,13 @@ class tissue_tessellate(Operator):
             soft_min=0,
             soft_max=10,
             description="Random seed"
+            )
+    rand_step : IntProperty(
+            name="Step",
+            default=1,
+            min=1,
+            soft_max=2,
+            description="Random step"
             )
     bool_vertex_group : BoolProperty(
             name="Map Vertex Groups",
@@ -3136,6 +3156,7 @@ class tissue_tessellate(Operator):
                               full_event=False, emboss=True, index=-1)
                 if self.rotation_mode == 'RANDOM':
                     col.prop(self, "rand_seed")
+                    col.prop(self, "rand_step")
                 else:
                     col.prop(self, "rotation_shift")
 
@@ -3448,6 +3469,7 @@ class tissue_update_tessellate(Operator):
             com_modifiers = ob.tissue_tessellate.com_modifiers
             bool_random = ob.tissue_tessellate.bool_random
             rand_seed = ob.tissue_tessellate.rand_seed
+            rand_step = ob.tissue_tessellate.rand_step
             fill_mode = ob.tissue_tessellate.fill_mode
             bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
             bool_selection = ob.tissue_tessellate.bool_selection
@@ -4188,6 +4210,7 @@ class TISSUE_PT_tessellate_rotation(Panel):
                           full_event=False, emboss=True, index=-1)
             if props.rotation_mode == 'RANDOM':
                 col.prop(props, "rand_seed")
+                col.prop(props, "rand_step")
             else:
                 col.prop(props, "rotation_shift")
 
@@ -5362,6 +5385,7 @@ class polyhedra_wireframe(Operator):
                 tangents.append(tangent)
 
             # calc correct direction for boundaries
+
             mult = -1
             if is_boundary:
                 dir_val = 0
