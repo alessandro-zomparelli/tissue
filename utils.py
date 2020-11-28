@@ -637,11 +637,10 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             bpy.context.view_layer.objects.active = ob_curve
         return ob_curve
 
-def update_curve_from_pydata(curve, points, radii, tilt, indexes, merge_distance=1):
+def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
     curve.splines.clear()
     use_rad = True
-    use_tilt = True
-    for c in indexes:
+    for ic, c in enumerate(indexes):
         bool_cyclic = c[0] == c[-1]
         if bool_cyclic: c.pop(-1)
 
@@ -652,11 +651,6 @@ def update_curve_from_pydata(curve, points, radii, tilt, indexes, merge_distance
         except:
             use_rad = False
             rad = 1
-        try:
-            rot = np.array([tilt[i] for i in c if i != None])
-        except:
-            use_tilt = False
-            rot = 0
         if merge_distance > 0:
             pts1 = np.roll(pts,1,axis=0)
             dist = np.linalg.norm(pts1-pts, axis=1)
@@ -677,7 +671,6 @@ def update_curve_from_pydata(curve, points, radii, tilt, indexes, merge_distance
         co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
         s.points.foreach_set('co',co)
         if use_rad: s.points.foreach_set('radius',rad)
-        if use_tilt: s.points.foreach_set('tilt',rot)
         s.use_cyclic_u = bool_cyclic
 
 
@@ -690,7 +683,8 @@ def loops_from_bmesh(edges):
         edge = todo_edges[0]
         vert_loop, edge_loop = run_edge_loop(edge)
         for e in edge_loop:
-            todo_edges.remove(e)
+            try: todo_edges.remove(e)
+            except: pass
         edge_loops.append(edge_loop)
         vert_loops.append(vert_loop)
         if len(todo_edges) == 0: break
@@ -815,6 +809,98 @@ def bmesh_set_weight_numpy(bm, group_index, weight):
         #if group_index in dvert:
         dvert[group_index] = weight[i]
     return bm
+
+def get_uv_edge_vectors(me, uv_map = 0, only_positive=False):
+    count = 0
+    uv_vectors = {}
+    for i, f in enumerate(me.polygons):
+        f_verts = len(f.vertices)
+        for j0 in range(f_verts):
+            j1 = (j0+1)%f_verts
+            uv0 = me.uv_layers[uv_map].data[count+j0].uv
+            uv1 = me.uv_layers[uv_map].data[count+j1].uv
+            delta_uv = (uv1-uv0).normalized()
+            if only_positive:
+                delta_uv.x = abs(delta_uv.x)
+                delta_uv.y = abs(delta_uv.y)
+            edge_key = tuple(sorted([f.vertices[j0], f.vertices[j1]]))
+            uv_vectors[edge_key] = delta_uv
+        count += f_verts
+    uv_vectors = [uv_vectors[tuple(sorted(e.vertices))] for e in me.edges]
+    return uv_vectors
+
+def mesh_diffusion(me, values, iter, diff=0.2, uv_dir=0):
+    values = np.array(values)
+    n_verts = len(me.vertices)
+
+    n_edges = len(me.edges)
+    edge_verts = [0]*n_edges*2
+    #me.edges.foreach_get("vertices", edge_verts)
+
+    count = 0
+    edge_verts = []
+    uv_factor = {}
+    uv_ang = (0.5 + uv_dir*0.5)*pi/2
+    uv_vec = Vector((cos(uv_ang), sin(uv_ang)))
+    for i, f in enumerate(me.polygons):
+        f_verts = len(f.vertices)
+        for j0 in range(f_verts):
+            j1 = (j0+1)%f_verts
+            if uv_dir != 0:
+                uv0 = me.uv_layers[0].data[count+j0].uv
+                uv1 = me.uv_layers[0].data[count+j1].uv
+                delta_uv = (uv1-uv0).normalized()
+                delta_uv.x = abs(delta_uv.x)
+                delta_uv.y = abs(delta_uv.y)
+                dir = uv_vec.dot(delta_uv)
+            else:
+                dir = 1
+            #dir = abs(dir)
+            #uv_factor.append(dir)
+            edge_key = [f.vertices[j0], f.vertices[j1]]
+            edge_key.sort()
+            uv_factor[tuple(edge_key)] = dir
+        count += f_verts
+    id0 = []
+    id1 = []
+    uv_mult = []
+    for ek, val in uv_factor.items():
+        id0.append(ek[0])
+        id1.append(ek[1])
+        uv_mult.append(val)
+    id0 = np.array(id0)
+    id1 = np.array(id1)
+    uv_mult = np.array(uv_mult)
+
+    #edge_verts = np.array(edge_verts)
+    #arr = np.arange(n_edges)*2
+
+    #id0 = edge_verts[arr]     # first vertex indices for each edge
+    #id1 = edge_verts[arr+1]   # second vertex indices for each edge
+    for ii in range(iter):
+        lap = np.zeros(n_verts)
+        if uv_dir != 0:
+            lap0 =  (values[id1] -  values[id0])*uv_mult   # laplacian increment for first vertex of each edge
+        else:
+            lap0 =  (values[id1] -  values[id0])
+        np.add.at(lap, id0, lap0)
+        np.add.at(lap, id1, -lap0)
+        values += diff*lap
+    return values
+
+def mesh_diffusion_vector(me, vectors, iter, diff, uv_dir=0):
+    vectors = np.array(vectors)
+    x = vectors[:,0]
+    y = vectors[:,1]
+    z = vectors[:,2]
+    x = mesh_diffusion(me, x, iter, diff, uv_dir)
+    y = mesh_diffusion(me, y, iter, diff, uv_dir)
+    z = mesh_diffusion(me, z, iter, diff, uv_dir)
+    vectors[:,0] = x
+    vectors[:,1] = y
+    vectors[:,2] = z
+    return vectors
+
 
 ### MODIFIERS ###
 def mod_preserve_topology(mod):

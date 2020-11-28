@@ -94,9 +94,9 @@ class dual_mesh_tessellated(Operator):
             me = bpy.data.meshes.new("Dual-Mesh")  # add a new mesh
             me.from_pydata(verts, edges, faces)
             me.update(calc_edges=True, calc_edges_loose=True)
-            if self.source_faces == 'QUAD': n_seams = 8
-            else: n_seams = 6
-            for i in range(n_seams): me.edges[i].use_seam = True
+            if self.source_faces == 'QUAD': seams = (0,1,2,3,4,5,6,9)
+            else: seams = (0,1,2,3,4,5)
+            for i in seams: me.edges[i].use_seam = True
             ob1 = bpy.data.objects.new(name1, me)
             context.collection.objects.link(ob1)
             # fix visualization issue

@@ -40,7 +40,7 @@ from math import pi
 from statistics import mean, stdev
 from mathutils import Vector
 from numpy import *
-try: from .numba_functions import numba_reaction_diffusion
+try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic
 except: pass
 #from .numba_functions import numba_reaction_diffusion
 try: import numexpr as ne
@@ -3120,6 +3120,10 @@ def reaction_diffusion_def(ob, bake=False):
             brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
             brush *= brush_mult
 
+        if False:
+            group_index = ob.vertex_groups['gradient'].index
+            gradient = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+
         #timeElapsed = time.time() - start
         #print('RD - Read Vertex Groups:',timeElapsed)
         #start = time.time()
@@ -3130,9 +3134,15 @@ def reaction_diffusion_def(ob, bake=False):
         edge_verts = [0]*n_edges*2
         me.edges.foreach_get("vertices", edge_verts)
 
+        gradient = get_uv_edge_vectors(me)
+        uv_dir = Vector((0.5,0.5,0))
+        #gradient = [abs(g.dot(uv_dir)) for g in gradient]
+        gradient = [max(0,g.dot(uv_dir)) for g in gradient]
+
         timeElapsed = time.time() - start
         print('       Preparation Time:',timeElapsed)
         start = time.time()
+
 
         try:
             edge_verts = np.array(edge_verts)
@@ -3141,6 +3151,8 @@ def reaction_diffusion_def(ob, bake=False):
             _diff_a = diff_a if type(diff_a) is np.ndarray else np.array((diff_a,))
             _diff_b = diff_b if type(diff_b) is np.ndarray else np.array((diff_b,))
             _brush = brush if type(brush) is np.ndarray else np.array((brush,))
+
+            #a, b = numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps, gradient)
             a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
 
         except:
@@ -3156,11 +3168,11 @@ def reaction_diffusion_def(ob, bake=False):
                 lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
                 lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
 
-                for i, j, la0, lb0 in np.nditer([id0,id1,lap_a0,lap_b0]):
-                    lap_a[i] += la0
-                    lap_b[i] += lb0
-                    lap_a[j] -= la0
-                    lap_b[j] -= lb0
+                np.add.at(lap_a, id0, lap_a0)
+                np.add.at(lap_b, id0, lap_b0)
+                np.add.at(lap_a, id1, -lap_a0)
+                np.add.at(lap_b, id1, -lap_b0)
+
                 ab2 = a*b**2
                 a += eval("(diff_a*lap_a - ab2 + f*(1-a))*dt")
                 b += eval("(diff_b*lap_b + ab2 - (k+f)*b)*dt")

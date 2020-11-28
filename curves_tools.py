@@ -42,7 +42,8 @@ from bpy.types import (
         )
 
 import numpy as np
-
+from mathutils import Vector
+from math import pi
 from .utils import (
         find_curves,
         update_curve_from_pydata,
@@ -471,7 +472,7 @@ class tissue_convert_to_curve_update(Operator):
             me.vertices.foreach_get('normal',normals)
             normals = np.array(normals).reshape((-1,3))
             #tilt = np.degrees(np.arcsin(normals[:,2]))
-            tilt = np.arccos(normals[:,2])/2
+            #tilt = np.arccos(normals[:,2])/2
 
             verts = np.array(verts).reshape((-1,3))
             if props.mode in ('LOOPS','EDGES'):
@@ -518,7 +519,46 @@ class tissue_convert_to_curve_update(Operator):
             except:
                 weight = None
 
-            update_curve_from_pydata(ob.data, verts, weight, tilt, ordered_points, merge_distance=props.clean_distance)
+            # Set curves Tilt
+            '''
+            tilt = []
+            for points in ordered_points:
+                if points[0] == points[-1]:             # Closed curve
+                     pts0 = [points[-1]] + points[:-1]  # i-1
+                     pts1 = points[:]                   # i
+                     pts2 = points[1:] + [points[0]]    # 1+1
+                else:                                   # Open curve
+                    pts0 = [points[0]] + points[:-1]    # i-1
+                    pts1 = points[:]                    # i
+                    pts2 = points[1:] + [points[-1]]    # i+1
+                curve_tilt = []
+                for i0, i1, i2 in zip(pts0, pts1, pts2):
+                    pt0 = Vector(verts[i0])
+                    pt1 = Vector(verts[i1])
+                    pt2 = Vector(verts[i2])
+                    tan1 = (pt1-pt0).normalized()
+                    tan2 = (pt2-pt1).normalized()
+                    vec_tan = -(tan1 + tan2).normalized()
+                    vec2 = vec_tan.cross(Vector((0,0,1)))
+                    vec_z = vec_tan.cross(vec2)
+                    nor = normals[i1]
+                    if vec_z.length == 0:
+                        vec_z = Vector(nor)
+                    ang = vec_z.angle(nor)
+                    if nor[2] < 0: ang = 2*pi-ang
+                    #if vec_tan[0] > vec_tan[1] and nor[0]>0: ang = -ang
+                    #if vec_tan[0] > vec_tan[2] and nor[0]>0: ang = -ang
+                    #if vec_tan[0] < vec_tan[1] and nor[1]>0: ang = -ang
+                    #if nor[0]*nor[1]*nor[2] < 0: ang = -ang
+                    if nor[2] == 0: ang = -5*pi/4
+                    #ang = max(ang, np.arccos(nor[2]))
+                    curve_tilt.append(ang)
+                    #curve_tilt.append(np.arccos(nor[2]))
+                tilt.append(curve_tilt)
+            '''
+            update_curve_from_pydata(ob.data, verts, weight, ordered_points, merge_distance=props.clean_distance)
+
+
             bpy.data.objects.remove(ob0)
         for s in ob.data.splines:
             s.type = props.spline_type

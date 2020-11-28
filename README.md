@@ -5,11 +5,11 @@ http://www.co-de-it.com/wordpress/code/blender-tissue
 
 Tissue is already shipped with both Blender 2.79b and Blender 2.80. However both versions can be updated manually, for more updated features and more stability.
 
-### Blender 2.83.5
+### Blender 2.91
 
-Tissue v0.3.46 for Blender 2.83.5 (latest stable release) and Blender 2.90 beta: https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-46
+Tissue v0.3.48 for Blender 2.91 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-48
 
-Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b280-dev
+Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b290-dev
 
 ### Blender 2.79 (unsupported)
 
@@ -22,7 +22,7 @@ Development branch (most updated version): https://github.com/alessandro-zompare
 
 1. Start Blender. Open User Preferences, the addons tab
 2. Search for Tissue add-on and remove existing version
-3. Click "install from file" and point Blender at the downloaded zip ("Install..." for Blender 2.80)
+3. Click "install from file" and point Blender at the downloaded zip ("Install..." for Blender 2.91)
 4. Activate Tissue add-on from user preferences
 5. Save user preferences if you want to have it on at startup. (This could be not necessary for Blender 2.80 if "Auto-Save Preferences" id on)
 

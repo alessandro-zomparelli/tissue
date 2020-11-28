@@ -44,7 +44,7 @@ from bpy.props import (
         StringProperty,
         PointerProperty
         )
-from mathutils import Vector
+from mathutils import Vector, Quaternion, Matrix
 import numpy as np
 from math import *
 import random, time, copy
@@ -702,6 +702,36 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Invert the vertex group influence",
             update = anim_tessellate_active
             )
+    smooth_normals : BoolProperty(
+            name="Smooth Normals", default=False,
+            description="Smooth normals of the surface in order to reduce intersections",
+            update = anim_tessellate_active
+            )
+    smooth_normals_iter : IntProperty(
+            name="Iterations",
+            default=5,
+            min=0,
+            description="Smooth iterations",
+            update = anim_tessellate_active
+            )
+    smooth_normals_uv : FloatProperty(
+            name="UV Anisotropy",
+            default=0,
+            min=-1,
+            max=1,
+            description="0 means no anysotropy, -1 represent the U direction, while 1 represent the V direction",
+            update = anim_tessellate_active
+            )
+    vertex_group_smooth_normals : StringProperty(
+            name="Smooth normals weight", default='',
+            description="Vertex Group used for smooth normals",
+            update = anim_tessellate_active
+            )
+    invert_vertex_group_smooth_normals : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -767,6 +797,11 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.invert_vertex_group_bridge = operator.invert_vertex_group_bridge
     ob.tissue_tessellate.vertex_group_rotation = operator.vertex_group_rotation
     ob.tissue_tessellate.invert_vertex_group_rotation = operator.invert_vertex_group_rotation
+    ob.tissue_tessellate.smooth_normals = operator.smooth_normals
+    ob.tissue_tessellate.smooth_normals_iter = operator.smooth_normals_iter
+    ob.tissue_tessellate.smooth_normals_uv = operator.smooth_normals_uv
+    ob.tissue_tessellate.vertex_group_smooth_normals = operator.vertex_group_smooth_normals
+    ob.tissue_tessellate.invert_vertex_group_smooth_normals = operator.invert_vertex_group_smooth_normals
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -831,6 +866,11 @@ def load_parameters(operator, ob):
     operator.invert_vertex_group_bridge = ob.tissue_tessellate.invert_vertex_group_bridge
     operator.vertex_group_rotation = ob.tissue_tessellate.vertex_group_rotation
     operator.invert_vertex_group_rotation = ob.tissue_tessellate.invert_vertex_group_rotation
+    operator.smooth_normals = ob.tissue_tessellate.smooth_normals
+    operator.smooth_normals_iter = ob.tissue_tessellate.smooth_normals_iter
+    operator.smooth_normals_uv = ob.tissue_tessellate.smooth_normals_uv
+    operator.vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
+    operator.invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
     return ob
 
 def props_to_dict(ob):
@@ -878,6 +918,11 @@ def props_to_dict(ob):
     tessellate_dict['invert_vertex_group_bridge'] = props.invert_vertex_group_bridge
     tessellate_dict['vertex_group_rotation'] = props.vertex_group_rotation
     tessellate_dict['invert_vertex_group_rotation'] = props.invert_vertex_group_rotation
+    tessellate_dict['smooth_normals'] = props.smooth_normals
+    tessellate_dict['smooth_normals_iter'] = props.smooth_normals_iter
+    tessellate_dict['smooth_normals_uv'] = props.smooth_normals_uv
+    tessellate_dict['vertex_group_smooth_normals'] = props.vertex_group_smooth_normals
+    tessellate_dict['invert_vertex_group_smooth_normals'] = props.invert_vertex_group_smooth_normals
     return tessellate_dict
 
 def tessellate_patch(props):
@@ -917,6 +962,11 @@ def tessellate_patch(props):
     invert_vertex_group_rotation = props['invert_vertex_group_rotation']
     rotation_direction = props['rotation_direction']
     target = props['target']
+    smooth_normals = props['smooth_normals']
+    smooth_normals_iter = props['smooth_normals_iter']
+    smooth_normals_uv = props['smooth_normals_uv']
+    vertex_group_smooth_normals = props['vertex_group_smooth_normals']
+    invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
 
     # reset messages
     ob.tissue_tessellate.warning_message_thickness = ''
@@ -1259,11 +1309,12 @@ def tessellate_patch(props):
         if not vertex_group_rotation in ob0.vertex_groups.keys():
             rotation_mode = 'DEFAULT'
 
+    bool_weight_smooth_normals = vertex_group_smooth_normals in ob0.vertex_groups.keys()
     bool_weight_thickness = vertex_group_thickness in ob0.vertex_groups.keys()
     bool_weight_cap = vertex_group_cap_owner == 'BASE' and vertex_group_cap in ob0.vertex_groups.keys()
     bool_weight_bridge = vertex_group_bridge_owner == 'BASE' and vertex_group_bridge in ob0.vertex_groups.keys()
 
-    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge
+    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge or bool_weight_smooth_normals
     weight = weight_thickness = weight_rotation = None
     if read_vertex_groups:
         if bool_vertex_group:
@@ -1273,11 +1324,16 @@ def tessellate_patch(props):
             if rotation_mode == 'WEIGHT':
                 vg_id = ob0.vertex_groups[vertex_group_rotation].index
                 weight_rotation =  weight[vg_id]
+            if bool_weight_smooth_normals:
+                vg_id = ob0.vertex_groups[bool_weight_smooth_normals].index
+                weight_rotation =  weight[vg_id]
         else:
             if rotation_mode == 'WEIGHT':
                 vg = ob0.vertex_groups[vertex_group_rotation]
                 weight_rotation = get_weight_numpy(vg, n_verts0)
-
+            if bool_weight_smooth_normals:
+                vg = ob0.vertex_groups[vertex_group_smooth_normals]
+                weight_smooth_normals = get_weight_numpy(vg, n_verts0)
 
     random.seed(rand_seed)
     bool_correct = False
@@ -1473,22 +1529,11 @@ def tessellate_patch(props):
     vy = np_verts1_uv[:,1].reshape((1,n_verts1,1))
     vz = np_verts1_uv[:,2].reshape((1,n_verts1,1))
     co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
-    if normals_mode == 'FACES':
-        n2 = [0]*len(mask)*3
-        before_subsurf.polygons.foreach_get('normal',n2)
-        n2 = np.array(n2).reshape(len(mask),3)[mask][:,np.newaxis]
-        #n2 = np.mean(verts_norm, axis=(1,2))
-        #n2 = np.expand_dims(n2, axis=1)
-    else:
-        verts_norm = verts0_normal[all_verts]
-        n00 = verts_norm[:, np_u, np_v]
-        n10 = verts_norm[:, np_u1, np_v]
-        n01 = verts_norm[:, np_u, np_v1]
-        n11 = verts_norm[:, np_u1, np_v1]
-        n2 = np_lerp2(n00, n10, n01, n11, vx, vy)
 
     ### PATCHES WEIGHT ###
     weight_thickness = 1
+    weight_smooth_normals = 0.2
+    weight_smooth_normals0 = 0.2
     if bool_vertex_group:
         patches_weight = weight[:, all_verts]
         w00 = patches_weight[:, :, np_u, np_v]
@@ -1500,24 +1545,89 @@ def tessellate_patch(props):
         if vertex_group_thickness in ob0.vertex_groups.keys():
             vg_id = ob0.vertex_groups[vertex_group_thickness].index
             weight_thickness = store_weight[vg_id,:,:,np.newaxis]
-    elif vertex_group_thickness in ob0.vertex_groups.keys():
-        vg = ob0.vertex_groups[vertex_group_thickness]
-        weight_thickness = get_weight_numpy(vg, n_verts0)
-        wt = weight_thickness[all_verts]
-        wt = wt[:,:,:,np.newaxis]
-        w00 = wt[:, np_u, np_v]
-        w10 = wt[:, np_u1, np_v]
-        w01 = wt[:, np_u, np_v1]
-        w11 = wt[:, np_u1, np_v1]
-        weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
-    try:
-        weight_thickness.shape
-        if invert_vertex_group_thickness:
-            weight_thickness = 1-weight_thickness
-        fact = vertex_group_thickness_factor
-        if fact > 0:
-            weight_thickness = weight_thickness*(1-fact) + fact
-    except: pass
+        if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+            vg_id = ob0.vertex_groups[vertex_group_smooth_normals].index
+            weight_smooth_normals = store_weight[vg_id,:,:,np.newaxis]
+    else:
+        # Read vertex group Thickness
+        if vertex_group_thickness in ob0.vertex_groups.keys():
+            vg = ob0.vertex_groups[vertex_group_thickness]
+            weight_thickness = get_weight_numpy(vg, n_verts0)
+            wt = weight_thickness[all_verts]
+            wt = wt[:,:,:,np.newaxis]
+            w00 = wt[:, np_u, np_v]
+            w10 = wt[:, np_u1, np_v]
+            w01 = wt[:, np_u, np_v1]
+            w11 = wt[:, np_u1, np_v1]
+            weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
+            try:
+                weight_thickness.shape
+                if invert_vertex_group_thickness:
+                    weight_thickness = 1-weight_thickness
+                fact = vertex_group_thickness_factor
+                if fact > 0:
+                    weight_thickness = weight_thickness*(1-fact) + fact
+            except: pass
+
+        # Read vertex group smooth normals
+        if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+            vg = ob0.vertex_groups[vertex_group_smooth_normals]
+            weight_smooth_normals = get_weight_numpy(vg, n_verts0)
+            wt = weight_smooth_normals[all_verts]
+            wt = wt[:,:,:,np.newaxis]
+            w00 = wt[:, np_u, np_v]
+            w10 = wt[:, np_u1, np_v]
+            w01 = wt[:, np_u, np_v1]
+            w11 = wt[:, np_u1, np_v1]
+            weight_smooth_normals = np_lerp2(w00,w10,w01,w11,vx,vy)
+            try:
+                weight_smooth_normals.shape
+                if invert_vertex_group_smooth_normals:
+                    weight_smooth_normals = 1-weight_smooth_normals
+                #fact = vertex_group_thickness_factor
+                #if fact > 0:
+                #    weight_thickness = weight_thickness*(1-fact) + fact
+            except: pass
+
+    if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+        vg = ob0.vertex_groups[vertex_group_smooth_normals]
+        weight_smooth_normals0 = get_weight_numpy(vg, n_verts0)
+        if invert_vertex_group_smooth_normals:
+            weight_smooth_normals0 = 1-weight_smooth_normals0
+        weight_smooth_normals0 *= 0.2
+
+    if normals_mode == 'FACES':
+        n2 = [0]*len(mask)*3
+        before_subsurf.polygons.foreach_get('normal',n2)
+        n2 = np.array(n2).reshape(len(mask),3)[mask][:,np.newaxis]
+        #n2 = np.mean(verts_norm, axis=(1,2))
+        #n2 = np.expand_dims(n2, axis=1)
+    else:
+
+        ### SMOOTH NORMALS
+        if smooth_normals:
+
+            new_normals0 = mesh_diffusion_vector(me0, verts0_normal, smooth_normals_iter, weight_smooth_normals0, smooth_normals_uv)
+            # Normalize
+            new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
+            # Even Thickness
+            if True:
+                mult = np.zeros(len(verts0_normal))
+                for i in range(len(verts0_normal)):
+                    vec0 = Vector(verts0_normal[i])
+                    vec1 = Vector(new_normals0[i])
+                    ang = min(vec1.angle(vec0), pi/4)
+                    mult[i] = 1/cos(ang)
+            #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
+            verts0_normal = new_normals0*mult[:,np.newaxis]
+
+        verts_norm = verts0_normal[all_verts]
+        n00 = verts_norm[:, np_u, np_v]
+        n10 = verts_norm[:, np_u1, np_v]
+        n01 = verts_norm[:, np_u, np_v1]
+        n11 = verts_norm[:, np_u1, np_v1]
+        n2 = np_lerp2(n00, n10, n01, n11, vx, vy)
+
 
     # thickness variation
     mean_area = []
@@ -1714,6 +1824,11 @@ def tessellate_original(props):
     invert_vertex_group_bridge = props['invert_vertex_group_bridge']
     vertex_group_rotation = props['vertex_group_rotation']
     invert_vertex_group_rotation = props['invert_vertex_group_rotation']
+    vertex_group_smooth_normals = props['vertex_group_smooth_normals']
+    invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
+    smooth_normals = props['smooth_normals']
+    smooth_normals_iter = props['smooth_normals_iter']
+    smooth_normals_uv = props['smooth_normals_uv']
     custom_mode = 'OBJECT'
 
     # reset messages
@@ -1792,6 +1907,24 @@ def tessellate_original(props):
     if normals_mode in ('VERTS','FACES'):
         me0.update()
         normals0 = [v.normal for v in me0.vertices]
+
+    if smooth_normals:
+        #bm0 = bmesh.new()
+        #bm0.from_mesh(me0)
+        new_normals0 = mesh_diffusion_vector(me0, normals0, smooth_normals_iter, 0.2, smooth_normals_uv)
+        # Normalize
+        new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
+        # Even Thickness
+        if False:
+            mult = np.zeros(len(normals0))
+            for i in range(len(normals0)):
+                vec0 = Vector(normals0[i])
+                vec1 = Vector(new_normals0[i])
+                ang = min(vec1.angle(vec0), pi/4)
+                mult[i] = 1/cos(ang)
+        #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
+        normals0 = new_normals0#*mult[:,np.newaxis]
+
 
     base_polygons = []
     base_face_normals = []
@@ -2857,6 +2990,32 @@ class tissue_tessellate(Operator):
             description="Invert the vertex group influence"
             )
 
+    smooth_normals : BoolProperty(
+            name="Smooth Normals", default=False,
+            description="Smooth normals of the surface in order to reduce intersections"
+            )
+    smooth_normals_iter : IntProperty(
+            name="Iterations",
+            default=5,
+            min=0,
+            description="Smooth iterations"
+            )
+    smooth_normals_uv : FloatProperty(
+            name="UV Anisotropy",
+            default=0,
+            min=-1,
+            max=1,
+            description="0 means no anysotropy, -1 represent the U direction, while 1 represent the V direction"
+            )
+    vertex_group_smooth_normals : StringProperty(
+            name="Smooth Normals weight", default='',
+            description="Vertex Group used for smoothing normals"
+            )
+    invert_vertex_group_smooth_normals : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+
     working_on = ""
 
     def draw(self, context):
@@ -3451,7 +3610,9 @@ class tissue_update_tessellate(Operator):
     def execute(self, context):
         start_time = time.time()
 
+
         ob = context.object
+        tess_props = props_to_dict(ob)
         if not self.go:
             generator = ob.tissue_tessellate.generator
             component = ob.tissue_tessellate.component
@@ -3514,6 +3675,8 @@ class tissue_update_tessellate(Operator):
             invert_vertex_group_bridge = ob.tissue_tessellate.invert_vertex_group_bridge
             vertex_group_rotation = ob.tissue_tessellate.vertex_group_rotation
             invert_vertex_group_rotation = ob.tissue_tessellate.invert_vertex_group_rotation
+            vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
+            invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
             target = ob.tissue_tessellate.target
         try:
             generator.name
@@ -4288,10 +4451,36 @@ class TISSUE_PT_tessellate_thickness(Panel):
             row2.prop(props, "vertex_group_thickness_factor")
             row2.enabled = props.vertex_group_thickness in ob0.vertex_groups.keys()
 
-            # Direction
+class TISSUE_PT_tessellate_direction(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_parent_id = "TISSUE_PT_tessellate_object"
+    bl_label = "Direction"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            bool_tessellated = context.object.tissue_tessellate.generator != None
+            return context.object.type == 'MESH' and bool_tessellated
+        except:
+            return False
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_tessellate
+        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
+
+        try:
+            bool_tessellated = props.generator or props.component != None
+            ob0 = props.generator
+            ob1 = props.component
+        except: bool_tessellated = False
+        layout = self.layout
+        #layout.use_property_split = True
+        if bool_tessellated:
             col = layout.column(align=True)
-            row = col.row(align=True)
-            row.label(text="Direction:")
             row = col.row(align=True)
             row.prop(
             props, "normals_mode", text="Direction", icon='NONE', expand=True,
@@ -4304,6 +4493,19 @@ class TISSUE_PT_tessellate_thickness(Panel):
             if props.warning_message_thickness != '':
                 col.separator()
                 col.label(text=props.warning_message_thickness, icon='ERROR')
+            if props.normals_mode == 'VERTS':
+                col.separator()
+                col.prop(props, "smooth_normals")
+                if props.smooth_normals:
+                    row = col.row(align=True)
+                    row.prop(props, "smooth_normals_iter")
+                    row.separator()
+                    row.prop_search(props, 'vertex_group_smooth_normals',
+                        ob0, "vertex_groups", text='')
+                    col2 = row.column(align=True)
+                    col2.prop(props, "invert_vertex_group_smooth_normals", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+                    col2.enabled = props.vertex_group_smooth_normals in ob0.vertex_groups.keys()
+
 
 
 class TISSUE_PT_tessellate_options(Panel):
@@ -5067,496 +5269,6 @@ def merge_components(ob, props, use_bmesh):
                     for f in closed['faces']: f.material_index += props.cap_material_offset
                 except: pass
         bm.to_mesh(ob.data)
-
-class polyhedra_wireframe(Operator):
-    bl_idname = "object.polyhedra_wireframe"
-    bl_label = "Tissue Polyhedra Wireframe"
-    bl_description = "Generate wireframes around the faces.\
-                      \nDoesn't works with boundary edges.\
-                      \n(Experimental)"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    thickness : FloatProperty(
-        name="Thickness", default=0.1, min=0, soft_max=10,
-        description="Wireframe thickness"
-        )
-
-    subdivisions : IntProperty(
-        name="Segments", default=1, min=1, soft_max=10,
-        description="Max sumber of segments, used for the longest edge"
-        )
-
-    dissolve_inners : BoolProperty(
-        name="Dissolve Inners", default=False,
-        description="Dissolve inner edges"
-        )
-
-    @classmethod
-    def poll(cls, context):
-        try:
-            #bool_tessellated = context.object.tissue_tessellate.generator != None
-            ob = context.object
-            return ob.type == 'MESH' and ob.mode == 'OBJECT'# and bool_tessellated
-        except:
-            return False
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-    def execute(self, context):
-        start_time = time.time()
-        ob = context.object
-        me = simple_to_mesh(ob)
-        bm = bmesh.new()
-        bm.from_mesh(me)
-
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-
-        double_faces = []
-        for f in bm.faces:
-            verts0 = [v.co for v in f.verts]
-            verts1 = [v.co for v in f.verts]
-            verts1.reverse()
-            double_faces.append(verts0)
-            double_faces.append(verts1)
-
-        bm1 = bmesh.new()
-
-        for verts in double_faces:
-            new_verts = []
-            for v in verts:
-                new_verts.append(bm1.verts.new(v))
-            bm1.faces.new(new_verts)
-
-        bm1.verts.ensure_lookup_table()
-        bm1.edges.ensure_lookup_table()
-        bm1.faces.ensure_lookup_table()
-
-        n_faces = len(bm.faces)
-        n_doubles = len(bm1.faces)
-
-        polyhedra = []
-
-        for e in bm.edges:
-            done = []
-            e_faces = len(e.link_faces)
-            if e_faces < 2:
-                bm.free()
-                bm1.free()
-                message = "Only edges with two or more connected faces are allowed"
-                self.report({'ERROR'}, message)
-                return {'CANCELLED'}
-            edge_vec =  e.verts[1].co - e.verts[0].co
-
-            # run first face
-            for i1 in range(e_faces-1):
-                f1 = e.link_faces[i1]
-                #edge_verts1 = [v.index for v in f1.verts if v in e.verts]
-                verts1 = [v.index for v in f1.verts]
-                va1 = verts1.index(e.verts[0].index)
-                vb1 = verts1.index(e.verts[1].index)
-                # chech if order of the edge matches the order of the face
-                dir1 = va1 == (vb1+1)%len(verts1)
-                edge_vec1 = edge_vec if dir1 else -edge_vec
-
-                # run second face
-                faces2 = []
-                normals2 = []
-                for i2 in range(i1+1,e_faces):
-                #for i2 in range(n_faces):
-                    if i1 == i2: continue
-                    f2 = e.link_faces[i2]
-                    f2.normal_update()
-                    #edge_verts2 = [v.index for v in f2.verts if v in e.verts]
-                    verts2 = [v.index for v in f2.verts]
-                    va2 = verts2.index(e.verts[0].index)
-                    vb2 = verts2.index(e.verts[1].index)
-                    # chech if order of the edge matches the order of the face
-                    dir2 = va2 == (vb2+1)%len(verts2)
-                    # check for normal consistency
-                    if dir1 != dir2:
-                        # add face
-                        faces2.append(f2.index+1)
-                        normals2.append(f2.normal)
-                    else:
-                        # add flipped face
-                        faces2.append(-(f2.index+1))
-                        normals2.append(-f2.normal)
-
-                # find first polyhedra (positive)
-                plane_x = f1.normal                     # normal
-                plane_y = plane_x.cross(edge_vec1)      # tangent face perp edge
-                id1 = (f1.index+1)
-
-                min_angle0 = 10
-
-                # check consistent faces
-                if id1 not in done:
-                    id2 = None
-                    min_angle = min_angle0
-                    for i2, n2 in zip(faces2,normals2):
-                        v2 = flatten_vector(-n2, plane_x, plane_y)
-                        angle = vector_rotation(v2)
-                        if angle < min_angle:
-                            id2 = i2
-                            min_angle = angle
-                    done.append(id2)
-                    add = True
-                    for p in polyhedra:
-                        if id1 in p or id2 in p:
-                            add = False
-                            if id2 not in p: p.append(id2)
-                            if id1 not in p: p.append(id1)
-                            break
-                    if add: polyhedra.append([id1, id2])
-
-                # find second polyhedra (negative)
-                plane_x = -f1.normal                    # normal
-                plane_y = plane_x.cross(-edge_vec1)      # tangent face perp edge
-                id1 = -(f1.index+1)
-
-                if id1 not in done:
-                    id2 = None
-                    min_angle = min_angle0
-                    for i2, n2 in zip(faces2, normals2):
-                        v2 = flatten_vector(n2, plane_x, plane_y)
-                        angle = vector_rotation(v2)
-                        if angle < min_angle:
-                            id2 = -i2
-                            min_angle = angle
-                    done.append(id2)
-                    add = True
-                    for p in polyhedra:
-                        if id1 in p or id2 in p:
-                            add = False
-                            if id2 not in p: p.append(id2)
-                            if id1 not in p: p.append(id1)
-                            break
-                    if add: polyhedra.append([id1, id2])
-
-        for i in range(len(bm1.faces)):
-            for j in (False,True):
-                if j: id = i+1
-                else: id = -(i+1)
-                join = []
-                keep = []
-                for p in polyhedra:
-                    if id in p: join += p
-                    else: keep.append(p)
-                if len(join) > 0:
-                    keep.append(list(dict.fromkeys(join)))
-                    polyhedra = keep
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, found {} polyhedra in {:.4f} sec'.format(len(polyhedra), end_time-start_time))
-
-        delete_faces = []
-        wireframe_faces = []
-        not_wireframe_faces = []
-        flat_faces = []
-
-        bm.free()
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
-
-        bm1.faces.index_update()
-        #merge_verts = []
-        for p in polyhedra:
-            delete_faces_poly = []
-            wireframe_faces_poly = []
-            faces_id = [(f-1)*2 if f > 0 else (-f-1)*2+1 for f in p]
-            faces_id_neg = [(-f-1)*2 if -f > 0 else (f-1)*2+1 for f in p]
-            merge_verts = []
-            faces = [bm1.faces[f_id] for f_id in faces_id]
-            for f in faces:
-                delete = False
-                if f.index in delete_faces: continue
-                '''
-                cen = f.calc_center_median()
-                for e in f.edges:
-                    mid = (e.verts[0].co + e.verts[1].co)/2
-                    vec1 = e.verts[0].co - e.verts[1].co
-                    vec2 = mid - cen
-                    ang = Vector.angle(vec1,vec2)
-                    length = vec2.length
-                    #length = sin(ang)*length
-                    if length < self.thickness/2:
-                        delete = True
-                '''
-                if False:
-                    sides = len(f.verts)
-                    for i in range(sides):
-                        v = f.verts[i].co
-                        v0 = f.verts[(i-1)%sides].co
-                        v1 = f.verts[(i+1)%sides].co
-                        vec0 = v0 - v
-                        vec1 = v1 - v
-                        ang = (pi - vec0.angle(vec1))/2
-                        length = min(vec0.length, vec1.length)*sin(ang)
-                        if length < self.thickness/2:
-                            delete = True
-                            break
-
-                if delete:
-                    delete_faces_poly.append(f.index)
-                else:
-                    wireframe_faces_poly.append(f.index)
-                merge_verts += [v for v in f.verts]
-            if len(wireframe_faces_poly) < 2:
-                delete_faces += faces_id
-                not_wireframe_faces += faces_id_neg
-            else:
-                wireframe_faces += wireframe_faces_poly
-                flat_faces += delete_faces_poly
-
-            #wireframe_faces = list(dict.fromkeys(wireframe_faces))
-            merge_dist = self.thickness*0.001
-            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=merge_dist)
-            bm1.edges.ensure_lookup_table()
-            bm1.faces.ensure_lookup_table()
-            bm1.faces.index_update()
-        wireframe_faces = [i for i in wireframe_faces if i not in not_wireframe_faces]
-        wireframe_faces = list(dict.fromkeys(wireframe_faces))
-
-        flat_faces = list(dict.fromkeys(flat_faces))
-
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
-
-
-        ############# FRAME #############
-        bm1.faces.index_update()
-        wireframe_faces = [bm1.faces[i] for i in wireframe_faces]
-        original_faces = wireframe_faces
-        #bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.001)
-
-        # detect edge loops
-
-        loops = []
-        boundaries_mat = []
-        neigh_face_center = []
-        face_normals = []
-
-        # compute boundary frames
-        new_faces = []
-        wire_length = []
-        vert_ids = []
-
-        # append regular faces
-
-        for f in original_faces:
-            loop = list(f.verts)
-            loops.append(loop)
-            boundaries_mat.append([f.material_index for v in loop])
-            f.normal_update()
-            face_normals.append([f.normal for v in loop])
-
-        push_verts = []
-        inner_loops = []
-
-        for loop_index, loop in enumerate(loops):
-            is_boundary = loop_index < len(neigh_face_center)
-            materials = boundaries_mat[loop_index]
-            new_loop = []
-            loop_ext = [loop[-1]] + loop + [loop[0]]
-
-            # calc tangents
-            tangents = []
-            for i in range(len(loop)):
-                # vertices
-                vert0 = loop_ext[i]
-                vert = loop_ext[i+1]
-                vert1 = loop_ext[i+2]
-                # edge vectors
-                vec0 = (vert0.co - vert.co).normalized()
-                vec1 = (vert.co - vert1.co).normalized()
-                # tangent
-                _vec1 = -vec1
-                _vec0 = -vec0
-                ang = (pi - vec0.angle(vec1))/2
-                normal = face_normals[loop_index][i]
-                tan0 = normal.cross(vec0)
-                tan1 = normal.cross(vec1)
-                tangent = (tan0 + tan1).normalized()/sin(ang)*self.thickness/2
-                tangents.append(tangent)
-
-            # calc correct direction for boundaries
-
-            mult = -1
-            if is_boundary:
-                dir_val = 0
-                for i in range(len(loop)):
-                    surf_point = neigh_face_center[loop_index][i]
-                    tangent = tangents[i]
-                    vert = loop_ext[i+1]
-                    dir_val += tangent.dot(vert.co - surf_point)
-                if dir_val > 0: mult = 1
-
-            # add vertices
-            for i in range(len(loop)):
-                vert = loop_ext[i+1]
-                area = 1
-                new_co = vert.co + tangents[i] * mult * area
-                # add vertex
-                new_vert = bm1.verts.new(new_co)
-                new_loop.append(new_vert)
-                vert_ids.append(vert.index)
-            new_loop.append(new_loop[0])
-
-            # add faces
-            materials += [materials[0]]
-            for i in range(len(loop)):
-                v0 = loop_ext[i+1]
-                v1 = loop_ext[i+2]
-                v2 = new_loop[i+1]
-                v3 = new_loop[i]
-                face_verts = [v1,v0,v3,v2]
-                if mult == -1: face_verts = [v0,v1,v2,v3]
-                new_face = bm1.faces.new(face_verts)
-                #new_face.material_index = int((v0.co - v1.co).length/max_segment)    # materials[i+1]
-                new_face.select = True
-                new_faces.append(new_face)
-                wire_length.append((v0.co - v1.co).length)
-            max_segment = max(wire_length)/self.subdivisions
-            for f,l in zip(new_faces,wire_length):
-                f.material_index = min(int(l/max_segment), self.subdivisions-1)
-            bm1.verts.ensure_lookup_table()
-            push_verts += [v.index for v in loop_ext]
-
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, frames in {:.4f} sec'.format(end_time-start_time))
-
-        bm1.verts.ensure_lookup_table()
-        bm1.edges.ensure_lookup_table()
-        bm1.faces.ensure_lookup_table()
-        bm1.verts.index_update()
-
-        smooth_corners = [True] * len(bm1.verts)
-
-        corners = [[] for i in range(len(bm1.verts))]
-        normals = [0]*len(bm1.verts)
-        vertices = [0]*len(bm1.verts)
-        for f in new_faces:
-            f.normal_update()
-            v0 = f.verts[0]
-            v1 = f.verts[1]
-            id = v0.index
-            corners[id].append((v1.co - v0.co).normalized())
-            v0.normal_update()
-            normals[id] = v0.normal
-            vertices[id] = v0
-            smooth_corners[id] = False
-
-        bm1.verts.index_update()
-        for i, vecs in enumerate(corners):
-            if len(vecs) > 0:
-                v = vertices[i]
-                nor = normals[i]
-                ang = 0
-                for vec in vecs:
-                    ang += nor.angle(vec)
-                ang /= len(vecs)
-                div = sin(ang)
-                if div == 0: div = 1
-                v.co += nor*self.thickness/2/div
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
-
-        flat_faces = [bm1.faces[i] for i in flat_faces]
-        for f in flat_faces:
-            f.material_index = self.subdivisions+1
-            for v in f.verts:
-                if smooth_corners[v.index]:
-                    v.co += v.normal*self.thickness/2
-                    smooth_corners[v.index] = False
-
-
-        delete_faces = delete_faces + [f.index for f in original_faces]
-        delete_faces = list(dict.fromkeys(delete_faces))
-        delete_faces = [bm1.faces[i] for i in delete_faces]
-        bmesh.ops.delete(bm1, geom=delete_faces, context='FACES')
-
-        bmesh.ops.remove_doubles(bm1, verts=bm1.verts, dist=self.thickness/100)
-        bm1.faces.ensure_lookup_table()
-        bm1.edges.ensure_lookup_table()
-        bm1.verts.ensure_lookup_table()
-
-        ### SUBDIVIDE EDGES ###
-
-        bm1.edges.index_update()
-        subs = self.subdivisions
-        cut_faces = [[] for i in range(subs-1)]
-        corners = []
-        if subs > 1:
-            max_segment = max(wire_length)/subs
-            for i in range(subs):
-                edges = []
-                for f in [fm for fm in bm1.faces if fm.material_index == i]:
-                    edges += [f.edges[0].index,f.edges[2].index]
-                    f.material_index = 0
-                    #corners += [v.index for v in f.verts]#[f.verts[0].index, f.verts[1].index]
-                edges = list(dict.fromkeys(edges))
-                edges = [bm1.edges[i] for i in edges]
-                #splitted =
-                subdivided = bmesh.ops.subdivide_edges(bm1, edges=edges, cuts=i, use_only_quads=False)
-                #if len(subdivided['geom_inner'])>0:
-                print(subdivided['geom_inner'])
-                bm1.verts.ensure_lookup_table()
-                bm1.edges.ensure_lookup_table()
-                bm1.faces.ensure_lookup_table()
-                bm1.verts.index_update()
-            for f in bm1.faces:
-                f.material_index = max(0, f.material_index - subs)
-            '''
-            for v in bm1.verts:
-                vfaces = v.link_faces
-                if len(vfaces) > 4:
-                    print(len(vfaces))
-                    for f in vfaces:
-                        if f.material_index < subs:
-                            f.material_index = 0
-            '''
-                #for f in [fm for fm in bm1.faces if fm.material_index == i]:
-                #    for v in f.verts:
-                #        if v.index in corners:
-                #            f.material_index = 0
-                #            continue
-
-                #bm1.faces.ensure_lookup_table()
-                #bm1.edges.index_update()
-        #for f in [fm for fm in bm1.faces if fm.material_index > 0]:
-            #for v in f.verts:
-                #if v in corners: f.material_index = 0
-
-        if self.dissolve_inners:
-            bm1.edges.index_update()
-            dissolve_edges = []
-            for f in bm1.faces:
-                e = f.edges[2]
-                if e not in dissolve_edges:
-                    dissolve_edges.append(e)
-            bmesh.ops.dissolve_edges(bm1, edges=dissolve_edges, use_verts=True, use_face_split=True)
-
-        bm1.to_mesh(me)
-        me.update()
-        bm1.free()
-        new_ob = bpy.data.objects.new("Wireframe", me)
-        context.collection.objects.link(new_ob)
-        for o in context.scene.objects: o.select_set(False)
-        new_ob.select_set(True)
-        context.view_layer.objects.active = new_ob
-        #new_ob.location = ob.location
-        new_ob.matrix_world = ob.matrix_world
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe in {:.4f} sec'.format(end_time-start_time))
-        return {'FINISHED'}
 
 class tissue_render_animation(Operator):
     bl_idname = "render.tissue_render_animation"

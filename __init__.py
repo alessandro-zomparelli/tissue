@@ -33,8 +33,8 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 47),
-    "blender": (2, 90, 1),
+    "version": (0, 3, 48),
+    "blender": (2, 91, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
@@ -54,6 +54,7 @@ if "bpy" in locals():
     importlib.reload(config)
     importlib.reload(material_tools)
     importlib.reload(curves_tools)
+    importlib.reload(polyhedra)
 
 else:
     from . import tessellate_numpy
@@ -65,6 +66,7 @@ else:
     from . import config
     from . import material_tools
     from . import curves_tools
+    from . import polyhedra
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
@@ -85,13 +87,13 @@ classes = (
     tessellate_numpy.TISSUE_PT_tessellate_object,
     tessellate_numpy.TISSUE_PT_tessellate_frame,
     tessellate_numpy.TISSUE_PT_tessellate_thickness,
+    tessellate_numpy.TISSUE_PT_tessellate_direction,
     tessellate_numpy.TISSUE_PT_tessellate_coordinates,
     tessellate_numpy.TISSUE_PT_tessellate_rotation,
     tessellate_numpy.TISSUE_PT_tessellate_options,
     tessellate_numpy.TISSUE_PT_tessellate_selective,
     tessellate_numpy.TISSUE_PT_tessellate_morphing,
     tessellate_numpy.TISSUE_PT_tessellate_iterations,
-    tessellate_numpy.polyhedra_wireframe,
     tessellate_numpy.tissue_render_animation,
 
     weight_tools.face_area_to_vertex_groups,
@@ -137,7 +139,9 @@ classes = (
     curves_tools.tissue_convert_to_curve_update,
     curves_tools.TISSUE_PT_convert_to_curve,
 
-    uv_to_mesh.uv_to_mesh
+    uv_to_mesh.uv_to_mesh,
+
+    polyhedra.polyhedra_wireframe
 )
 
 def register():
