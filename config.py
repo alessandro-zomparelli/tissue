@@ -1,5 +1,7 @@
 import bpy
 
+evaluatedDepsgraph = None
+
 class tissuePreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 

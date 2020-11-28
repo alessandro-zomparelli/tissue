@@ -44,7 +44,7 @@ from bpy.props import (
         StringProperty,
         PointerProperty
         )
-from mathutils import Vector
+from mathutils import Vector, Quaternion, Matrix
 import numpy as np
 from math import *
 import random, time, copy
@@ -54,10 +54,12 @@ from .numba_functions import *
 import os
 from pathlib import Path
 
+from . import config
+
 def anim_tessellate_active(self, context):
     ob = context.object
     props = ob.tissue_tessellate
-    if not (props.bool_lock or props.bool_hold):
+    if not (ob.tissue.bool_lock or props.bool_hold):
         try:
             props.generator.name
             props.component.name
@@ -73,7 +75,64 @@ def anim_tessellate_object(ob):
 
 #from bpy.app.handlers import persistent
 
-def anim_tessellate(scene):
+
+def anim_tessellate(scene, depsgraph=None):
+    print('Tissue: animating tessellations...')
+
+    #config.evaluatedDepsgraph = depsgraph
+
+    try:
+        active_object = bpy.context.object
+        old_mode = bpy.context.object.mode
+        selected_objects = bpy.context.selected_objects
+    except: active_object = old_mode = selected_objects = None
+
+    if old_mode in ('OBJECT', 'PAINT_WEIGHT'):
+        update_objects = []
+        for ob in scene.objects:
+            if ob.tissue.bool_run and not ob.tissue.bool_lock:
+                if ob not in update_objects: update_objects.append(ob)
+                update_objects = list(reversed(update_dependencies(ob, update_objects)))
+        for ob in update_objects:
+            #override = {'object': ob}
+            for window in bpy.context.window_manager.windows:
+                screen = window.screen
+                for area in screen.areas:
+                    if area.type == 'VIEW_3D':
+                        override = bpy.context.copy()
+                        override['window'] = window
+                        override['screen'] = screen
+                        override['area'] = area
+                        override['selected_objects'] = [ob]
+                        override['object'] = ob
+                        override['active_object'] = ob
+                        override['selected_editable_objects'] = [ob]
+                        override['mode'] = 'OBJECT'
+                        override['view_layer'] = scene.view_layers[0]
+                        break
+            if ob.tissue.tissue_type == 'TESSELLATE':
+                bpy.ops.object.tissue_update_tessellate(override)
+            elif ob.tissue.tissue_type == 'TO_CURVE':
+                bpy.ops.object.tissue_convert_to_curve_update(override)
+
+        if old_mode != None:
+            objects = bpy.context.view_layer.objects
+            objects.active = active_object
+            for o in objects: o.select_set(o in selected_objects)
+            bpy.ops.object.mode_set(mode=old_mode)
+
+    config.evaluatedDepsgraph = None
+    print('end')
+    return
+
+def OLD_anim_tessellate(scene, depsgraph):
+    print('Tissue: animating tessellations...')
+
+    #global evaluatedDepsgraph
+    #print(evaluatedDepsgraph)
+    print(config.evaluatedDepsgraph)
+    config.evaluatedDepsgraph = depsgraph
+    print(config.evaluatedDepsgraph)
 
     try:
         active_object = bpy.context.object
@@ -84,7 +143,7 @@ def anim_tessellate(scene):
     if old_mode in ('OBJECT', 'PAINT_WEIGHT') or True:
         update_objects = []
         for ob in scene.objects:
-            if ob.tissue_tessellate.bool_run and not ob.tissue_tessellate.bool_lock:
+            if ob.tissue.bool_run and not ob.tissue.bool_lock:
                 if ob not in update_objects: update_objects.append(ob)
                 update_objects = list(reversed(update_dependencies(ob, update_objects)))
         for ob in update_objects:
@@ -103,46 +162,75 @@ def anim_tessellate(scene):
                         override['object'] = ob
                         override['active_object'] = ob
                         override['selected_editable_objects'] = [ob]
-                        '''
-                        override = {
-                            'window': window,
-                            'screen': screen,
-                            'area': area,
-                            'selected_objects': [ob],
-                            'object': ob,
-                            'selected_editable_objects': [ob],
-                            'active_object': ob
-                        }
-                        '''
-                        bpy.ops.object.tissue_update_tessellate(override)
+                        override['mode'] = 'OBJECT'
+                        override['view_layer'] = scene.view_layers[0]
                         break
+            bpy.ops.object.tissue_update_tessellate(override)
+
+    config.evaluatedDepsgraph = None
+    print('end')
+    print(config.evaluatedDepsgraph)
     return
 
-
-def set_tessellate_handler(self, context):
-    old_handlers = []
+def remove_tessellate_handler():
+    tissue_handlers = []
     blender_handlers = bpy.app.handlers.frame_change_post
     for h in blender_handlers:
         if "anim_tessellate" in str(h):
-            old_handlers.append(h)
-    for h in old_handlers: blender_handlers.remove(h)
+            tissue_handlers.append(h)
+    for h in tissue_handlers: blender_handlers.remove(h)
+
+def set_tessellate_handler(self, context):
+
+    remove_tessellate_handler()
     for o in context.scene.objects:
-        if o.tissue_tessellate.bool_run:
+        if o.tissue.bool_run:
+            blender_handlers = bpy.app.handlers.frame_change_post
             blender_handlers.append(anim_tessellate)
             break
     return
 
-class tissue_tessellate_prop(PropertyGroup):
+class tissue_prop(PropertyGroup):
     bool_lock : BoolProperty(
         name="Lock",
         description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
         default=False
         )
+    bool_dependencies : BoolProperty(
+        name="Update Dependencies",
+        description="Automatically updates source objects, when possible",
+        default=False
+        )
+    bool_run : BoolProperty(
+        name="Animatable",
+        description="Automatically recompute the geometry when the frame is changed. Tessellations may not work using the default Render Animation",
+        default = False,
+        update = set_tessellate_handler
+        )
+    tissue_type : EnumProperty(
+        items=(
+                ('NONE', "None", ""),
+                ('TESSELLATE', "Tessellate", ""),
+                ('TO_CURVE', "To Curve", "")
+                ),
+        default='NONE',
+        name=""
+        )
+
+class tissue_tessellate_prop(PropertyGroup):
+    '''
+    bool_lock : BoolProperty(
+        name="Lock",
+        description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
+        default=False
+        )
+    '''
     bool_hold : BoolProperty(
         name="Hold",
         description="Wait...",
         default=False
         )
+    '''
     bool_dependencies : BoolProperty(
         name="Update Dependencies",
         description="Automatically updates base and components as well, if results of other tessellations",
@@ -154,6 +242,7 @@ class tissue_tessellate_prop(PropertyGroup):
         default = False,
         update = set_tessellate_handler
         )
+    '''
     zscale : FloatProperty(
         name="Scale", default=1, soft_min=0, soft_max=10,
         description="Scale factor for the component thickness",
@@ -252,6 +341,12 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Merge vertices in adjacent duplicates",
         update = anim_tessellate_active
         )
+    merge_open_edges_only : BoolProperty(
+        name="Open edges only",
+        default=False,
+        description="Merge only open edges",
+        update = anim_tessellate_active
+        )
     merge_thres : FloatProperty(
         name="Distance",
         default=0.0001,
@@ -292,6 +387,14 @@ class tissue_tessellate_prop(PropertyGroup):
         soft_min=0,
         soft_max=10,
         description="Random seed",
+        update = anim_tessellate_active
+        )
+    rand_step : IntProperty(
+        name="Steps",
+        default=1,
+        min=1,
+        soft_max=2,
+        description="Random step",
         update = anim_tessellate_active
         )
     bool_vertex_group : BoolProperty(
@@ -420,8 +523,8 @@ class tissue_tessellate_prop(PropertyGroup):
             items=(
                 ('NONE', 'None', 'Keep the mesh open'),
                 ('CAP', 'Cap Holes', 'Automatically cap open loops'),
-                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs'),
-                ('BRIDGE_CAP', 'Bridge weight and Cap Holes (Experimental)', 'Bridge loop pairs with weight 1 and cap holes')),
+                ('BRIDGE', 'Bridge Open Loops', 'Automatically bridge loop pairs'),
+                ('BRIDGE_CAP', 'Custom', 'Bridge loop pairs and cap holes according to vertex groups')),
             default='NONE',
             name="Close Mesh",
             update = anim_tessellate_active
@@ -464,6 +567,14 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Automatically set crease for open edges",
             update = anim_tessellate_active
             )
+    bridge_edges_crease : FloatProperty(
+            name="Bridge Edges Crease",
+            default=0,
+            min=0,
+            max=1,
+            description="Automatically set crease for bridge edges",
+            update = anim_tessellate_active
+            )
     bridge_smoothness : FloatProperty(
             name="Smoothness",
             default=1,
@@ -496,11 +607,18 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Bridge Cuts",
             update = anim_tessellate_active
             )
-    cap_material_index : IntProperty(
-            name="Material",
+    cap_material_offset : IntProperty(
+            name="Material Offset",
             default=0,
             min=0,
-            description="Material index for the cap/bridge faces",
+            description="Material index offset for the cap faces",
+            update = anim_tessellate_active
+            )
+    bridge_material_offset : IntProperty(
+            name="Material Offset",
+            default=0,
+            min=0,
+            description="Material index offset for the bridge faces",
             update = anim_tessellate_active
             )
     patch_subs : IntProperty(
@@ -536,6 +654,44 @@ class tissue_tessellate_prop(PropertyGroup):
             update = anim_tessellate_active
             )
 
+    vertex_group_cap_owner : EnumProperty(
+            items=(
+                ('BASE', 'Base', 'Use base vertex group'),
+                ('COMP', 'Component', 'Use component vertex group')),
+            default='COMP',
+            name="Source",
+            update = anim_tessellate_active
+            )
+    vertex_group_cap : StringProperty(
+            name="Cap Vertex Group", default='',
+            description="Vertex Group used for cap open edges",
+            update = anim_tessellate_active
+            )
+    invert_vertex_group_cap : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_tessellate_active
+            )
+
+    vertex_group_bridge_owner : EnumProperty(
+            items=(
+                ('BASE', 'Base', 'Use base vertex group'),
+                ('COMP', 'Component', 'Use component vertex group')),
+            default='COMP',
+            name="Source",
+            update = anim_tessellate_active
+            )
+    vertex_group_bridge : StringProperty(
+            name="Bridge Vertex Group", default='',
+            description="Vertex Group used for bridge open edges",
+            update = anim_tessellate_active
+            )
+    invert_vertex_group_bridge : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_tessellate_active
+            )
+
     vertex_group_rotation : StringProperty(
             name="Rotation weight", default='',
             description="Vertex Group used for rotation",
@@ -546,11 +702,41 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Invert the vertex group influence",
             update = anim_tessellate_active
             )
+    smooth_normals : BoolProperty(
+            name="Smooth Normals", default=False,
+            description="Smooth normals of the surface in order to reduce intersections",
+            update = anim_tessellate_active
+            )
+    smooth_normals_iter : IntProperty(
+            name="Iterations",
+            default=5,
+            min=0,
+            description="Smooth iterations",
+            update = anim_tessellate_active
+            )
+    smooth_normals_uv : FloatProperty(
+            name="UV Anisotropy",
+            default=0,
+            min=-1,
+            max=1,
+            description="0 means no anysotropy, -1 represent the U direction, while 1 represent the V direction",
+            update = anim_tessellate_active
+            )
+    vertex_group_smooth_normals : StringProperty(
+            name="Smooth normals weight", default='',
+            description="Vertex Group used for smooth normals",
+            update = anim_tessellate_active
+            )
+    invert_vertex_group_smooth_normals : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
-    ob.tissue_tessellate.bool_lock = operator.bool_lock
-    ob.tissue_tessellate.bool_dependencies = operator.bool_dependencies
+    #ob.tissue.bool_lock = operator.bool_lock
+    #ob.tissue.bool_dependencies = operator.bool_dependencies
     ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
     ob.tissue_tessellate.component = bpy.data.objects[operator.component]
     if operator.target in bpy.data.objects.keys():
@@ -564,10 +750,12 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.rotation_shift = operator.rotation_shift
     ob.tissue_tessellate.rotation_direction = operator.rotation_direction
     ob.tissue_tessellate.merge = operator.merge
+    ob.tissue_tessellate.merge_open_edges_only = operator.merge_open_edges_only
     ob.tissue_tessellate.merge_thres = operator.merge_thres
     ob.tissue_tessellate.scale_mode = operator.scale_mode
     ob.tissue_tessellate.bool_random = operator.bool_random
     ob.tissue_tessellate.rand_seed = operator.rand_seed
+    ob.tissue_tessellate.rand_step = operator.rand_step
     ob.tissue_tessellate.fill_mode = operator.fill_mode
     ob.tissue_tessellate.bool_vertex_group = operator.bool_vertex_group
     ob.tissue_tessellate.bool_selection = operator.bool_selection
@@ -595,20 +783,31 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.fill_frame = operator.fill_frame
     ob.tissue_tessellate.frame_boundary_mat = operator.frame_boundary_mat
     ob.tissue_tessellate.fill_frame_mat = operator.fill_frame_mat
-    ob.tissue_tessellate.cap_material_index = operator.cap_material_index
+    ob.tissue_tessellate.cap_material_offset = operator.cap_material_offset
     ob.tissue_tessellate.patch_subs = operator.patch_subs
     ob.tissue_tessellate.use_origin_offset = operator.use_origin_offset
     ob.tissue_tessellate.vertex_group_thickness = operator.vertex_group_thickness
     ob.tissue_tessellate.invert_vertex_group_thickness = operator.invert_vertex_group_thickness
     ob.tissue_tessellate.vertex_group_thickness_factor = operator.vertex_group_thickness_factor
+    ob.tissue_tessellate.vertex_group_cap_owner = operator.vertex_group_cap_owner
+    ob.tissue_tessellate.vertex_group_cap = operator.vertex_group_cap
+    ob.tissue_tessellate.invert_vertex_group_cap = operator.invert_vertex_group_cap
+    ob.tissue_tessellate.vertex_group_bridge_owner = operator.vertex_group_bridge_owner
+    ob.tissue_tessellate.vertex_group_bridge = operator.vertex_group_bridge
+    ob.tissue_tessellate.invert_vertex_group_bridge = operator.invert_vertex_group_bridge
     ob.tissue_tessellate.vertex_group_rotation = operator.vertex_group_rotation
     ob.tissue_tessellate.invert_vertex_group_rotation = operator.invert_vertex_group_rotation
+    ob.tissue_tessellate.smooth_normals = operator.smooth_normals
+    ob.tissue_tessellate.smooth_normals_iter = operator.smooth_normals_iter
+    ob.tissue_tessellate.smooth_normals_uv = operator.smooth_normals_uv
+    ob.tissue_tessellate.vertex_group_smooth_normals = operator.vertex_group_smooth_normals
+    ob.tissue_tessellate.invert_vertex_group_smooth_normals = operator.invert_vertex_group_smooth_normals
     ob.tissue_tessellate.bool_hold = False
     return ob
 
 def load_parameters(operator, ob):
-    operator.bool_lock = ob.tissue_tessellate.bool_lock
-    operator.bool_dependencies = ob.tissue_tessellate.bool_dependencies
+    #operator.bool_lock = ob.tissue.bool_lock
+    #operator.bool_dependencies = ob.tissue.bool_dependencies
     operator.generator = ob.tissue_tessellate.generator.name
     operator.component = ob.tissue_tessellate.component.name
     operator.zscale = ob.tissue_tessellate.zscale
@@ -620,10 +819,12 @@ def load_parameters(operator, ob):
     operator.rotation_shift = ob.tissue_tessellate.rotation_shift
     operator.rotation_direction = ob.tissue_tessellate.rotation_direction
     operator.merge = ob.tissue_tessellate.merge
+    operator.merge_open_edges_only = ob.tissue_tessellate.merge_open_edges_only
     operator.merge_thres = ob.tissue_tessellate.merge_thres
     operator.scale_mode = ob.tissue_tessellate.scale_mode
     operator.bool_random = ob.tissue_tessellate.bool_random
     operator.rand_seed = ob.tissue_tessellate.rand_seed
+    operator.rand_step = ob.tissue_tessellate.rand_step
     operator.fill_mode = ob.tissue_tessellate.fill_mode
     operator.bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
     operator.bool_selection = ob.tissue_tessellate.bool_selection
@@ -645,7 +846,7 @@ def load_parameters(operator, ob):
     operator.close_mesh = ob.tissue_tessellate.close_mesh
     operator.bridge_cuts = ob.tissue_tessellate.bridge_cuts
     operator.bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
-    operator.cap_material_index = ob.tissue_tessellate.cap_material_index
+    operator.cap_material_offset = ob.tissue_tessellate.cap_material_offset
     operator.patch_subs = ob.tissue_tessellate.patch_subs
     operator.frame_boundary = ob.tissue_tessellate.frame_boundary
     operator.fill_frame = ob.tissue_tessellate.fill_frame
@@ -657,8 +858,19 @@ def load_parameters(operator, ob):
     operator.vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
     operator.invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
     operator.vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
+    operator.vertex_group_cap_owner = ob.tissue_tessellate.vertex_group_cap_owner
+    operator.vertex_group_cap = ob.tissue_tessellate.vertex_group_cap
+    operator.invert_vertex_group_cap = ob.tissue_tessellate.invert_vertex_group_cap
+    operator.vertex_group_bridge_owner = ob.tissue_tessellate.vertex_group_bridge_owner
+    operator.vertex_group_bridge = ob.tissue_tessellate.vertex_group_bridge
+    operator.invert_vertex_group_bridge = ob.tissue_tessellate.invert_vertex_group_bridge
     operator.vertex_group_rotation = ob.tissue_tessellate.vertex_group_rotation
     operator.invert_vertex_group_rotation = ob.tissue_tessellate.invert_vertex_group_rotation
+    operator.smooth_normals = ob.tissue_tessellate.smooth_normals
+    operator.smooth_normals_iter = ob.tissue_tessellate.smooth_normals_iter
+    operator.smooth_normals_uv = ob.tissue_tessellate.smooth_normals_uv
+    operator.vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
+    operator.invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
     return ob
 
 def props_to_dict(ob):
@@ -677,6 +889,7 @@ def props_to_dict(ob):
     tessellate_dict['rotation_shift'] = props.rotation_shift
     tessellate_dict['rotation_direction'] = props.rotation_direction
     tessellate_dict['rand_seed'] = props.rand_seed
+    tessellate_dict['rand_step'] = props.rand_step
     tessellate_dict['fill_mode'] = props.fill_mode
     tessellate_dict['bool_vertex_group'] = props.bool_vertex_group
     tessellate_dict['bool_selection'] = props.bool_selection
@@ -697,8 +910,19 @@ def props_to_dict(ob):
     tessellate_dict['vertex_group_thickness'] = props.vertex_group_thickness
     tessellate_dict['invert_vertex_group_thickness'] = props.invert_vertex_group_thickness
     tessellate_dict['vertex_group_thickness_factor'] = props.vertex_group_thickness_factor
+    tessellate_dict['vertex_group_cap_owner'] = props.vertex_group_cap_owner
+    tessellate_dict['vertex_group_cap'] = props.vertex_group_cap
+    tessellate_dict['invert_vertex_group_cap'] = props.invert_vertex_group_cap
+    tessellate_dict['vertex_group_bridge_owner'] = props.vertex_group_bridge_owner
+    tessellate_dict['vertex_group_bridge'] = props.vertex_group_bridge
+    tessellate_dict['invert_vertex_group_bridge'] = props.invert_vertex_group_bridge
     tessellate_dict['vertex_group_rotation'] = props.vertex_group_rotation
     tessellate_dict['invert_vertex_group_rotation'] = props.invert_vertex_group_rotation
+    tessellate_dict['smooth_normals'] = props.smooth_normals
+    tessellate_dict['smooth_normals_iter'] = props.smooth_normals_iter
+    tessellate_dict['smooth_normals_uv'] = props.smooth_normals_uv
+    tessellate_dict['vertex_group_smooth_normals'] = props.vertex_group_smooth_normals
+    tessellate_dict['invert_vertex_group_smooth_normals'] = props.invert_vertex_group_smooth_normals
     return tessellate_dict
 
 def tessellate_patch(props):
@@ -715,6 +939,7 @@ def tessellate_patch(props):
     rotation_mode = props['rotation_mode']
     rotation_shift = props['rotation_shift']
     rand_seed = props['rand_seed']
+    rand_step = props['rand_step']
     bool_vertex_group = props['bool_vertex_group']
     bool_selection = props['bool_selection']
     bool_shapekeys = props['bool_shapekeys']
@@ -727,10 +952,21 @@ def tessellate_patch(props):
     vertex_group_thickness = props['vertex_group_thickness']
     invert_vertex_group_thickness = props['invert_vertex_group_thickness']
     vertex_group_thickness_factor = props['vertex_group_thickness_factor']
+    vertex_group_cap_owner = props['vertex_group_cap_owner']
+    vertex_group_cap = props['vertex_group_cap']
+    invert_vertex_group_cap = props['invert_vertex_group_cap']
+    vertex_group_bridge_owner = props['vertex_group_bridge_owner']
+    vertex_group_bridge = props['vertex_group_bridge']
+    invert_vertex_group_bridge = props['invert_vertex_group_bridge']
     vertex_group_rotation = props['vertex_group_rotation']
     invert_vertex_group_rotation = props['invert_vertex_group_rotation']
     rotation_direction = props['rotation_direction']
     target = props['target']
+    smooth_normals = props['smooth_normals']
+    smooth_normals_iter = props['smooth_normals_iter']
+    smooth_normals_uv = props['smooth_normals_uv']
+    vertex_group_smooth_normals = props['vertex_group_smooth_normals']
+    invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
 
     # reset messages
     ob.tissue_tessellate.warning_message_thickness = ''
@@ -1072,7 +1308,13 @@ def tessellate_patch(props):
     if rotation_mode == 'WEIGHT':
         if not vertex_group_rotation in ob0.vertex_groups.keys():
             rotation_mode = 'DEFAULT'
-    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT'
+
+    bool_weight_smooth_normals = vertex_group_smooth_normals in ob0.vertex_groups.keys()
+    bool_weight_thickness = vertex_group_thickness in ob0.vertex_groups.keys()
+    bool_weight_cap = vertex_group_cap_owner == 'BASE' and vertex_group_cap in ob0.vertex_groups.keys()
+    bool_weight_bridge = vertex_group_bridge_owner == 'BASE' and vertex_group_bridge in ob0.vertex_groups.keys()
+
+    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge or bool_weight_smooth_normals
     weight = weight_thickness = weight_rotation = None
     if read_vertex_groups:
         if bool_vertex_group:
@@ -1082,11 +1324,16 @@ def tessellate_patch(props):
             if rotation_mode == 'WEIGHT':
                 vg_id = ob0.vertex_groups[vertex_group_rotation].index
                 weight_rotation =  weight[vg_id]
+            if bool_weight_smooth_normals:
+                vg_id = ob0.vertex_groups[bool_weight_smooth_normals].index
+                weight_rotation =  weight[vg_id]
         else:
             if rotation_mode == 'WEIGHT':
                 vg = ob0.vertex_groups[vertex_group_rotation]
                 weight_rotation = get_weight_numpy(vg, n_verts0)
-
+            if bool_weight_smooth_normals:
+                vg = ob0.vertex_groups[vertex_group_smooth_normals]
+                weight_smooth_normals = get_weight_numpy(vg, n_verts0)
 
     random.seed(rand_seed)
     bool_correct = False
@@ -1220,7 +1467,7 @@ def tessellate_patch(props):
         random_shift = 0
         if rotation_mode == 'RANDOM':
             np.random.seed(rand_seed)
-            random_shift = np.random.randint(0,4,size=n_patches)
+            random_shift = np.random.randint(0,4,size=n_patches)*rand_step
 
         # UV rotation
         UV_shift = 0
@@ -1282,22 +1529,11 @@ def tessellate_patch(props):
     vy = np_verts1_uv[:,1].reshape((1,n_verts1,1))
     vz = np_verts1_uv[:,2].reshape((1,n_verts1,1))
     co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
-    if normals_mode == 'FACES':
-        n2 = [0]*len(mask)*3
-        before_subsurf.polygons.foreach_get('normal',n2)
-        n2 = np.array(n2).reshape(len(mask),3)[mask][:,np.newaxis]
-        #n2 = np.mean(verts_norm, axis=(1,2))
-        #n2 = np.expand_dims(n2, axis=1)
-    else:
-        verts_norm = verts0_normal[all_verts]
-        n00 = verts_norm[:, np_u, np_v]
-        n10 = verts_norm[:, np_u1, np_v]
-        n01 = verts_norm[:, np_u, np_v1]
-        n11 = verts_norm[:, np_u1, np_v1]
-        n2 = np_lerp2(n00, n10, n01, n11, vx, vy)
 
     ### PATCHES WEIGHT ###
     weight_thickness = 1
+    weight_smooth_normals = 0.2
+    weight_smooth_normals0 = 0.2
     if bool_vertex_group:
         patches_weight = weight[:, all_verts]
         w00 = patches_weight[:, :, np_u, np_v]
@@ -1309,24 +1545,89 @@ def tessellate_patch(props):
         if vertex_group_thickness in ob0.vertex_groups.keys():
             vg_id = ob0.vertex_groups[vertex_group_thickness].index
             weight_thickness = store_weight[vg_id,:,:,np.newaxis]
-    elif vertex_group_thickness in ob0.vertex_groups.keys():
-        vg = ob0.vertex_groups[vertex_group_thickness]
-        weight_thickness = get_weight_numpy(vg, n_verts0)
-        wt = weight_thickness[all_verts]
-        wt = wt[:,:,:,np.newaxis]
-        w00 = wt[:, np_u, np_v]
-        w10 = wt[:, np_u1, np_v]
-        w01 = wt[:, np_u, np_v1]
-        w11 = wt[:, np_u1, np_v1]
-        weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
-    try:
-        weight_thickness.shape
-        if invert_vertex_group_thickness:
-            weight_thickness = 1-weight_thickness
-        fact = vertex_group_thickness_factor
-        if fact > 0:
-            weight_thickness = weight_thickness*(1-fact) + fact
-    except: pass
+        if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+            vg_id = ob0.vertex_groups[vertex_group_smooth_normals].index
+            weight_smooth_normals = store_weight[vg_id,:,:,np.newaxis]
+    else:
+        # Read vertex group Thickness
+        if vertex_group_thickness in ob0.vertex_groups.keys():
+            vg = ob0.vertex_groups[vertex_group_thickness]
+            weight_thickness = get_weight_numpy(vg, n_verts0)
+            wt = weight_thickness[all_verts]
+            wt = wt[:,:,:,np.newaxis]
+            w00 = wt[:, np_u, np_v]
+            w10 = wt[:, np_u1, np_v]
+            w01 = wt[:, np_u, np_v1]
+            w11 = wt[:, np_u1, np_v1]
+            weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
+            try:
+                weight_thickness.shape
+                if invert_vertex_group_thickness:
+                    weight_thickness = 1-weight_thickness
+                fact = vertex_group_thickness_factor
+                if fact > 0:
+                    weight_thickness = weight_thickness*(1-fact) + fact
+            except: pass
+
+        # Read vertex group smooth normals
+        if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+            vg = ob0.vertex_groups[vertex_group_smooth_normals]
+            weight_smooth_normals = get_weight_numpy(vg, n_verts0)
+            wt = weight_smooth_normals[all_verts]
+            wt = wt[:,:,:,np.newaxis]
+            w00 = wt[:, np_u, np_v]
+            w10 = wt[:, np_u1, np_v]
+            w01 = wt[:, np_u, np_v1]
+            w11 = wt[:, np_u1, np_v1]
+            weight_smooth_normals = np_lerp2(w00,w10,w01,w11,vx,vy)
+            try:
+                weight_smooth_normals.shape
+                if invert_vertex_group_smooth_normals:
+                    weight_smooth_normals = 1-weight_smooth_normals
+                #fact = vertex_group_thickness_factor
+                #if fact > 0:
+                #    weight_thickness = weight_thickness*(1-fact) + fact
+            except: pass
+
+    if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+        vg = ob0.vertex_groups[vertex_group_smooth_normals]
+        weight_smooth_normals0 = get_weight_numpy(vg, n_verts0)
+        if invert_vertex_group_smooth_normals:
+            weight_smooth_normals0 = 1-weight_smooth_normals0
+        weight_smooth_normals0 *= 0.2
+
+    if normals_mode == 'FACES':
+        n2 = [0]*len(mask)*3
+        before_subsurf.polygons.foreach_get('normal',n2)
+        n2 = np.array(n2).reshape(len(mask),3)[mask][:,np.newaxis]
+        #n2 = np.mean(verts_norm, axis=(1,2))
+        #n2 = np.expand_dims(n2, axis=1)
+    else:
+
+        ### SMOOTH NORMALS
+        if smooth_normals:
+
+            new_normals0 = mesh_diffusion_vector(me0, verts0_normal, smooth_normals_iter, weight_smooth_normals0, smooth_normals_uv)
+            # Normalize
+            new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
+            # Even Thickness
+            if True:
+                mult = np.zeros(len(verts0_normal))
+                for i in range(len(verts0_normal)):
+                    vec0 = Vector(verts0_normal[i])
+                    vec1 = Vector(new_normals0[i])
+                    ang = min(vec1.angle(vec0), pi/4)
+                    mult[i] = 1/cos(ang)
+            #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
+            verts0_normal = new_normals0*mult[:,np.newaxis]
+
+        verts_norm = verts0_normal[all_verts]
+        n00 = verts_norm[:, np_u, np_v]
+        n10 = verts_norm[:, np_u1, np_v]
+        n01 = verts_norm[:, np_u, np_v1]
+        n11 = verts_norm[:, np_u1, np_v1]
+        n2 = np_lerp2(n00, n10, n01, n11, vx, vy)
+
 
     # thickness variation
     mean_area = []
@@ -1500,6 +1801,7 @@ def tessellate_original(props):
     rotation_shift = props['rotation_shift']
     rotation_direction = props['rotation_direction']
     rand_seed = props['rand_seed']
+    rand_step = props['rand_step']
     fill_mode = props['fill_mode']
     bool_vertex_group = props['bool_vertex_group']
     bool_selection = props['bool_selection']
@@ -1514,8 +1816,19 @@ def tessellate_original(props):
     vertex_group_thickness = props['vertex_group_thickness']
     invert_vertex_group_thickness = props['invert_vertex_group_thickness']
     vertex_group_thickness_factor = props['vertex_group_thickness_factor']
+    vertex_group_cap_owner = props['vertex_group_cap_owner']
+    vertex_group_cap = props['vertex_group_cap']
+    invert_vertex_group_cap = props['invert_vertex_group_cap']
+    vertex_group_bridge_owner = props['vertex_group_bridge_owner']
+    vertex_group_bridge = props['vertex_group_bridge']
+    invert_vertex_group_bridge = props['invert_vertex_group_bridge']
     vertex_group_rotation = props['vertex_group_rotation']
     invert_vertex_group_rotation = props['invert_vertex_group_rotation']
+    vertex_group_smooth_normals = props['vertex_group_smooth_normals']
+    invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
+    smooth_normals = props['smooth_normals']
+    smooth_normals_iter = props['smooth_normals_iter']
+    smooth_normals_uv = props['smooth_normals_uv']
     custom_mode = 'OBJECT'
 
     # reset messages
@@ -1594,6 +1907,24 @@ def tessellate_original(props):
     if normals_mode in ('VERTS','FACES'):
         me0.update()
         normals0 = [v.normal for v in me0.vertices]
+
+    if smooth_normals:
+        #bm0 = bmesh.new()
+        #bm0.from_mesh(me0)
+        new_normals0 = mesh_diffusion_vector(me0, normals0, smooth_normals_iter, 0.2, smooth_normals_uv)
+        # Normalize
+        new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
+        # Even Thickness
+        if False:
+            mult = np.zeros(len(normals0))
+            for i in range(len(normals0)):
+                vec0 = Vector(normals0[i])
+                vec1 = Vector(new_normals0[i])
+                ang = min(vec1.angle(vec0), pi/4)
+                mult[i] = 1/cos(ang)
+        #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
+        normals0 = new_normals0#*mult[:,np.newaxis]
+
 
     base_polygons = []
     base_face_normals = []
@@ -1880,7 +2211,9 @@ def tessellate_original(props):
 
     # All vertex group
     bool_weight_thickness = vertex_group_thickness in ob0.vertex_groups.keys()
-    if bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness:
+    bool_weight_cap = vertex_group_cap_owner == 'BASE' and vertex_group_cap in ob0.vertex_groups.keys()
+    bool_weight_bridge = vertex_group_bridge_owner == 'BASE' and vertex_group_bridge in ob0.vertex_groups.keys()
+    if bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge:
         try:
             weight = []
             for vg in ob0.vertex_groups:
@@ -1945,7 +2278,7 @@ def tessellate_original(props):
         if rotation_mode == 'RANDOM':
             shifted_vertices = []
             n_poly_verts = len(p.vertices)
-            rand = random.randint(0, n_poly_verts)
+            rand = random.randint(0, n_poly_verts)*rand_step
             for i in range(n_poly_verts):
                 shifted_vertices.append(p.vertices[(i + rand) % n_poly_verts])
             if scale_mode == 'ADAPTIVE':
@@ -2247,7 +2580,7 @@ def tessellate_original(props):
 
 class tissue_tessellate(Operator):
     bl_idname = "object.tissue_tessellate"
-    bl_label = "Tessellate"
+    bl_label = "Tissue Tessellate"
     bl_description = ("Create a copy of selected object on the active object's "
                       "faces, adapting the shape to the different faces")
     bl_options = {'REGISTER', 'UNDO'}
@@ -2258,6 +2591,7 @@ class tissue_tessellate(Operator):
             description="Wait...",
             default=False
     )
+    '''
     bool_lock : BoolProperty(
             name="Lock",
             description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
@@ -2268,6 +2602,7 @@ class tissue_tessellate(Operator):
             description="Automatically updates base and components as well, if results of other tessellations",
             default=False
     )
+    '''
     object_name : StringProperty(
             name="",
             description="Name of the generated object"
@@ -2360,6 +2695,11 @@ class tissue_tessellate(Operator):
             default=False,
             description="Merge vertices in adjacent duplicates"
             )
+    merge_open_edges_only : BoolProperty(
+            name="Open edges only",
+            default=True,
+            description="Merge only open edges"
+            )
     merge_thres : FloatProperty(
             name="Distance",
             default=0.0001,
@@ -2378,6 +2718,13 @@ class tissue_tessellate(Operator):
             soft_min=0,
             soft_max=10,
             description="Random seed"
+            )
+    rand_step : IntProperty(
+            name="Step",
+            default=1,
+            min=1,
+            soft_max=2,
+            description="Random step"
             )
     bool_vertex_group : BoolProperty(
             name="Map Vertex Groups",
@@ -2490,8 +2837,8 @@ class tissue_tessellate(Operator):
             items=(
                 ('NONE', 'None', 'Keep the mesh open'),
                 ('CAP', 'Cap Holes', 'Automatically cap open loops'),
-                ('BRIDGE', 'Bridge Loops', 'Automatically bridge loop pairs'),
-                ('BRIDGE_CAP', 'Bridge weight and Cap Holes (Experimental)', 'Bridge loop pairs with weight 1 and cap holes')),
+                ('BRIDGE', 'Bridge Open Loops', 'Automatically bridge loop pairs'),
+                ('BRIDGE_CAP', 'Custom', 'Bridge loop pairs and cap holes according to vertex groups')),
             default='NONE',
             name="Close Mesh"
             )
@@ -2527,6 +2874,13 @@ class tissue_tessellate(Operator):
             max=1,
             description="Automatically set crease for open edges"
             )
+    bridge_edges_crease : FloatProperty(
+            name="Bridge Edges Crease",
+            default=0,
+            min=0,
+            max=1,
+            description="Automatically set crease for bridge edges"
+            )
     bridge_smoothness : FloatProperty(
             name="Smoothness",
             default=1,
@@ -2555,11 +2909,17 @@ class tissue_tessellate(Operator):
             max=20,
             description="Bridge Cuts"
             )
-    cap_material_index : IntProperty(
-            name="Material",
+    cap_material_offset : IntProperty(
+            name="Material Offset",
             default=0,
             min=0,
-            description="Material index for the cap/bridge faces"
+            description="Material index offset for the cap faces"
+            )
+    bridge_material_offset : IntProperty(
+            name="Material Offset",
+            default=0,
+            min=0,
+            description="Material index offset for the bridge faces"
             )
     patch_subs : IntProperty(
             name="Patch Subdivisions",
@@ -2589,11 +2949,69 @@ class tissue_tessellate(Operator):
             description="Thickness factor to use for zero vertex group influence"
             )
 
+    vertex_group_cap_owner : EnumProperty(
+            items=(
+                ('BASE', 'Base', 'Use base vertex group'),
+                ('COMP', 'Component', 'Use component vertex group')),
+            default='COMP',
+            name="Source"
+            )
+    vertex_group_cap : StringProperty(
+            name="Cap Vertex Group", default='',
+            description="Vertex Group used for cap open edges"
+            )
+    invert_vertex_group_cap : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+
+    vertex_group_bridge_owner : EnumProperty(
+            items=(
+                ('BASE', 'Base', 'Use base vertex group'),
+                ('COMP', 'Component', 'Use component vertex group')),
+            default='COMP',
+            name="Source"
+            )
+    vertex_group_bridge : StringProperty(
+            name="Thickness weight", default='',
+            description="Vertex Group used for bridge open edges"
+            )
+    invert_vertex_group_bridge : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+
     vertex_group_rotation : StringProperty(
             name="Rotation weight", default='',
             description="Vertex Group used for rotation"
             )
     invert_vertex_group_rotation : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+
+    smooth_normals : BoolProperty(
+            name="Smooth Normals", default=False,
+            description="Smooth normals of the surface in order to reduce intersections"
+            )
+    smooth_normals_iter : IntProperty(
+            name="Iterations",
+            default=5,
+            min=0,
+            description="Smooth iterations"
+            )
+    smooth_normals_uv : FloatProperty(
+            name="UV Anisotropy",
+            default=0,
+            min=-1,
+            max=1,
+            description="0 means no anysotropy, -1 represent the U direction, while 1 represent the V direction"
+            )
+    vertex_group_smooth_normals : StringProperty(
+            name="Smooth Normals weight", default='',
+            description="Vertex Group used for smoothing normals"
+            )
+    invert_vertex_group_smooth_normals : BoolProperty(
             name="Invert", default=False,
             description="Invert the vertex group influence"
             )
@@ -2615,7 +3033,7 @@ class tissue_tessellate(Operator):
         ob0 = None
         ob1 = None
 
-        sel = bpy.context.selected_objects
+        sel = context.selected_objects
         if len(sel) == 1:
             try:
                 ob0 = sel[0].tissue_tessellate.generator
@@ -2812,6 +3230,8 @@ class tissue_tessellate(Operator):
             row = col.row(align=True)
             row.prop(self, "merge")
             if self.merge:
+                row = col.row(align=True)
+                row.prop(self, "merge_open_edges_only")
                 row.prop(self, "merge_thres")
                 col.separator()
                 row = col.row(align=True)
@@ -2819,14 +3239,48 @@ class tissue_tessellate(Operator):
                 col2.label(text='Close Mesh:')
                 col2 = row.column(align=True)
                 col2.prop(self, "close_mesh",text='')
-                if self.close_mesh != 'NONE':
+
+                if self.close_mesh in ('BRIDGE', 'BRIDGE_CAP'):
+                    if self.close_mesh == 'BRIDGE_CAP':
+                        col.separator()
+                        col.label(text='Bridge Vertex Group:')
+                        row = col.row(align=True)
+                        if self.vertex_group_bridge_owner == 'BASE': ob_bridge = ob0
+                        else: ob_bridge = ob1
+                        row.prop_search(self, 'vertex_group_bridge',
+                            ob_bridge, "vertex_groups", text='')
+                        row.prop(self, "invert_vertex_group_bridge", text="",
+                            toggle=True, icon='ARROW_LEFTRIGHT')
+                        row.prop(self, "vertex_group_bridge_owner", expand=True,
+                            slider=False, toggle=False, icon_only=False, event=False,
+                            full_event=False, emboss=True, index=-1)
+                    row = col.row(align=True)
+                    row.prop(self, "bridge_edges_crease", text="Crease")
+                    row.prop(self, "bridge_material_offset")
+
+                if self.close_mesh in ('CAP', 'BRIDGE_CAP'):
+                    if self.close_mesh == 'BRIDGE_CAP':
+                        col.separator()
+                        col.label(text='Cap Vertex Group:')
+                        row = col.row(align=True)
+                        if self.vertex_group_cap_owner == 'BASE': ob_cap = ob0
+                        else: ob_cap = ob1
+                        row.prop_search(self, 'vertex_group_cap',
+                            ob_cap, "vertex_groups", text='')
+                        row.prop(self, "invert_vertex_group_cap", text="",
+                            toggle=True, icon='ARROW_LEFTRIGHT')
+                        row.prop(self, "vertex_group_cap_owner", expand=True,
+                            slider=False, toggle=False, icon_only=False, event=False,
+                            full_event=False, emboss=True, index=-1)
                     row = col.row(align=True)
                     row.prop(self, "open_edges_crease", text="Crease")
-                    row.prop(self, "cap_material_index")
+                    row.prop(self, "cap_material_offset")
+                    '''
                     if self.close_mesh == 'BRIDGE' and False:
                         row = col.row(align=True)
                         row.prop(self, "bridge_cuts")
                         row.prop(self, "bridge_smoothness")
+                    '''
                 row = col.row(align=True)
                 row.prop(self, "bool_dissolve_seams")
 
@@ -2861,6 +3315,7 @@ class tissue_tessellate(Operator):
                               full_event=False, emboss=True, index=-1)
                 if self.rotation_mode == 'RANDOM':
                     col.prop(self, "rand_seed")
+                    col.prop(self, "rand_step")
                 else:
                     col.prop(self, "rotation_shift")
 
@@ -3012,7 +3467,7 @@ class tissue_tessellate(Operator):
             #data0 = ob0.to_mesh(False)
             #data0 = ob0.data.copy()
             bool_update = False
-            if bpy.context.object == ob0:
+            if context.object == ob0:
                 auto_layer_collection()
                 #new_ob = bpy.data.objects.new(self.object_name, data0)
                 new_ob = convert_object_to_mesh(ob0,False,False)
@@ -3022,7 +3477,7 @@ class tissue_tessellate(Operator):
                 new_ob.name = self.object_name
                 #new_ob.select_set(True)
             else:
-                new_ob = bpy.context.object
+                new_ob = context.object
                 bool_update = True
             new_ob = store_parameters(self, new_ob)
             try: bpy.ops.object.tissue_update_tessellate()
@@ -3035,38 +3490,37 @@ class tissue_tessellate(Operator):
                 #self.working_on = self.object_name
                 new_ob.location = ob0.location
                 new_ob.matrix_world = ob0.matrix_world
-
+            new_ob.tissue.tissue_type = 'TESSELLATE'
             return {'FINISHED'}
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
-
 def update_dependencies(ob, objects):
-    ob0 = ob.tissue_tessellate.generator
-    ob1 = ob.tissue_tessellate.component
-    deps = [ob0, ob1]
-    for o in deps:
-        if o.tissue_tessellate.bool_lock: continue
-        o0 = o.tissue_tessellate.generator
-        o1 = o.tissue_tessellate.component
-        deps_deps = [o0, o1]
-        try:
-            o0.name
-            o1.name
-            if o0 not in objects and o1 not in objects:
-                objects.append(o)
-                objects = update_dependencies(o, objects)
-        except:
-            continue
+    type = ob.tissue.tissue_type
+    if type == 'NONE': return objects
+    if ob.tissue.bool_dependencies:
+        deps = get_deps(ob)
+        for o in deps:
+            if o.tissue.tissue_type == 'NONE' or o.tissue.bool_lock or o in objects:
+                continue
+            objects.append(o)
+            objects = update_dependencies(o, objects)
     return objects
 
+def get_deps(ob):
+    type = ob.tissue.tissue_type
+    if type == 'TESSELLATE':
+        return [ob.tissue_tessellate.generator, ob.tissue_tessellate.component]
+    elif type == 'TO_CURVE':
+        return [ob.tissue_to_curve.object]
+    else: return []
 
-class tissue_refresh_tessellate(Operator):
-    bl_idname = "object.tissue_refresh_tessellate"
-    bl_label = "Refresh"
+class tissue_update_tessellate_deps(Operator):
+    bl_idname = "object.tissue_update_tessellate_deps"
+    bl_label = "Tissue Refresh"
     bl_description = ("Fast update the tessellated mesh according to base and "
-                      "component changes")
+                      "component changes.")
     bl_options = {'REGISTER', 'UNDO'}
 
     go = False
@@ -3074,8 +3528,11 @@ class tissue_refresh_tessellate(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            return context.object.tissue_tessellate.generator != None and \
-                context.object.tissue_tessellate.component != None
+            ob = context.object
+            tess_props = ob.tissue_tessellate
+            tessellated = tess_props.generator != None and tess_props.component != None
+            to_curve = ob.tissue_to_curve.object != None
+            return tessellated or to_curve
         except:
             return False
 
@@ -3086,7 +3543,9 @@ class tissue_refresh_tessellate(Operator):
 
     def execute(self, context):
 
-        ob = bpy.context.object
+        active_ob = context.object
+        selected_objects = context.selected_objects
+        '''
         ob0 = ob.tissue_tessellate.generator
         ob1 = ob.tissue_tessellate.component
         try:
@@ -3096,26 +3555,40 @@ class tissue_refresh_tessellate(Operator):
             self.report({'ERROR'},
                         "Active object must be Tessellate before Update")
             return {'CANCELLED'}
-
-        if ob.tissue_tessellate.bool_dependencies:
-            update_objects = list(reversed(update_dependencies(ob, [ob])))
-        else:
-            update_objects = [ob]
+        '''
+        ### TO-DO: sorting according to dependencies
+        update_objects = [o for o in selected_objects if o.tissue.tissue_type != 'NONE']
+        for ob in selected_objects:
+            update_objects = list(reversed(update_dependencies(ob, update_objects)))
+            #update_objects = list(reversed(update_dependencies(ob, [ob])))
         for o in update_objects:
-            override = {'object': o}
-            try:
-                bpy.ops.object.tissue_update_tessellate(override)
-            except:
-                self.report({'ERROR'}, "Can't Tessellate :-(")
+            override = {
+                'object': o,
+                'selected_objects' : [o]
+                }
+            if o.type == 'MESH':
+                try:
+                    bpy.ops.object.tissue_update_tessellate(override)
+                except:
+                    self.report({'ERROR'}, "Can't Tessellate :-(")
+            else:
+                try:
+                    bpy.ops.object.tissue_convert_to_curve_update(override)
+                except:
+                    self.report({'ERROR'}, "Can't compute Curve :-(")
+
+        context.view_layer.objects.active = active_ob
+        for o in context.view_layer.objects:
+            o.select_set(o in selected_objects)
 
         return {'FINISHED'}
 
 
 class tissue_update_tessellate(Operator):
     bl_idname = "object.tissue_update_tessellate"
-    bl_label = "Refresh"
+    bl_label = "Tissue Refresh Simple"
     bl_description = ("Fast update the tessellated mesh according to base and "
-                      "component changes")
+                      "component changes. Does not update dependencies")
     bl_options = {'REGISTER', 'UNDO'}
 
     go = False
@@ -3137,7 +3610,9 @@ class tissue_update_tessellate(Operator):
     def execute(self, context):
         start_time = time.time()
 
+
         ob = context.object
+        tess_props = props_to_dict(ob)
         if not self.go:
             generator = ob.tissue_tessellate.generator
             component = ob.tissue_tessellate.component
@@ -3148,12 +3623,14 @@ class tissue_update_tessellate(Operator):
             rotation_direction = ob.tissue_tessellate.rotation_direction
             offset = ob.tissue_tessellate.offset
             merge = ob.tissue_tessellate.merge
+            merge_open_edges_only = ob.tissue_tessellate.merge_open_edges_only
             merge_thres = ob.tissue_tessellate.merge_thres
             mode = ob.tissue_tessellate.mode
             gen_modifiers = ob.tissue_tessellate.gen_modifiers
             com_modifiers = ob.tissue_tessellate.com_modifiers
             bool_random = ob.tissue_tessellate.bool_random
             rand_seed = ob.tissue_tessellate.rand_seed
+            rand_step = ob.tissue_tessellate.rand_step
             fill_mode = ob.tissue_tessellate.fill_mode
             bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
             bool_selection = ob.tissue_tessellate.bool_selection
@@ -3174,6 +3651,7 @@ class tissue_update_tessellate(Operator):
             cap_faces = ob.tissue_tessellate.cap_faces
             close_mesh = ob.tissue_tessellate.close_mesh
             open_edges_crease = ob.tissue_tessellate.open_edges_crease
+            bridge_edges_crease = ob.tissue_tessellate.bridge_edges_crease
             bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
             frame_thickness = ob.tissue_tessellate.frame_thickness
             frame_mode = ob.tissue_tessellate.frame_mode
@@ -3182,14 +3660,23 @@ class tissue_update_tessellate(Operator):
             frame_boundary_mat = ob.tissue_tessellate.frame_boundary_mat
             fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
             bridge_cuts = ob.tissue_tessellate.bridge_cuts
-            cap_material_index = ob.tissue_tessellate.cap_material_index
+            cap_material_offset = ob.tissue_tessellate.cap_material_offset
+            bridge_material_offset = ob.tissue_tessellate.bridge_material_offset
             patch_subs = ob.tissue_tessellate.patch_subs
             use_origin_offset = ob.tissue_tessellate.use_origin_offset
             vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
             invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
             vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
+            vertex_group_cap_owner = ob.tissue_tessellate.vertex_group_cap_owner
+            vertex_group_cap = ob.tissue_tessellate.vertex_group_cap
+            invert_vertex_group_cap = ob.tissue_tessellate.invert_vertex_group_cap
+            vertex_group_bridge_owner = ob.tissue_tessellate.vertex_group_bridge_owner
+            vertex_group_bridge = ob.tissue_tessellate.vertex_group_bridge
+            invert_vertex_group_bridge = ob.tissue_tessellate.invert_vertex_group_bridge
             vertex_group_rotation = ob.tissue_tessellate.vertex_group_rotation
             invert_vertex_group_rotation = ob.tissue_tessellate.invert_vertex_group_rotation
+            vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
+            invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
             target = ob.tissue_tessellate.target
         try:
             generator.name
@@ -3223,7 +3710,8 @@ class tissue_update_tessellate(Operator):
         starting_mode = context.object.mode
 
         #if starting_mode == 'PAINT_WEIGHT': starting_mode = 'WEIGHT_PAINT'
-        bpy.ops.object.mode_set(mode='OBJECT')
+        if bpy.ops.object.mode_set.poll():
+            bpy.ops.object.mode_set(mode='OBJECT')
 
         ob0 = generator
         ob1 = component
@@ -3258,15 +3746,12 @@ class tissue_update_tessellate(Operator):
                 m.point_cache.frame_end = context.scene.frame_current
                 bool_update_cloth = True
         if bool_update_cloth:
-            for scene in bpy.data.scenes:
-                for mod in base_ob.modifiers:
-                    if mod.type == 'CLOTH':
-                        override = {'scene': scene, 'active_object': base_ob, 'point_cache': mod.point_cache}
-                        bpy.ops.ptcache.bake(override, bake=True)
-                        break
-            #bpy.ops.ptcache.free_bake_all()
-            #bpy.ops.ptcache.bake_all()
-            #bpy.ops.ptcache.bake(override, bake=True)
+            scene = context.scene
+            for mod in base_ob.modifiers:
+                if mod.type == 'CLOTH':
+                    override = {'scene': scene, 'active_object': base_ob, 'point_cache': mod.point_cache}
+                    bpy.ops.ptcache.bake(override, bake=True)
+                    break
         base_ob.modifiers.update()
 
 
@@ -3463,7 +3948,7 @@ class tissue_update_tessellate(Operator):
 
             if merge:
                 use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components)
-                merged = merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh)
+                merged = merge_components(new_ob, ob.tissue_tessellate, use_bmesh)
                 if merged == 'bridge_error':
                     message = "Can't make the bridge!"
                     ob.tissue_tessellate.warning_message_merge = message
@@ -3549,7 +4034,7 @@ class tissue_update_tessellate(Operator):
         is_multiple = iterations > 1 or combine_mode != 'LAST'# or bool_multi_components
         if merge and is_multiple:
             use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components)
-            merge_components(new_ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh)
+            merge_components(new_ob, ob.tissue_tessellate, use_bmesh)
 
         if bool_smooth: bpy.ops.object.shade_smooth()
 
@@ -3607,11 +4092,17 @@ class TISSUE_PT_tessellate(Panel):
         layout = self.layout
 
         col = layout.column(align=True)
-        col.label(text="Tessellate:")
-        col.operator("object.tissue_tessellate")
-        col.operator("object.dual_mesh_tessellated")
+        col.label(text="Generate:")
+        col.operator("object.tissue_tessellate", text='Tessellate')
+        col.operator("object.dual_mesh_tessellated", text='Dual Mesh')
         col.separator()
-        col.operator("object.tissue_refresh_tessellate", icon='FILE_REFRESH')
+
+        #col.label(text="Curves:")
+        col.operator("object.tissue_convert_to_curve", icon='OUTLINER_OB_CURVE', text="Convert to Curve")
+        #row.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='')
+
+        col.separator()
+        col.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') #####
 
         col.separator()
         col.label(text="Rotate Faces:")
@@ -3622,7 +4113,7 @@ class TISSUE_PT_tessellate(Panel):
         col.separator()
         col.label(text="Other:")
         col.operator("object.dual_mesh")
-        col.operator("object.polyhedra_wireframe", icon='MOD_WIREFRAME')
+        col.operator("object.polyhedra_wireframe", icon='MOD_WIREFRAME', text='Polyhedra Wireframe')
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
 
 
@@ -3641,11 +4132,15 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.random_materials", icon='COLOR')
         col.operator("object.weight_to_materials", icon='GROUP_VERTEX')
 
+        col.separator()
+        col.label(text="Utils:")
+        col.operator("render.tissue_render_animation", icon='RENDER_ANIMATION')
+
 class TISSUE_PT_tessellate_object(Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"
-    bl_label = "Tessellate Settings"
+    bl_label = "Tissue Tessellate"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
@@ -3656,6 +4151,7 @@ class TISSUE_PT_tessellate_object(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
+        tissue_props = ob.tissue
         allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
 
         try:
@@ -3675,16 +4171,16 @@ class TISSUE_PT_tessellate_object(Panel):
             row = col.row(align=True)
 
             set_tessellate_handler(self,context)
-            set_animatable_fix_handler(self,context)
-            row.operator("object.tissue_refresh_tessellate", icon='FILE_REFRESH')
-            lock_icon = 'LOCKED' if props.bool_lock else 'UNLOCKED'
+            ###### set_animatable_fix_handler(self,context)
+            row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
+            lock_icon = 'LOCKED' if tissue_props.bool_lock else 'UNLOCKED'
             #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
-            deps_icon = 'LINKED' if props.bool_dependencies else 'UNLINKED'
-            row.prop(props, "bool_dependencies", text="", icon=deps_icon)
-            row.prop(props, "bool_lock", text="", icon=lock_icon)
+            deps_icon = 'LINKED' if tissue_props.bool_dependencies else 'UNLINKED'
+            row.prop(tissue_props, "bool_dependencies", text="", icon=deps_icon)
+            row.prop(tissue_props, "bool_lock", text="", icon=lock_icon)
             col2 = row.column(align=True)
-            col2.prop(props, "bool_run", text="",icon='TIME')
-            col2.enabled = not props.bool_lock
+            col2.prop(tissue_props, "bool_run", text="",icon='TIME')
+            col2.enabled = not tissue_props.bool_lock
             layout.use_property_split = True
             layout.use_property_decorate = False  # No animation.
             col = layout.column(align=True)
@@ -3877,6 +4373,7 @@ class TISSUE_PT_tessellate_rotation(Panel):
                           full_event=False, emboss=True, index=-1)
             if props.rotation_mode == 'RANDOM':
                 col.prop(props, "rand_seed")
+                col.prop(props, "rand_step")
             else:
                 col.prop(props, "rotation_shift")
 
@@ -3954,10 +4451,36 @@ class TISSUE_PT_tessellate_thickness(Panel):
             row2.prop(props, "vertex_group_thickness_factor")
             row2.enabled = props.vertex_group_thickness in ob0.vertex_groups.keys()
 
-            # Direction
+class TISSUE_PT_tessellate_direction(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_parent_id = "TISSUE_PT_tessellate_object"
+    bl_label = "Direction"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            bool_tessellated = context.object.tissue_tessellate.generator != None
+            return context.object.type == 'MESH' and bool_tessellated
+        except:
+            return False
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_tessellate
+        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
+
+        try:
+            bool_tessellated = props.generator or props.component != None
+            ob0 = props.generator
+            ob1 = props.component
+        except: bool_tessellated = False
+        layout = self.layout
+        #layout.use_property_split = True
+        if bool_tessellated:
             col = layout.column(align=True)
-            row = col.row(align=True)
-            row.label(text="Direction:")
             row = col.row(align=True)
             row.prop(
             props, "normals_mode", text="Direction", icon='NONE', expand=True,
@@ -3970,6 +4493,19 @@ class TISSUE_PT_tessellate_thickness(Panel):
             if props.warning_message_thickness != '':
                 col.separator()
                 col.label(text=props.warning_message_thickness, icon='ERROR')
+            if props.normals_mode == 'VERTS':
+                col.separator()
+                col.prop(props, "smooth_normals")
+                if props.smooth_normals:
+                    row = col.row(align=True)
+                    row.prop(props, "smooth_normals_iter")
+                    row.separator()
+                    row.prop_search(props, 'vertex_group_smooth_normals',
+                        ob0, "vertex_groups", text='')
+                    col2 = row.column(align=True)
+                    col2.prop(props, "invert_vertex_group_smooth_normals", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+                    col2.enabled = props.vertex_group_smooth_normals in ob0.vertex_groups.keys()
+
 
 
 class TISSUE_PT_tessellate_options(Panel):
@@ -4010,17 +4546,50 @@ class TISSUE_PT_tessellate_options(Panel):
             col = layout.column(align=True)
             if props.merge:
                 col.prop(props, "merge_thres")
+                col.prop(props, "merge_open_edges_only")
                 col.prop(props, "bool_dissolve_seams")
                 col.prop(props, "close_mesh")
-                if props.close_mesh != 'NONE':
-                    #row = col.row(align=True)
+                if props.close_mesh in ('BRIDGE', 'BRIDGE_CAP'):
                     col.separator()
-                    col.prop(props, "open_edges_crease", text="Crease")
-                    col.prop(props, "cap_material_index", text='Material Index')
+                    if props.close_mesh == 'BRIDGE_CAP':
+                        if props.vertex_group_bridge_owner == 'BASE': ob_bridge = ob0
+                        else: ob_bridge = ob1
+                        row = col.row(align=True)
+                        row.prop_search(props, 'vertex_group_bridge',
+                            ob_bridge, "vertex_groups")
+                        row.prop(props, "invert_vertex_group_bridge", text="",
+                            toggle=True, icon='ARROW_LEFTRIGHT')
+                        row = col.row(align=True)
+                        row.prop(props, "vertex_group_bridge_owner", expand=True,
+                                slider=False, toggle=False, icon_only=False, event=False,
+                                full_event=False, emboss=True, index=-1)
+                        col2 = row.column(align=True)
+                        row2 = col2.row(align=True)
+                    col.prop(props, "bridge_edges_crease", text="Crease")
+                    col.prop(props, "bridge_material_offset", text='Material Offset')
+                    '''
                     if props.close_mesh == 'BRIDGE' and False:
                         col.separator()
                         col.prop(props, "bridge_cuts")
                         col.prop(props, "bridge_smoothness")
+                    '''
+                if props.close_mesh in ('CAP', 'BRIDGE_CAP'):
+                    #row = col.row(align=True)
+                    col.separator()
+                    if props.close_mesh == 'BRIDGE_CAP':
+                        if props.vertex_group_cap_owner == 'BASE': ob_cap = ob0
+                        else: ob_cap = ob1
+                        row = col.row(align=True)
+                        row.prop_search(props, 'vertex_group_cap',
+                            ob_cap, "vertex_groups")
+                        row.prop(props, "invert_vertex_group_cap", text="",
+                            toggle=True, icon='ARROW_LEFTRIGHT')
+                        row = col.row(align=True)
+                        row.prop(props, "vertex_group_cap_owner", expand=True,
+                            slider=False, toggle=False, icon_only=False, event=False,
+                            full_event=False, emboss=True, index=-1)
+                    col.prop(props, "open_edges_crease", text="Crease")
+                    col.prop(props, "cap_material_offset", text='Material Offset')
                 if props.warning_message_merge:
                     col.separator()
                     col.label(text=props.warning_message_merge, icon='ERROR')
@@ -4201,7 +4770,7 @@ class TISSUE_PT_tessellate_iterations(Panel):
 
 class tissue_rotate_face_right(Operator):
     bl_idname = "mesh.tissue_rotate_face_right"
-    bl_label = "Rotate Faces Right"
+    bl_label = "Tissue Rotate Faces Right"
     bl_description = "Rotate clockwise selected faces and update tessellated meshes"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -4242,8 +4811,9 @@ class tissue_rotate_face_right(Operator):
         for o in [obj for obj in bpy.data.objects if
                   obj.tissue_tessellate.generator == ob and obj.visible_get()]:
             context.view_layer.objects.active = o
+
             #override = {'object': o, 'mode': 'OBJECT', 'selected_objects': [o]}
-            if not o.tissue_tessellate.bool_lock:
+            if not o.tissue.bool_lock:
                 bpy.ops.object.tissue_update_tessellate()
             o.select_set(False)
         ob.select_set(True)
@@ -4255,7 +4825,7 @@ class tissue_rotate_face_right(Operator):
 
 class tissue_rotate_face_left(Operator):
     bl_idname = "mesh.tissue_rotate_face_left"
-    bl_label = "Rotate Faces Left"
+    bl_label = "Tissue Rotate Faces Left"
     bl_description = "Rotate counterclockwise selected faces and update tessellated meshes"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -4296,7 +4866,7 @@ class tissue_rotate_face_left(Operator):
         for o in [obj for obj in bpy.data.objects if
                   obj.tissue_tessellate.generator == ob and obj.visible_get()]:
             context.view_layer.objects.active = o
-            if not o.tissue_tessellate.bool_lock:
+            if not o.tissue.bool_lock:
                 bpy.ops.object.tissue_update_tessellate()
             o.select_set(False)
         ob.select_set(True)
@@ -4534,21 +5104,23 @@ def convert_to_triangles(ob, props, use_modifiers):
     new_ob.data.update()
     return new_ob
 
-def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edges_crease, cap_material_index, use_bmesh):
+def merge_components(ob, props, use_bmesh):
 
     if not use_bmesh:
         skip = True
         ob.active_shape_key_index = 1
-        for sk in ob.data.shape_keys.key_blocks:
-            if skip:
-                skip = False
-                continue
-            sk.mute = True
+        if ob.data.shape_keys != None:
+            for sk in ob.data.shape_keys.key_blocks:
+                if skip:
+                    skip = False
+                    continue
+                sk.mute = True
         ob.data.update()
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.mode_set(mode='OBJECT')
-        for sk in ob.data.shape_keys.key_blocks:
-            sk.mute = False
+        if ob.data.shape_keys != None:
+            for sk in ob.data.shape_keys.key_blocks:
+                sk.mute = False
         ob.data.update()
 
         bpy.ops.object.mode_set(mode='EDIT')
@@ -4559,9 +5131,9 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
             use_multi_face=False, use_non_contiguous=False, use_verts=False)
 
         bpy.ops.mesh.remove_doubles(
-            threshold=merge_thres, use_unselected=False)
+            threshold=props.merge_thres, use_unselected=False)
 
-        if bool_dissolve_seams:
+        if props.bool_dissolve_seams:
             bpy.ops.mesh.select_mode(type='EDGE')
             bpy.ops.mesh.select_all(action='DESELECT')
             bpy.ops.object.mode_set(mode='OBJECT')
@@ -4571,549 +5143,200 @@ def merge_components(ob, merge_thres, bool_dissolve_seams, close_mesh, open_edge
             bpy.ops.mesh.dissolve_edges()
         bpy.ops.object.mode_set(mode='OBJECT')
 
-        if close_mesh != 'NONE':
+        if props.close_mesh != 'NONE':
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_mode(
                 use_extend=False, use_expand=False, type='EDGE')
             bpy.ops.mesh.select_non_manifold(
                 extend=False, use_wire=False, use_boundary=True,
                 use_multi_face=False, use_non_contiguous=False, use_verts=False)
-            if open_edges_crease != 0:
-                bpy.ops.transform.edge_crease(value=open_edges_crease)
-            if close_mesh == 'CAP':
+            if props.close_mesh == 'CAP':
+                if props.open_edges_crease != 0:
+                    bpy.ops.transform.edge_crease(value=props.open_edges_crease)
                 bpy.ops.mesh.edge_face_add()
-            if close_mesh == 'BRIDGE':
+                bpy.ops.object.mode_set(mode='OBJECT')
+                for f in ob.data.polygons:
+                    if f.select: f.material_index += props.cap_material_offset
+            elif props.close_mesh == 'BRIDGE':
                 try:
+                    if props.bridge_edges_crease != 0:
+                        bpy.ops.transform.edge_crease(value=props.bridge_edges_crease)
                     bpy.ops.mesh.bridge_edge_loops(
                         type='PAIRS',
-                        number_cuts=bridge_cuts,
+                        number_cuts=props.bridge_cuts,
                         interpolation='SURFACE',
-                        smoothness=bridge_smoothness)
+                        smoothness=props.bridge_smoothness)
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    for f in ob.data.polygons:
+                        if f.select: f.material_index += props.bridge_material_offset
                 except: pass
-            bpy.ops.object.mode_set(mode='OBJECT')
-            for f in new_ob.data.polygons:
-                if f.select: f.material_index = cap_material_index
+            elif props.close_mesh == 'BRIDGE_CAP':
+                # BRIDGE
+                try:
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    vg = ob.vertex_groups[props.vertex_group_bridge]
+                    weight = get_weight_numpy(vg, len(ob.data.vertices))
+                    for e in ob.data.edges:
+                        if weight[e.vertices[0]]*weight[e.vertices[1]] < 1:
+                            e.select = False
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    if props.bridge_edges_crease != 0:
+                        bpy.ops.transform.edge_crease(value=props.bridge_edges_crease)
+                    bpy.ops.mesh.bridge_edge_loops(
+                        type='PAIRS',
+                        number_cuts=props.bridge_cuts,
+                        interpolation='SURFACE',
+                        smoothness=props.bridge_smoothness)
+                    for f in ob.data.polygons:
+                        if f.select: f.material_index += props.bridge_material_offset
+                    bpy.ops.mesh.select_all(action='DESELECT')
+                    bpy.ops.mesh.select_non_manifold(
+                        extend=False, use_wire=False, use_boundary=True,
+                        use_multi_face=False, use_non_contiguous=False, use_verts=False)
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                except: pass
+                # CAP
+                try:
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    vg = ob.vertex_groups[props.vertex_group_cap]
+                    weight = get_weight_numpy(vg, len(ob.data.vertices))
+                    for e in ob.data.edges:
+                        if weight[e.vertices[0]]*weight[e.vertices[1]] < 1:
+                            e.select = False
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    if props.open_edges_crease != 0:
+                        bpy.ops.transform.edge_crease(value=props.open_edges_crease)
+                    bpy.ops.mesh.edge_face_add()
+                    for f in ob.data.polygons:
+                        if f.select: f.material_index += props.cap_material_offset
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                except: pass
     else:
-
-
         bm = bmesh.new()
         bm.from_mesh(ob.data.copy())
-        #boundary_verts = [v for v in bm.verts if v.is_boundary or v.is_wire]
-        boundary_verts = bm.verts
-        bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=merge_thres)
+        if props.merge_open_edges_only:
+            boundary_verts = [v for v in bm.verts if v.is_boundary or v.is_wire]
+        else:
+            boundary_verts = bm.verts
+        bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=props.merge_thres)
 
-        if bool_dissolve_seams:
+        if props.bool_dissolve_seams:
             seam_edges = [e for e in bm.edges if e.seam]
             bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
-        if close_mesh != 'NONE':
+        if props.close_mesh != 'NONE':
             bm.edges.ensure_lookup_table()
             # set crease
             crease_layer = bm.edges.layers.crease.verify()
             boundary_edges = [e for e in bm.edges if e.is_boundary]
-            for e in boundary_edges:
-                e[crease_layer] = open_edges_crease
-            if close_mesh == 'BRIDGE':
+            if props.close_mesh == 'BRIDGE':
                 try:
+                    for e in boundary_edges:
+                        e[crease_layer] = props.bridge_edges_crease
                     closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
+                    for f in closed['faces']: f.material_index += props.bridge_material_offset
                 except:
                     return 'bridge_error'
-            if close_mesh == 'BRIDGE_CAP':
+            elif props.close_mesh == 'CAP':
+                for e in boundary_edges:
+                    e[crease_layer] = props.open_edges_crease
+                closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
+                for f in closed['faces']: f.material_index += props.cap_material_offset
+            elif props.close_mesh == 'BRIDGE_CAP':
+                # BRIDGE
+                dvert_lay = bm.verts.layers.deform.active
                 try:
                     dvert_lay = bm.verts.layers.deform.active
-                    group_index = ob.vertex_groups["Bridge"].index
+                    group_index = ob.vertex_groups[props.vertex_group_bridge].index
                     bw = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                    if props.invert_vertex_group_bridge: bw = 1-bw
                     bridge_edges = [e for e in boundary_edges if bw[e.verts[0].index]*bw[e.verts[1].index] >= 1]
+                    for e in bridge_edges:
+                        e[crease_layer] = props.bridge_edges_crease
                     closed = bmesh.ops.bridge_loops(bm, edges=bridge_edges, use_pairs=True)
-                    for f in closed['faces']: f.material_index = cap_material_index
+                    for f in closed['faces']: f.material_index += props.bridge_material_offset
                     boundary_edges = [e for e in bm.edges if e.is_boundary]
                 except: pass
-            if close_mesh in ('CAP', 'BRIDGE_CAP'):
-                closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
-            for f in closed['faces']: f.material_index = cap_material_index
+                # CAP
+                try:
+                    dvert_lay = bm.verts.layers.deform.active
+                    group_index = ob.vertex_groups[props.vertex_group_cap].index
+                    bw = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                    if props.invert_vertex_group_cap: bw = 1-bw
+                    cap_edges = [e for e in boundary_edges if bw[e.verts[0].index]*bw[e.verts[1].index] >= 1]
+                    for e in cap_edges:
+                        e[crease_layer] = props.open_edges_crease
+                    closed = bmesh.ops.holes_fill(bm, edges=cap_edges)
+                    for f in closed['faces']: f.material_index += props.cap_material_offset
+                except: pass
         bm.to_mesh(ob.data)
 
-class polyhedra_wireframe(Operator):
-    bl_idname = "object.polyhedra_wireframe"
-    bl_label = "Polyhedra Wireframe"
-    bl_description = "Generate wireframes around the faces.\
-                      \nDoesn't works with boundary edges.\
-                      \n(Experimental)"
+class tissue_render_animation(Operator):
+    bl_idname = "render.tissue_render_animation"
+    bl_label = "Tissue Render Animation"
+    bl_description = "Turnaround for issues related to animatable tessellation"
     bl_options = {'REGISTER', 'UNDO'}
 
-    thickness : FloatProperty(
-        name="Thickness", default=0.1, min=0, soft_max=10,
-        description="Wireframe thickness"
-        )
-
-    subdivisions : IntProperty(
-        name="Segments", default=1, min=1, soft_max=10,
-        description="Max sumber of segments, used for the longest edge"
-        )
-
-    dissolve_inners : BoolProperty(
-        name="Dissolve Inners", default=False,
-        description="Dissolve inner edges"
-        )
-
-    @classmethod
-    def poll(cls, context):
-        try:
-            #bool_tessellated = context.object.tissue_tessellate.generator != None
-            ob = context.object
-            return ob.type == 'MESH' and ob.mode == 'OBJECT'# and bool_tessellated
-        except:
-            return False
+    start = True
+    path = ""
+    timer = None
 
     def invoke(self, context, event):
+        self.start = True
         return context.window_manager.invoke_props_dialog(self)
 
-    def execute(self, context):
-        start_time = time.time()
-        ob = bpy.context.object
-        me = simple_to_mesh(ob)
-        bm = bmesh.new()
-        bm.from_mesh(me)
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(text="All frames will be rendered in the background.")
+        col.label(text="Press ESC to abort.")
 
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
-
-        double_faces = []
-        for f in bm.faces:
-            verts0 = [v.co for v in f.verts]
-            verts1 = [v.co for v in f.verts]
-            verts1.reverse()
-            double_faces.append(verts0)
-            double_faces.append(verts1)
-
-        bm1 = bmesh.new()
-
-        for verts in double_faces:
-            new_verts = []
-            for v in verts:
-                new_verts.append(bm1.verts.new(v))
-            bm1.faces.new(new_verts)
-
-        bm1.verts.ensure_lookup_table()
-        bm1.edges.ensure_lookup_table()
-        bm1.faces.ensure_lookup_table()
-
-        n_faces = len(bm.faces)
-        n_doubles = len(bm1.faces)
-
-        polyhedra = []
-
-        for e in bm.edges:
-            done = []
-            e_faces = len(e.link_faces)
-            if e_faces < 2:
-                bm.free()
-                bm1.free()
-                message = "Only edges with two or more connected faces are allowed"
-                self.report({'ERROR'}, message)
+    def modal(self, context, event):
+        '''
+        # check render format
+        format = context.scene.render.image_settings.file_format
+        if format in ('FFMPEG', 'AVI_RAW', 'AVI_JPEG'):
+            message = "Please use an image format as render output"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
+        '''
+        remove_tessellate_handler()
+        scene = context.scene
+        if event.type == 'ESC' or scene.frame_current >= scene.frame_end:
+            scene.render.filepath = self.path
+            # set again the handler
+            blender_handlers = bpy.app.handlers.frame_change_post
+            blender_handlers.append(anim_tessellate)
+            context.window_manager.event_timer_remove(self.timer)
+            if event.type == 'ESC':
+                print("Tissue: Render Animation aborted.")
                 return {'CANCELLED'}
-            edge_vec =  e.verts[1].co - e.verts[0].co
-
-            # run first face
-            for i1 in range(e_faces-1):
-                f1 = e.link_faces[i1]
-                #edge_verts1 = [v.index for v in f1.verts if v in e.verts]
-                verts1 = [v.index for v in f1.verts]
-                va1 = verts1.index(e.verts[0].index)
-                vb1 = verts1.index(e.verts[1].index)
-                dir1 = va1 == (vb1+1)%len(verts1)
-                edge_vec1 = edge_vec if dir1 else -edge_vec
-
-                # run second face
-                faces2 = []
-                normals2 = []
-                for i2 in range(i1+1,e_faces):
-                #for i2 in range(n_faces):
-                    if i1 == i2: continue
-                    f2 = e.link_faces[i2]
-                    f2.normal_update()
-                    #edge_verts2 = [v.index for v in f2.verts if v in e.verts]
-                    verts2 = [v.index for v in f2.verts]
-                    va2 = verts2.index(e.verts[0].index)
-                    vb2 = verts2.index(e.verts[1].index)
-                    dir2 = va2 == (vb2+1)%len(verts2)
-                    # check for normal consistency
-                    if dir1 != dir2:
-                        # add face
-                        faces2.append(f2.index+1)
-                        normals2.append(f2.normal)
-                    else:
-                        # add flipped face
-                        faces2.append(-(f2.index+1))
-                        normals2.append(-f2.normal)
-
-                # find first polyhedra (positive)
-                plane_x = f1.normal                     # normal
-                plane_y = plane_x.cross(edge_vec1)      # tangent face perp edge
-                id1 = (f1.index+1)
-
-                # check consistent faces
-                if id1 not in done:
-                    id2 = None
-                    min_angle = 10
-                    for i2, n2 in zip(faces2,normals2):
-                        v2 = flatten_vector(-n2, plane_x, plane_y)
-                        angle = vector_rotation(v2)
-                        if angle < min_angle:
-                            id2 = i2
-                            min_angle = angle
-                    done.append(id2)
-                    add = True
-                    for p in polyhedra:
-                        if id1 in p or id2 in p:
-                            add = False
-                            if id2 not in p: p.append(id2)
-                            if id1 not in p: p.append(id1)
-                            break
-                    if add: polyhedra.append([id1, id2])
-
-                # find second polyhedra (negative)
-                plane_x = -f1.normal                    # normal
-                plane_y = plane_x.cross(-edge_vec1)      # tangent face perp edge
-                id1 = -(f1.index+1)
-
-                if id1 not in done:
-                    id2 = None
-                    min_angle = 10
-                    for i2, n2 in zip(faces2, normals2):
-                        v2 = flatten_vector(n2, plane_x, plane_y)
-                        angle = vector_rotation(v2)
-                        if angle < min_angle:
-                            id2 = -i2
-                            min_angle = angle
-                    done.append(id2)
-                    add = True
-                    for p in polyhedra:
-                        if id1 in p or id2 in p:
-                            add = False
-                            if id2 not in p: p.append(id2)
-                            if id1 not in p: p.append(id1)
-                            break
-                    if add: polyhedra.append([id1, id2])
-
-        for i in range(len(bm1.faces)):
-            for j in (False,True):
-                if j: id = i+1
-                else: id = -(i+1)
-                join = []
-                keep = []
-                for p in polyhedra:
-                    if id in p: join += p
-                    else: keep.append(p)
-                if len(join) > 0:
-                    keep.append(list(dict.fromkeys(join)))
-                    polyhedra = keep
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, find polyhedra in {:.4f} sec'.format(end_time-start_time))
-
-        delete_faces = []
-        wireframe_faces = []
-        not_wireframe_faces = []
-        flat_faces = []
-
-        bm.free()
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
-
-        bm1.faces.index_update()
-        #merge_verts = []
-        for p in polyhedra:
-            delete_faces_poly = []
-            wireframe_faces_poly = []
-            faces_id = [(f-1)*2 if f > 0 else (-f-1)*2+1 for f in p]
-            faces_id_neg = [(-f-1)*2 if -f > 0 else (f-1)*2+1 for f in p]
-            merge_verts = []
-            faces = [bm1.faces[f_id] for f_id in faces_id]
-            for f in faces:
-                delete = False
-                if f.index in delete_faces: continue
-                '''
-                cen = f.calc_center_median()
-                for e in f.edges:
-                    mid = (e.verts[0].co + e.verts[1].co)/2
-                    vec1 = e.verts[0].co - e.verts[1].co
-                    vec2 = mid - cen
-                    ang = Vector.angle(vec1,vec2)
-                    length = vec2.length
-                    #length = sin(ang)*length
-                    if length < self.thickness/2:
-                        delete = True
-                '''
-                if False:
-                    sides = len(f.verts)
-                    for i in range(sides):
-                        v = f.verts[i].co
-                        v0 = f.verts[(i-1)%sides].co
-                        v1 = f.verts[(i+1)%sides].co
-                        vec0 = v0 - v
-                        vec1 = v1 - v
-                        ang = (pi - vec0.angle(vec1))/2
-                        length = min(vec0.length, vec1.length)*sin(ang)
-                        if length < self.thickness/2:
-                            delete = True
-                            break
-
-                if delete:
-                    delete_faces_poly.append(f.index)
-                else:
-                    wireframe_faces_poly.append(f.index)
-                merge_verts += [v for v in f.verts]
-            if len(wireframe_faces_poly) < 2:
-                delete_faces += faces_id
-                not_wireframe_faces += faces_id_neg
             else:
-                wireframe_faces += wireframe_faces_poly
-                flat_faces += delete_faces_poly
+                print("Tissue: Render Animation completed!")
+                return {'FINISHED'}
+        else:
+            self.execute(context)
+        return {'RUNNING_MODAL'}
 
-            #wireframe_faces = list(dict.fromkeys(wireframe_faces))
-            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.000001)
-            bm1.edges.ensure_lookup_table()
-            bm1.faces.ensure_lookup_table()
-            bm1.faces.index_update()
-        wireframe_faces = [i for i in wireframe_faces if i not in not_wireframe_faces]
-        wireframe_faces = list(dict.fromkeys(wireframe_faces))
+    def execute(self, context):
+        # check output format
+        format = context.scene.render.image_settings.file_format
+        if format in ('FFMPEG', 'AVI_RAW', 'AVI_JPEG'):
+            message = "Please use an image format as render output"
+            self.report({'ERROR'}, message)
+            return {'CANCELLED'}
 
-        flat_faces = list(dict.fromkeys(flat_faces))
-
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
-
-
-        ############# FRAME #############
-        bm1.faces.index_update()
-        wireframe_faces = [bm1.faces[i] for i in wireframe_faces]
-        original_faces = wireframe_faces
-        #bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.001)
-
-        # detect edge loops
-
-        loops = []
-        boundaries_mat = []
-        neigh_face_center = []
-        face_normals = []
-
-        # compute boundary frames
-        new_faces = []
-        wire_length = []
-        vert_ids = []
-
-        # append regular faces
-
-        for f in original_faces:
-            loop = list(f.verts)
-            loops.append(loop)
-            boundaries_mat.append([f.material_index for v in loop])
-            f.normal_update()
-            face_normals.append([f.normal for v in loop])
-
-        push_verts = []
-        inner_loops = []
-
-        for loop_index, loop in enumerate(loops):
-            is_boundary = loop_index < len(neigh_face_center)
-            materials = boundaries_mat[loop_index]
-            new_loop = []
-            loop_ext = [loop[-1]] + loop + [loop[0]]
-
-            # calc tangents
-            tangents = []
-            for i in range(len(loop)):
-                # vertices
-                vert0 = loop_ext[i]
-                vert = loop_ext[i+1]
-                vert1 = loop_ext[i+2]
-                # edge vectors
-                vec0 = (vert0.co - vert.co).normalized()
-                vec1 = (vert.co - vert1.co).normalized()
-                # tangent
-                _vec1 = -vec1
-                _vec0 = -vec0
-                ang = (pi - vec0.angle(vec1))/2
-                normal = face_normals[loop_index][i]
-                tan0 = normal.cross(vec0)
-                tan1 = normal.cross(vec1)
-                tangent = (tan0 + tan1).normalized()/sin(ang)*self.thickness/2
-                tangents.append(tangent)
-
-            # calc correct direction for boundaries
-            mult = -1
-            if is_boundary:
-                dir_val = 0
-                for i in range(len(loop)):
-                    surf_point = neigh_face_center[loop_index][i]
-                    tangent = tangents[i]
-                    vert = loop_ext[i+1]
-                    dir_val += tangent.dot(vert.co - surf_point)
-                if dir_val > 0: mult = 1
-
-            # add vertices
-            for i in range(len(loop)):
-                vert = loop_ext[i+1]
-                area = 1
-                new_co = vert.co + tangents[i] * mult * area
-                # add vertex
-                new_vert = bm1.verts.new(new_co)
-                new_loop.append(new_vert)
-                vert_ids.append(vert.index)
-            new_loop.append(new_loop[0])
-
-            # add faces
-            materials += [materials[0]]
-            for i in range(len(loop)):
-                v0 = loop_ext[i+1]
-                v1 = loop_ext[i+2]
-                v2 = new_loop[i+1]
-                v3 = new_loop[i]
-                face_verts = [v1,v0,v3,v2]
-                if mult == -1: face_verts = [v0,v1,v2,v3]
-                new_face = bm1.faces.new(face_verts)
-                #new_face.material_index = int((v0.co - v1.co).length/max_segment)    # materials[i+1]
-                new_face.select = True
-                new_faces.append(new_face)
-                wire_length.append((v0.co - v1.co).length)
-            max_segment = max(wire_length)/self.subdivisions
-            for f,l in zip(new_faces,wire_length):
-                f.material_index = min(int(l/max_segment), self.subdivisions-1)
-            bm1.verts.ensure_lookup_table()
-            push_verts += [v.index for v in loop_ext]
-
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, frames in {:.4f} sec'.format(end_time-start_time))
-
-        bm1.verts.ensure_lookup_table()
-        bm1.edges.ensure_lookup_table()
-        bm1.faces.ensure_lookup_table()
-        bm1.verts.index_update()
-
-        smooth_corners = [True] * len(bm1.verts)
-
-        corners = [[] for i in range(len(bm1.verts))]
-        normals = [0]*len(bm1.verts)
-        vertices = [0]*len(bm1.verts)
-        for f in new_faces:
-            f.normal_update()
-            v0 = f.verts[0]
-            v1 = f.verts[1]
-            id = v0.index
-            corners[id].append((v1.co - v0.co).normalized())
-            v0.normal_update()
-            normals[id] = v0.normal
-            vertices[id] = v0
-            smooth_corners[id] = False
-
-        bm1.verts.index_update()
-        for i, vecs in enumerate(corners):
-            if len(vecs) > 0:
-                v = vertices[i]
-                nor = normals[i]
-                ang = 0
-                for vec in vecs:
-                    ang += nor.angle(vec)
-                ang /= len(vecs)
-                div = sin(ang)
-                if div == 0: div = 1
-                v.co += nor*self.thickness/2/div
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
-
-        flat_faces = [bm1.faces[i] for i in flat_faces]
-        for f in flat_faces:
-            f.material_index = self.subdivisions+1
-            for v in f.verts:
-                if smooth_corners[v.index]:
-                    v.co += v.normal*self.thickness/2
-                    smooth_corners[v.index] = False
-
-
-        delete_faces = delete_faces + [f.index for f in original_faces]
-        delete_faces = list(dict.fromkeys(delete_faces))
-        delete_faces = [bm1.faces[i] for i in delete_faces]
-        bmesh.ops.delete(bm1, geom=delete_faces, context='FACES')
-
-        bmesh.ops.remove_doubles(bm1, verts=bm1.verts, dist=self.thickness/100)
-        bm1.faces.ensure_lookup_table()
-        bm1.edges.ensure_lookup_table()
-        bm1.verts.ensure_lookup_table()
-
-        ### SUBDIVIDE EDGES ###
-
-        bm1.edges.index_update()
-        subs = self.subdivisions
-        cut_faces = [[] for i in range(subs-1)]
-        corners = []
-        if subs > 1:
-            max_segment = max(wire_length)/subs
-            for i in range(subs):
-                edges = []
-                for f in [fm for fm in bm1.faces if fm.material_index == i]:
-                    edges += [f.edges[0].index,f.edges[2].index]
-                    f.material_index = 0
-                    #corners += [v.index for v in f.verts]#[f.verts[0].index, f.verts[1].index]
-                edges = list(dict.fromkeys(edges))
-                edges = [bm1.edges[i] for i in edges]
-                #splitted =
-                bmesh.ops.subdivide_edges(bm1, edges=edges, cuts=i, use_only_quads=False)
-                bm1.verts.ensure_lookup_table()
-                bm1.edges.ensure_lookup_table()
-                bm1.faces.ensure_lookup_table()
-                bm1.verts.index_update()
-            for f in bm1.faces:
-                f.material_index = max(0, f.material_index - subs)
-            '''
-            for v in bm1.verts:
-                vfaces = v.link_faces
-                if len(vfaces) > 4:
-                    print(len(vfaces))
-                    for f in vfaces:
-                        if f.material_index < subs:
-                            f.material_index = 0
-            '''
-                #for f in [fm for fm in bm1.faces if fm.material_index == i]:
-                #    for v in f.verts:
-                #        if v.index in corners:
-                #            f.material_index = 0
-                #            continue
-
-                #bm1.faces.ensure_lookup_table()
-                #bm1.edges.index_update()
-        #for f in [fm for fm in bm1.faces if fm.material_index > 0]:
-            #for v in f.verts:
-                #if v in corners: f.material_index = 0
-
-
-        if self.dissolve_inners:
-            bm1.edges.index_update()
-            dissolve_edges = []
-            for f in bm1.faces:
-                e = f.edges[2]
-                if e not in dissolve_edges:
-                    dissolve_edges.append(e)
-            bmesh.ops.dissolve_edges(bm1, edges=dissolve_edges, use_verts=True, use_face_split=True)
-
-
-
-
-        bm1.to_mesh(me)
-        me.update()
-        bm1.free()
-        new_ob = bpy.data.objects.new("Wireframe", me)
-        bpy.context.collection.objects.link(new_ob)
-        for o in context.scene.objects: o.select_set(False)
-        new_ob.select_set(True)
-        context.view_layer.objects.active = new_ob
-        #new_ob.location = ob.location
-        new_ob.matrix_world = ob.matrix_world
-
-        end_time = time.time()
-        print('Tissue: Polyhedra wireframe in {:.4f} sec'.format(end_time-start_time))
-        return {'FINISHED'}
+        scene = context.scene
+        if self.start:
+            remove_tessellate_handler()
+            scene = context.scene
+            scene.frame_current = scene.frame_start
+            self.path = scene.render.filepath
+            context.window_manager.modal_handler_add(self)
+            self.timer = context.window_manager.event_timer_add(0.1, window = context.window)
+            self.start = False
+        else:
+            scene.frame_current += scene.frame_step
+        anim_tessellate(scene)
+        scene.render.filepath = "{}{:04d}".format(self.path,scene.frame_current)
+        bpy.ops.render.render(write_still=True)
+        return {'RUNNING_MODAL'}
