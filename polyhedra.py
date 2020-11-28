@@ -60,7 +60,7 @@ class polyhedra_wireframe(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     thickness : FloatProperty(
-        name="Thickness", default=132, min=0.001, soft_max=200,
+        name="Thickness", default=0.1, min=0.001, soft_max=200,
         description="Wireframe thickness"
         )
 
