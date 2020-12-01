@@ -84,6 +84,7 @@ classes = (
     tessellate_numpy.TISSUE_PT_tessellate,
     tessellate_numpy.tissue_rotate_face_left,
     tessellate_numpy.tissue_rotate_face_right,
+    tessellate_numpy.tissue_rotate_face_twice,
     tessellate_numpy.TISSUE_PT_tessellate_object,
     tessellate_numpy.TISSUE_PT_tessellate_frame,
     tessellate_numpy.TISSUE_PT_tessellate_thickness,
