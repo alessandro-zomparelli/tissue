@@ -2592,6 +2592,13 @@ class tissue_tessellate(Operator):
             default=False
     )
     '''
+    copy_settings : EnumProperty(
+            items=[(ob.name, ob.name, '') for ob in bpy.data.objects],
+            name="Copy Settings",
+            description="Copy settings from a previously tessellate dobject"
+    )
+    '''
+    '''
     bool_lock : BoolProperty(
             name="Lock",
             description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
@@ -3086,6 +3093,7 @@ class tissue_tessellate(Operator):
             layout = self.layout
             # Base and Component
             col = layout.column(align=True)
+            #col.prop(self, "copy_settings")
             row = col.row(align=True)
             row.label(text="BASE : " + self.generator)
             row.label(text="COMPONENT : " + self.component)
@@ -3125,6 +3133,8 @@ class tissue_tessellate(Operator):
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
             row = col.row(align=True)
+            # merge settings
+            row.prop(self, "merge")
             row.prop(self, "bool_smooth")
 
             # frame settings
@@ -3186,6 +3196,7 @@ class tissue_tessellate(Operator):
                     slider=True, toggle=False, icon_only=False, event=False,
                     full_event=False, emboss=True, index=-1)
                 row.enabled = not self.use_origin_offset
+                '''
                 col.prop(self, 'use_origin_offset')
 
                 col.separator()
@@ -3198,7 +3209,8 @@ class tissue_tessellate(Operator):
                     toggle=True, icon='ARROW_LEFTRIGHT')
                 row2.prop(self, "vertex_group_thickness_factor")
                 row2.enabled = self.vertex_group_thickness in ob0.vertex_groups.keys()
-
+                '''
+            '''
             # Component XY
             col.separator()
             row = col.row(align=True)
@@ -3224,210 +3236,10 @@ class tissue_tessellate(Operator):
                     self, "bounds_y", text="Bounds X", icon='NONE', expand=True,
                     slider=False, toggle=False, icon_only=False, event=False,
                     full_event=False, emboss=True, index=-1)
-
-            # merge settings
-            col = layout.column(align=True)
-            row = col.row(align=True)
-            row.prop(self, "merge")
-            if self.merge:
-                row = col.row(align=True)
-                row.prop(self, "merge_open_edges_only")
-                row.prop(self, "merge_thres")
-                col.separator()
-                row = col.row(align=True)
-                col2 = row.column(align=True)
-                col2.label(text='Close Mesh:')
-                col2 = row.column(align=True)
-                col2.prop(self, "close_mesh",text='')
-
-                if self.close_mesh in ('BRIDGE', 'BRIDGE_CAP'):
-                    if self.close_mesh == 'BRIDGE_CAP':
-                        col.separator()
-                        col.label(text='Bridge Vertex Group:')
-                        row = col.row(align=True)
-                        if self.vertex_group_bridge_owner == 'BASE': ob_bridge = ob0
-                        else: ob_bridge = ob1
-                        row.prop_search(self, 'vertex_group_bridge',
-                            ob_bridge, "vertex_groups", text='')
-                        row.prop(self, "invert_vertex_group_bridge", text="",
-                            toggle=True, icon='ARROW_LEFTRIGHT')
-                        row.prop(self, "vertex_group_bridge_owner", expand=True,
-                            slider=False, toggle=False, icon_only=False, event=False,
-                            full_event=False, emboss=True, index=-1)
-                    row = col.row(align=True)
-                    row.prop(self, "bridge_edges_crease", text="Crease")
-                    row.prop(self, "bridge_material_offset")
-
-                if self.close_mesh in ('CAP', 'BRIDGE_CAP'):
-                    if self.close_mesh == 'BRIDGE_CAP':
-                        col.separator()
-                        col.label(text='Cap Vertex Group:')
-                        row = col.row(align=True)
-                        if self.vertex_group_cap_owner == 'BASE': ob_cap = ob0
-                        else: ob_cap = ob1
-                        row.prop_search(self, 'vertex_group_cap',
-                            ob_cap, "vertex_groups", text='')
-                        row.prop(self, "invert_vertex_group_cap", text="",
-                            toggle=True, icon='ARROW_LEFTRIGHT')
-                        row.prop(self, "vertex_group_cap_owner", expand=True,
-                            slider=False, toggle=False, icon_only=False, event=False,
-                            full_event=False, emboss=True, index=-1)
-                    row = col.row(align=True)
-                    row.prop(self, "open_edges_crease", text="Crease")
-                    row.prop(self, "cap_material_offset")
-                    '''
-                    if self.close_mesh == 'BRIDGE' and False:
-                        row = col.row(align=True)
-                        row.prop(self, "bridge_cuts")
-                        row.prop(self, "bridge_smoothness")
-                    '''
-                row = col.row(align=True)
-                row.prop(self, "bool_dissolve_seams")
-
-            # Advanced Settings
-            col = layout.column(align=True)
+            '''
             col.separator()
-            col.separator()
-            row = col.row(align=True)
-            row.prop(self, "bool_advanced", icon='SETTINGS')
-            if self.bool_advanced:
-                # rotation
-                layout.use_property_split = True
-                layout.use_property_decorate = False  # No animation.
-                col = layout.column(align=True)
-                col.prop(self, "rotation_mode", text='Rotation', icon='NONE', expand=False,
-                         slider=True, toggle=False, icon_only=False, event=False,
-                         full_event=False, emboss=True, index=-1)
-                if self.rotation_mode == 'WEIGHT':
-                    col.separator()
-                    row = col.row(align=True)
-                    row.separator()
-                    row.separator()
-                    row.separator()
-                    row.prop_search(self, 'vertex_group_rotation',
-                        ob0, "vertex_groups", text='Vertex Group')
-                    col2 = row.column(align=True)
-                    col2.prop(self, "invert_vertex_group_rotation", text="", toggle=True, icon='ARROW_LEFTRIGHT')
-                    col2.enabled = self.vertex_group_rotation in ob0.vertex_groups.keys()
-                    col.separator()
-                    col.prop(self, "rotation_direction", expand=False,
-                              slider=True, toggle=False, icon_only=False, event=False,
-                              full_event=False, emboss=True, index=-1)
-                if self.rotation_mode == 'RANDOM':
-                    col.prop(self, "rand_seed")
-                    col.prop(self, "rand_step")
-                else:
-                    col.prop(self, "rotation_shift")
+            col.label(text="More settings in the Object Data Properties panel...", icon='PROPERTIES')
 
-                if self.rotation_mode == 'UV':
-                    uv_error = False
-                    if ob0.type != 'MESH':
-                        row = col.row(align=True)
-                        row.label(
-                            text="UV rotation supported only for Mesh objects",
-                            icon='ERROR')
-                        uv_error = True
-                    else:
-                        if len(ob0.data.uv_layers) == 0:
-                            row = col.row(align=True)
-                            row.label(text="'" + props.generator.name +
-                                      " doesn't have UV Maps", icon='ERROR')
-                            uv_error = True
-                    if uv_error:
-                        row = col.row(align=True)
-                        row.label(text="Default rotation will be used instead",
-                                  icon='INFO')
-                layout.use_property_split = False
-
-                # Direction
-                col = layout.column(align=True)
-                row = col.row(align=True)
-                row.label(text="Direction:")
-                row = col.row(align=True)
-                row.prop(
-                    self, "normals_mode", text="Direction", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-                if self.normals_mode == 'OBJECT':
-                    col.separator()
-                    col.prop_search(self, "target", context.scene, "objects", text='Target')
-                    #if ob.tissue_tessellate.warning_message_thickness != "":
-                    #    row.label(
-                    #        text=ob.tissue_tessellate.warning_message_thickness,
-                    #        icon='INFO'
-                    #        )
-                #row.enabled = self.fill_mode != 'PATCH'
-
-                allow_multi = False
-                allow_shapekeys = not self.com_modifiers
-                if self.com_modifiers: self.bool_shapekeys = False
-                for m in ob0.data.materials:
-                    try:
-                        o = bpy.data.objects[m.name]
-                        allow_multi = True
-                        try:
-                            if o.data.shape_keys is None: continue
-                            elif len(o.data.shape_keys.key_blocks) < 2: continue
-                            else: allow_shapekeys = not self.com_modifiers
-                        except: pass
-                    except: pass
-                # DATA #
-                col = layout.column(align=True)
-                col.label(text="Weight and Morphing:")
-                # vertex group + shape keys
-                row = col.row(align=True)
-                col2 = row.column(align=True)
-                col2.prop(self, "bool_vertex_group", icon='GROUP_VERTEX')
-                try:
-                    if len(ob0.vertex_groups) == 0:
-                        col2.enabled = False
-                except:
-                    col2.enabled = False
-                row.separator()
-                col2 = row.column(align=True)
-                row2 = col2.row(align=True)
-                row2.prop(self, "bool_shapekeys", text="Use Shape Keys",  icon='SHAPEKEY_DATA')
-                row2.enabled = allow_shapekeys
-
-                # LIMITED TESSELLATION
-                col = layout.column(align=True)
-                col.label(text="Limited Tessellation:")
-                row = col.row(align=True)
-                col2 = row.column(align=True)
-                col2.prop(self, "bool_multi_components", icon='MOD_TINT')
-                if not allow_multi:
-                    col2.enabled = False
-                    self.bool_multi_components = False
-                col.separator()
-                row = col.row(align=True)
-                col2 = row.column(align=True)
-                col2.prop(self, "bool_selection", text="On selected Faces", icon='RESTRICT_SELECT_OFF')
-                row.separator()
-                if ob0.type != 'MESH':
-                    col2.enabled = False
-                col2 = row.column(align=True)
-                col2.prop(self, "bool_material_id", icon='MATERIAL_DATA', text="Material ID")
-                if self.bool_material_id and not self.bool_multi_components:
-                    #col2 = row.column(align=True)
-                    col2.prop(self, "material_id")
-                col2.enabled = not self.bool_multi_components
-
-                col.separator()
-                row = col.row(align=True)
-                row.label(text='Reiterate Tessellation:', icon='FILE_REFRESH')
-                row.prop(self, 'iterations', text='Repeat', icon='SETTINGS')
-                if self.iterations > 1 and self.fill_mode == 'PATCH':
-                    col.separator()
-                    row = col.row(align=True)
-                    row.prop(self, 'patch_subs')
-                col.separator()
-                row = col.row(align=True)
-                row.label(text='Combine Iterations:')
-                row = col.row(align=True)
-                row.prop(
-                    self, "combine_mode", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
 
     def execute(self, context):
         allowed_obj = ('MESH', 'CURVE', 'META', 'SURFACE', 'FONT')
@@ -4108,6 +3920,7 @@ class TISSUE_PT_tessellate(Panel):
         col.label(text="Rotate Faces:")
         row = col.row(align=True)
         row.operator("mesh.tissue_rotate_face_left", text='Left', icon='LOOP_BACK')
+        row.operator("mesh.tissue_rotate_face_twice", text='Flip', icon='UV_SYNC_SELECT')
         row.operator("mesh.tissue_rotate_face_right", text='Right', icon='LOOP_FORWARDS')
 
         col.separator()
@@ -4115,7 +3928,6 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.dual_mesh")
         col.operator("object.polyhedra_wireframe", icon='MOD_WIREFRAME', text='Polyhedra Wireframe')
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
-
 
         act = context.object
         if act and act.type == 'MESH':
@@ -4794,6 +4606,61 @@ class tissue_rotate_face_right(Operator):
             if (face.select):
                 vs = face.verts[:]
                 vs2 = vs[-1:]+vs[:-1]
+                material_index = face.material_index
+                bm.faces.remove(face)
+                f2 = bm.faces.new(vs2)
+                f2.select = True
+                f2.material_index = material_index
+                bm.normal_update()
+
+        # trigger UI update
+        bmesh.update_edit_mesh(me)
+        bm.free()
+        ob.select_set(False)
+
+        # update tessellated meshes
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for o in [obj for obj in bpy.data.objects if
+                  obj.tissue_tessellate.generator == ob and obj.visible_get()]:
+            context.view_layer.objects.active = o
+
+            #override = {'object': o, 'mode': 'OBJECT', 'selected_objects': [o]}
+            if not o.tissue.bool_lock:
+                bpy.ops.object.tissue_update_tessellate()
+            o.select_set(False)
+        ob.select_set(True)
+        context.view_layer.objects.active = ob
+        bpy.ops.object.mode_set(mode='EDIT')
+        context.tool_settings.mesh_select_mode = mesh_select_mode
+
+        return {'FINISHED'}
+
+class tissue_rotate_face_twice(Operator):
+    bl_idname = "mesh.tissue_rotate_face_twice"
+    bl_label = "Tissue Rotate Faces Flip"
+    bl_description = "Fully rotate selected faces and update tessellated meshes"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            #bool_tessellated = context.object.tissue_tessellate.generator != None
+            ob = context.object
+            return ob.type == 'MESH' and ob.mode == 'EDIT'# and bool_tessellated
+        except:
+            return False
+
+    def execute(self, context):
+        ob = context.active_object
+        me = ob.data
+
+        bm = bmesh.from_edit_mesh(me)
+        mesh_select_mode = [sm for sm in context.tool_settings.mesh_select_mode]
+
+        for face in bm.faces:
+            if (face.select):
+                vs = face.verts[:]
+                vs2 = vs[-2:]+vs[:-2]
                 material_index = face.material_index
                 bm.faces.remove(face)
                 f2 = bm.faces.new(vs2)

@@ -106,7 +106,7 @@ class tissue_to_curve_prop(PropertyGroup):
         items=(
                 ('ALL', "All", ""),
                 ('CAGE', "Cage", ""),
-                ('INNERS', "Inners", "")
+                ('INNER', "Inner", "")
                 ),
         default='CAGE',
         name="Subdivided Edges",
@@ -137,7 +137,7 @@ class tissue_to_curve_prop(PropertyGroup):
         items=(
                 ('ALL', "All", ""),
                 ('BOUNDS', "Boundaries", ""),
-                ('INNERS', "Inners", "")
+                ('INNER', "Inner", "")
                 ),
         default='ALL',
         name="Boundary Selection",
@@ -190,6 +190,12 @@ class tissue_to_curve_prop(PropertyGroup):
         description="Depth bevel factor to use for zero vertex group influence",
         update = anim_curve_active
         )
+    only_sharp : BoolProperty(
+        default=False,
+        name="Only Sharp Edges",
+        description='Convert only Sharp edges',
+        update = anim_curve_active
+        )
 
 class tissue_convert_to_curve(Operator):
     bl_idname = "object.tissue_convert_to_curve"
@@ -216,7 +222,7 @@ class tissue_convert_to_curve(Operator):
         items=(
                 ('ALL', "All", ""),
                 ('CAGE', "Cage", ""),
-                ('INNERS', "Inners", "")
+                ('INNER', "Inner", "")
                 ),
         default='CAGE',
         name="Subdivided Edges"
@@ -251,7 +257,7 @@ class tissue_convert_to_curve(Operator):
         items=(
                 ('ALL', "All", ""),
                 ('BOUNDS', "Boundaries", ""),
-                ('INNERS', "Inners", "")
+                ('INNER', "Inner", "")
                 ),
         default='ALL',
         name="Boundary Selection"
@@ -288,6 +294,11 @@ class tissue_convert_to_curve(Operator):
         max=1,
         description="Depth bevel factor to use for zero vertex group influence"
         )
+    only_sharp : BoolProperty(
+        default=False,
+        name="Only Sharp Edges",
+        description='Convert only Sharp edges'
+        )
 
     @classmethod
     def poll(cls, context):
@@ -309,9 +320,9 @@ class tissue_convert_to_curve(Operator):
         layout = self.layout
         col = layout.column(align=True)
         row = col.row(align=True)
-        row.label(text='Object: ' + self.object)
+        #row.label(text='Object: ' + self.object)
         #row.prop_search(self, "object", context.scene, "objects")
-        row.prop(self, "use_modifiers")#, icon='MODIFIER', text='')
+        #row.prop(self, "use_modifiers")#, icon='MODIFIER', text='')
         col.separator()
         col.label(text='Conversion Mode:')
         row = col.row(align=True)
@@ -324,29 +335,32 @@ class tissue_convert_to_curve(Operator):
             col.prop(self, "system")
         col.separator()
         if self.mode in ('LOOPS', 'EDGES'):
-            col.label(text='Selective:')
-            if self.use_modifiers:
-                row = col.row(align=True)
-                row.prop(
-                    self, "subdivision_mode", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-                row.enabled = False
-                for m in bpy.data.objects[self.object].modifiers:
-                    if m.type in ('SUBSURF','MULTIRES'): row.enabled = True
-                col.separator()
             row = col.row(align=True)
-            row.prop(
-                self, "bounds_selection", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
+            row.prop(self, "use_modifiers")
+            col2 = row.column(align=True)
+            if self.use_modifiers:
+                col2.prop(self, "subdivision_mode", text='', icon='NONE', expand=False,
+                         slider=True, toggle=False, icon_only=False, event=False,
+                         full_event=False, emboss=True, index=-1)
+                col2.enabled = False
+            for m in bpy.data.objects[self.object].modifiers:
+                if m.type in ('SUBSURF','MULTIRES'): col2.enabled = True
             col.separator()
             row = col.row(align=True)
-            row.prop(
-                self, "periodic_selection", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-            row.enabled = self.mode == 'LOOPS'
+            row.label(text='Filter Edges:')
+            col2 = row.column(align=True)
+            col2.prop(self, "bounds_selection", text='', icon='NONE', expand=False,
+                     slider=True, toggle=False, icon_only=False, event=False,
+                     full_event=False, emboss=True, index=-1)
+            col2.prop(self, 'only_sharp')
+            col.separator()
+            if self.mode == 'LOOPS':
+                row = col.row(align=True)
+                row.label(text='Filter Loops:')
+                row.prop(self, "periodic_selection", text='', icon='NONE', expand=False,
+                         slider=True, toggle=False, icon_only=False, event=False,
+                         full_event=False, emboss=True, index=-1)
+                col.separator()
         col.label(text='Spline Type:')
         row = col.row(align=True)
         row.prop(
@@ -361,7 +375,7 @@ class tissue_convert_to_curve(Operator):
             row.prop(self, "nurbs_order")
         col.separator()
         col.prop(self, "bool_smooth")
-        if ob0.type == 'MESH':
+        if ob0.type == 'MESH' and self.mode != 'PARTICLES':
             col.separator()
             col.label(text='Variable Radius:')
             row = col.row(align=True)
@@ -404,6 +418,7 @@ class tissue_convert_to_curve(Operator):
         props.system = self.system
         props.periodic_selection = self.periodic_selection
         props.bounds_selection = self.bounds_selection
+        props.only_sharp = self.only_sharp
 
         new_ob.tissue.bool_lock = False
 
@@ -462,7 +477,6 @@ class tissue_convert_to_curve_update(Operator):
             _ob0 = ob0
             ob0 = convert_object_to_mesh(ob0, apply_modifiers=props.use_modifiers)
             me = ob0.data
-            print(me)
             n_verts = len(me.vertices)
             verts = [0]*n_verts*3
             me.vertices.foreach_get('co',verts)
@@ -488,17 +502,43 @@ class tissue_convert_to_curve_update(Operator):
                     bpy.data.meshes.remove(me0)
                     if props.subdivision_mode == 'CAGE':
                         todo_edges = todo_edges[:n_edges0*(2**subs)]
-                    elif props.subdivision_mode == 'INNERS':
+                    elif props.subdivision_mode == 'INNER':
                         todo_edges = todo_edges[n_edges0*(2**subs):]
 
+                if props.only_sharp:
+                    _todo_edges = []
+                    sharp_verts = []
+                    for e in todo_edges:
+                        edge = me.edges[e.index]
+                        if edge.use_edge_sharp:
+                            _todo_edges.append(e)
+                            sharp_verts.append(edge.vertices[0])
+                            sharp_verts.append(edge.vertices[1])
+                    todo_edges = _todo_edges
+
                 if props.bounds_selection == 'BOUNDS': todo_edges = [e for e in todo_edges if e.is_boundary]
-                elif props.bounds_selection == 'INNERS': todo_edges = [e for e in todo_edges if not e.is_boundary]
+                elif props.bounds_selection == 'INNER': todo_edges = [e for e in todo_edges if not e.is_boundary]
 
                 if props.mode == 'EDGES':
                     ordered_points = [[e.verts[0].index, e.verts[1].index] for e in todo_edges]
                 elif props.mode == 'LOOPS':
                     vert_loops, edge_loops = loops_from_bmesh(todo_edges)
-                    ordered_points = [[v.index for v in loop] for loop in vert_loops]
+                    if props.only_sharp:
+                        ordered_points = []
+                        for loop in vert_loops:
+                            loop_points = []
+                            for v in loop:
+                                if v.index in sharp_verts:
+                                    loop_points.append(v.index)
+                                else:
+                                    if len(loop_points)>1:
+                                        ordered_points.append(loop_points)
+                                    loop_points = []
+                            if len(loop_points)>1:
+                                ordered_points.append(loop_points)
+                        #ordered_points = [[v.index for v in loop if v.index in sharp_verts] for loop in vert_loops]
+                    else:
+                        ordered_points = [[v.index for v in loop] for loop in vert_loops]
                     if props.periodic_selection == 'CLOSED':
                         ordered_points = [points for points in ordered_points if points[0] == points[-1]]
                     elif props.periodic_selection == 'OPEN':
@@ -625,30 +665,35 @@ class TISSUE_PT_convert_to_curve(Panel):
             col.separator()
             col.prop(props, "system")
         col.separator()
-        if props.mode in ('LOOPS','EDGES'):
-            col.label(text='Selective:')
-            if props.use_modifiers:
-                row = col.row(align=True)
-                row.prop(
-                    props, "subdivision_mode", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-                row.enabled = False
-                for m in props.object.modifiers:
-                    if m.type in ('SUBSURF','MULTIRES'): row.enabled = True
-                col.separator()
+
+        if props.mode in ('LOOPS', 'EDGES'):
             row = col.row(align=True)
-            row.prop(
-                props, "bounds_selection", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
+            row.prop(props, "use_modifiers")
+            col2 = row.column(align=True)
+            if props.use_modifiers:
+                col2.prop(props, "subdivision_mode", text='', icon='NONE', expand=False,
+                         slider=True, toggle=False, icon_only=False, event=False,
+                         full_event=False, emboss=True, index=-1)
+                col2.enabled = False
+            for m in props.object.modifiers:
+                if m.type in ('SUBSURF','MULTIRES'): col2.enabled = True
             col.separator()
             row = col.row(align=True)
-            row.prop(
-                props, "periodic_selection", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-            row.enabled = props.mode == 'LOOPS'
+            row.label(text='Filter Edges:')
+            col2 = row.column(align=True)
+            col2.prop(props, "bounds_selection", text='', icon='NONE', expand=False,
+                     slider=True, toggle=False, icon_only=False, event=False,
+                     full_event=False, emboss=True, index=-1)
+            col2.prop(props, 'only_sharp')
+            col.separator()
+            if props.mode == 'LOOPS':
+                row = col.row(align=True)
+                row.label(text='Filter Loops:')
+                row.prop(props, "periodic_selection", text='', icon='NONE', expand=False,
+                         slider=True, toggle=False, icon_only=False, event=False,
+                         full_event=False, emboss=True, index=-1)
+                col.separator()
+                
         col.label(text='Spline Type:')
         row = col.row(align=True)
         row.prop(

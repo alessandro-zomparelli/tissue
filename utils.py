@@ -679,7 +679,7 @@ def loops_from_bmesh(edges):
     #todo_edges = [e.index for e in bm.edges]
     vert_loops = []
     edge_loops = []
-    while True:
+    while len(todo_edges) > 0:
         edge = todo_edges[0]
         vert_loop, edge_loop = run_edge_loop(edge)
         for e in edge_loop:
@@ -687,7 +687,7 @@ def loops_from_bmesh(edges):
             except: pass
         edge_loops.append(edge_loop)
         vert_loops.append(vert_loop)
-        if len(todo_edges) == 0: break
+        #if len(todo_edges) == 0: break
     return vert_loops, edge_loops
 
 def run_edge_loop_direction(edge,vert):
