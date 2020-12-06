@@ -28,26 +28,9 @@ except: pass
 
 from . import config
 
-#Recursivly transverse layer_collection for a particular name
-def recurLayerCollection(layerColl, collName):
-    found = None
-    if (layerColl.name == collName):
-        return layerColl
-    for layer in layerColl.children:
-        found = recurLayerCollection(layer, collName)
-        if found:
-            return found
-
-def auto_layer_collection():
-    # automatically change active layer collection
-    layer = bpy.context.view_layer.active_layer_collection
-    layer_collection = bpy.context.view_layer.layer_collection
-    if layer.hide_viewport or layer.collection.hide_viewport:
-        collections = bpy.context.object.users_collection
-        for c in collections:
-            lc = recurLayerCollection(layer_collection, c.name)
-            if not c.hide_viewport and not lc.hide_viewport:
-                bpy.context.view_layer.active_layer_collection = lc
+# ------------------------------------------------------------------
+# MATH
+# ------------------------------------------------------------------
 
 def lerp(a, b, t):
     return a + (b - a) * t
@@ -82,9 +65,47 @@ def np_lerp2(v00, v10, v01, v11, vx, vy):
         co2 = co0 + (co1 - co0) * vy
     return co2
 
+def flatten_vector(vec, x, y):
+    """
+    Find planar vector according to two axis.
+    :arg vec: Input vector.
+    :type vec: :class:'mathutils.Vector'
+    :arg x: First axis.
+    :type x: :class:'mathutils.Vector'
+    :arg y: Second axis.
+    :type y: :class:'mathutils.Vector'
+    :return: Projected 2D Vector.
+    :rtype: :class:'mathutils.Vector'
+    """
+    vx = vec.project(x)
+    vy = vec.project(y)
+    mult = 1 if vx.dot(x) > 0 else -1
+    vx = mult*vx.length
+    mult = 1 if vy.dot(y) > 0 else -1
+    vy = mult*vy.length
+    return Vector((vx, vy))
 
-# Prevent Blender Crashes with handlers
+def vector_rotation(vec):
+    """
+    Find vector rotation according to X axis.
+    :arg vec: Input vector.
+    :type vec: :class:'mathutils.Vector'
+    :return: Angle in radians.
+    :rtype: float
+    """
+    v0 = Vector((1,0))
+    ang = Vector.angle_signed(vec, v0)
+    if ang < 0: ang = 2*pi + ang
+    return ang
+
+# ------------------------------------------------------------------
+# SCENE
+# ------------------------------------------------------------------
+
 def set_animatable_fix_handler(self, context):
+    '''
+    Prevent Blender Crashes with handlers
+    '''
     old_handlers = []
     blender_handlers = bpy.app.handlers.render_init
     for h in blender_handlers:
@@ -95,13 +116,18 @@ def set_animatable_fix_handler(self, context):
     return
 
 def turn_off_animatable(scene):
+    '''
+    Prevent Blender Crashes with handlers
+    '''
     for o in bpy.data.objects:
         o.tissue_tessellate.bool_run = False
         o.reaction_diffusion_settings.run = False
         #except: pass
     return
 
-### OBJECTS ###
+# ------------------------------------------------------------------
+# OBJECTS
+# ------------------------------------------------------------------
 
 def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     try: ob.name
@@ -137,8 +163,6 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         new_ob.select_set(True)
         bpy.context.view_layer.objects.active = new_ob
     return new_ob
-
-#evaluatedDepsgraph = 'pippo'
 
 def simple_to_mesh(ob, depsgraph=None):
     #global evaluatedDepsgraph
@@ -194,6 +218,9 @@ def join_objects(objects, link_to_scene=True, make_active=False):
     return ob
 
 def array_mesh(ob, n):
+    '''
+    Return Mesh data adding and applying an array without offset
+    '''
     arr = ob.modifiers.new('Repeat','ARRAY')
     arr.relative_offset_displace[0] = 0
     arr.count = n
@@ -225,7 +252,9 @@ def get_mesh_before_subs(ob):
     for m, vis in zip(hide_mods,mods_visibility): m.show_viewport = vis
     return me, subs
 
-### MESH FUNCTIONS
+# ------------------------------------------------------------------
+# MESH FUNCTIONS
+# ------------------------------------------------------------------
 
 def calc_verts_area(me):
     n_verts = len(me.vertices)
@@ -462,13 +491,12 @@ def get_patches_(me_low, me_high, sides, subs):
             # fill inners
             patch[1:-1,1:-1] = inners + ips[pid]
 
-    #end_time = time.time()
-    #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
-
     return patches.astype(dtype='int')
 
-
 def get_vertices_numpy(mesh):
+    '''
+    Create a numpy array with the vertices of a given mesh
+    '''
     n_verts = len(mesh.vertices)
     verts = [0]*n_verts*3
     mesh.vertices.foreach_get('co', verts)
@@ -476,6 +504,9 @@ def get_vertices_numpy(mesh):
     return verts
 
 def get_vertices_and_normals_numpy(mesh):
+    '''
+    Create two numpy arrays with the vertices and the normals of a given mesh
+    '''
     n_verts = len(mesh.vertices)
     verts = [0]*n_verts*3
     normals = [0]*n_verts*3
@@ -486,6 +517,9 @@ def get_vertices_and_normals_numpy(mesh):
     return verts, normals
 
 def get_normals_numpy(mesh):
+    '''
+    Create a numpy array with the normals of a given mesh
+    '''
     n_verts = len(mesh.vertices)
     normals = [0]*n_verts*3
     mesh.vertices.foreach_get('normal', normals)
@@ -493,6 +527,9 @@ def get_normals_numpy(mesh):
     return normals
 
 def get_edges_numpy(mesh):
+    '''
+    Create a numpy array with the edges of a given mesh
+    '''
     n_edges = len(mesh.edges)
     edges = [0]*n_edges*2
     mesh.edges.foreach_get('vertices', edges)
@@ -675,6 +712,15 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
 
 
 def loops_from_bmesh(edges):
+    """
+    Return one or more loops given some starting edges.
+    :arg edges: Edges used as seeds.
+    :type edges: List of :class:'bmesh.types.BMEdge'
+    :return: Elements in each loop (Verts, Edges), where:
+        - Verts - List of Lists of :class:'bmesh.types.BMVert'
+        - Edges - List of Lists of :class:'bmesh.types.BMEdge'
+    :rtype: tuple
+    """
     todo_edges = list(edges)
     #todo_edges = [e.index for e in bm.edges]
     vert_loops = []
@@ -691,6 +737,17 @@ def loops_from_bmesh(edges):
     return vert_loops, edge_loops
 
 def run_edge_loop_direction(edge,vert):
+    """
+    Return vertices and edges along a loop in a specific direction.
+    :arg edge: Edges used as seed.
+    :type edges: :class:'bmesh.types.BMEdge'
+    :arg edge: Vertex of the Edge used for the direction.
+    :type vert: :class:'bmesh.types.BMVert'
+    :return: Elements in the loop (Verts, Edges), where:
+        - Verts - List of :class:'bmesh.types.BMVert'
+        - Edges - List of :class:'bmesh.types.BMEdge'
+    :rtype: tuple
+    """
     edge0 = edge
     edge_loop = [edge]
     vert_loop = [vert]
@@ -719,6 +776,15 @@ def run_edge_loop_direction(edge,vert):
     return vert_loop, edge_loop
 
 def run_edge_loop(edge):
+    """
+    Return vertices and edges along a loop in both directions.
+    :arg edge: Edges used as seed.
+    :type edges: :class:'bmesh.types.BMEdge'
+    :return: Elements in the loop (Verts, Edges), where:
+        - Verts - List of :class:'bmesh.types.BMVert'
+        - Edges - List of :class:'bmesh.types.BMEdge'
+    :rtype: tuple
+    """
     vert0 = edge.verts[0]
     vert_loop0, edge_loop0 = run_edge_loop_direction(edge, vert0)
     if len(edge_loop0) == 1 or edge_loop0[0] != edge_loop0[-1]:
@@ -734,13 +800,24 @@ def run_edge_loop(edge):
     return vert_loop, edge_loop
 
 def curve_from_vertices(indexes, verts, name='Curve'):
+    """
+    Curve data from given vertices.
+    :arg indexes: List of Lists of indexes of the vertices.
+    :type indexes: List of Lists of int
+    :arg verts: List of vertices.
+    :type verts: List of :class:'bpy.types.MeshVertex'
+    :arg name: Name of the Curve data.
+    :type name: str
+    :return: Generated Curve data
+    :rtype: :class:'bpy.types.Curve'
+    """
     curve = bpy.data.curves.new(name,'CURVE')
     for c in indexes:
         s = curve.splines.new('POLY')
         s.points.add(len(c))
         for i,p in enumerate(c):
             s.points[i].co = verts[p].co.xyz + [1]
-            s.points[i].tilt = degrees(asin(verts[p].co.z))
+            #s.points[i].tilt = degrees(asin(verts[p].co.z))
     ob_curve = bpy.data.objects.new(name,curve)
     return ob_curve
 
@@ -769,9 +846,20 @@ def nurbs_from_vertices(indexes, co, radii=[], name='Curve', set_active=True, in
         ob_curve.select_set(True)
     return ob_curve
 
-### WEIGHT FUNCTIONS ###
+# ------------------------------------------------------------------
+# VERTEX GROUPS AND WEIGHT
+# ------------------------------------------------------------------
 
 def get_weight(vertex_group, n_verts):
+    """
+    Read weight values from given Vertex Group.
+    :arg vertex_group: Vertex Group.
+    :type vertex_group: :class:'bpy.types.VertexGroup'
+    :arg n_verts: Number of Vertices (output list size).
+    :type n_verts: int
+    :return: Readed weight values.
+    :rtype: list
+    """
     weight = [0]*n_verts
     for i in range(n_verts):
         try: weight[i] = vertex_group.weight(i)
@@ -779,12 +867,20 @@ def get_weight(vertex_group, n_verts):
     return weight
 
 def get_weight_numpy(vertex_group, n_verts):
+    """
+    Read weight values from given Vertex Group.
+    :arg vertex_group: Vertex Group.
+    :type vertex_group: :class:'bpy.types.VertexGroup'
+    :arg n_verts: Number of Vertices (output list size).
+    :type n_verts: int
+    :return: Readed weight values as numpy array.
+    :rtype: :class:'numpy.ndarray'
+    """
     weight = [0]*n_verts
     for i in range(n_verts):
         try: weight[i] = vertex_group.weight(i)
         except: pass
     return np.array(weight)
-
 
 def bmesh_get_weight_numpy(group_index, layer, verts):
     weight = np.zeros(len(verts))
@@ -901,8 +997,10 @@ def mesh_diffusion_vector(me, vectors, iter, diff, uv_dir=0):
     vectors[:,2] = z
     return vectors
 
+# ------------------------------------------------------------------
+# MODIFIERS
+# ------------------------------------------------------------------
 
-### MODIFIERS ###
 def mod_preserve_topology(mod):
     same_topology_modifiers = ('DATA_TRANSFER','NORMAL_EDIT','WEIGHTED_NORMAL',
         'UV_PROJECT','UV_WARP','VERTEX_WEIGHT_EDIT','VERTEX_WEIGHT_MIX',
@@ -921,19 +1019,27 @@ def mod_preserve_shape(mod):
     return mod.type in same_shape_modifiers
 
 
-# find planar vector according to two axis
-def flatten_vector(vec, x, y):
-    vx = vec.project(x)
-    vy = vec.project(y)
-    mult = 1 if vx.dot(x) > 0 else -1
-    vx = mult*vx.length
-    mult = 1 if vy.dot(y) > 0 else -1
-    vy = mult*vy.length
-    return Vector((vx, vy))
+def recurLayerCollection(layerColl, collName):
+    '''
+    Recursivly transverse layer_collection for a particular name.
+    '''
+    found = None
+    if (layerColl.name == collName):
+        return layerColl
+    for layer in layerColl.children:
+        found = recurLayerCollection(layer, collName)
+        if found:
+            return found
 
-# find rotations according to X axis
-def vector_rotation(vec):
-    v0 = Vector((1,0))
-    ang = Vector.angle_signed(vec, v0)
-    if ang < 0: ang = 2*pi + ang
-    return ang
+def auto_layer_collection():
+    '''
+    Automatically change active layer collection.
+    '''
+    layer = bpy.context.view_layer.active_layer_collection
+    layer_collection = bpy.context.view_layer.layer_collection
+    if layer.hide_viewport or layer.collection.hide_viewport:
+        collections = bpy.context.object.users_collection
+        for c in collections:
+            lc = recurLayerCollection(layer_collection, c.name)
+            if not c.hide_viewport and not lc.hide_viewport:
+                bpy.context.view_layer.active_layer_collection = lc

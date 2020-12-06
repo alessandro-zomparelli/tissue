@@ -299,27 +299,26 @@ class weight_formula(Operator):
     bl_description = "Generate a Vertex Group according to a mathematical formula"
     bl_options = {'REGISTER', 'UNDO'}
 
-    ex = [
-        #'cos(arctan(nx/ny)*6 + sin(rz*30)*0.5)/2 + cos(arctan(nx/ny)*6 - sin(rz*30)*0.5 + pi/2)/2 + 0.5',
-        'cos(arctan(nx/ny)*i1*2 + sin(rz*i3))/i2 + cos(arctan(nx/ny)*i1*2 - sin(rz*i3))/i2 + 0.5',
-        'cos(arctan(nx/ny)*i1*2 + sin(rz*i2))/2 + cos(arctan(nx/ny)*i1*2 - sin(rz*i2))/2',
-        '(sin(arctan(nx/ny)*i1)*sin(nz*i1)+1)/2',
-        'cos(arctan(nx/ny)*f1)',
-        'cos(arctan(lx/ly)*f1 + sin(rz*f2)*f3)',
-        'sin(nx*15)<sin(ny*15)',
-        'cos(ny*rz**2*i1)',
-        'sin(rx*30) > 0',
-        'sin(nz*i1)',
-        'w[0]**2',
-        'sqrt((rx-0.5)**2 + (ry-0.5)**2)*2',
-        'abs(0.5-rz)*2',
-        'rx'
-        ]
-    ex_items = list((str(i),s,"") for i,s in enumerate(ex))
-    ex_items.append(('CUSTOM', "User Formula", ""))
+    ex_items = [
+        ('cos(arctan(nx/ny)*i1*2 + sin(rz*i3))/i2 + cos(arctan(nx/ny)*i1*2 - sin(rz*i3))/i2 + 0.5','Vertical Spots'),
+        ('cos(arctan(nx/ny)*i1*2 + sin(rz*i2))/2 + cos(arctan(nx/ny)*i1*2 - sin(rz*i2))/2','Vertical Spots'),
+        ('(sin(arctan(nx/ny)*i1*2)*sin(nz*i1*2)+1)/2','Grid Spots'),
+        ('cos(arctan(nx/ny)*f1)','Vertical Stripes'),
+        ('cos(arctan(lx/ly)*f1 + sin(rz*f2)*f3)','Curly Stripes'),
+        ('sin(rz*pi*i1+arctan2(nx,ny))/2+0.5', 'Vertical Spiral'),
+        ('sin(nx*15)<sin(ny*15)','Chess'),
+        ('cos(ny*rz**2*i1)','Hyperbolic'),
+        ('sin(rx*30) > 0','Step Stripes'),
+        ('sin(nz*i1)','Normal Stripes'),
+        ('w[0]**2','Vertex Group square'),
+        ('abs(0.5-rz)*2','Double vertical gradient'),
+        ('rx', 'Relative x coordinates')
+    ]
+    _ex_items = list((str(i),'{}   ( {} )'.format(s[0],s[1]),s[1]) for i,s in enumerate(ex_items))
+    _ex_items.append(('CUSTOM', "User Formula", ""))
 
     examples : EnumProperty(
-        items = ex_items, default='CUSTOM', name="Examples")
+        items = _ex_items, default='CUSTOM', name="Examples")
 
     old_ex = ""
 
@@ -361,7 +360,7 @@ class weight_formula(Operator):
         #except: pass
 
         if self.examples != 'CUSTOM':
-            example = self.ex[int(self.examples)]
+            example = self.ex_items[int(self.examples)][0]
             if example != self.old_ex:
                 self.formula = example
                 self.old_ex = example
@@ -411,7 +410,7 @@ class weight_formula(Operator):
         i_sliders = self.slider_i01, self.slider_i02, self.slider_i03, self.slider_i04, self.slider_i05
 
         if self.examples != 'CUSTOM':
-            example = self.ex[int(self.examples)]
+            example = self.ex_items[int(self.examples)][0]
             if example != self.old_ex:
                 self.formula = example
                 self.old_ex = example
@@ -1863,11 +1862,15 @@ class weight_contour_curves(Operator):
 
         bm_faces = np.array(bm.faces)
 
+        ### Spiral
+        normals = np.array([v.normal for v in me0.vertices])
+
         for c in range(self.n_curves):
             min_iso = min(self.min_iso, self.max_iso)
             max_iso = max(self.min_iso, self.max_iso)
             try:
-                iso_val = c*(max_iso-min_iso)/(self.n_curves-1)+min_iso
+                delta_iso = (max_iso-min_iso)/(self.n_curves-1)
+                iso_val = c*delta_iso + min_iso
                 if iso_val < 0: iso_val = (min_iso + max_iso)/2
             except:
                 iso_val = (min_iso + max_iso)/2
@@ -1907,6 +1910,7 @@ class weight_contour_curves(Operator):
             w1 = w1[mask_new_verts]
             div = (w1-w0)
             if div == 0: div = 0.000001
+
             param = np.expand_dims((iso_val-w0)/div,axis=1)
             verts = v0 + (v1-v0)*param
 
@@ -2090,13 +2094,26 @@ class tissue_weight_contour_curves_pattern(Operator):
         description="Remove short segments")
 
 
+    spiralized: BoolProperty(
+        name='Spiralized', default=False,
+        description='Create a Spiral Contour. Works better with dense meshes.'
+    )
+    spiral_axis: FloatVectorProperty(
+        name="Spiral Axis", default=(0,0,1),
+        description="Axis of the Spiral (in local coordinates)"
+    )
+    spiral_rotation : FloatProperty(
+        name="Spiral Rotation", default=0, min=0, max=2*pi,
+        description=""
+    )
+
     @classmethod
     def poll(cls, context):
         ob = context.object
         return ob and len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=350)
+        return context.window_manager.invoke_props_dialog(self, width=250)
 
     def draw(self, context):
         if not context.object.type == 'CURVE':
@@ -2137,12 +2154,22 @@ class tissue_weight_contour_curves_pattern(Operator):
             row.prop(self,'out_displace')
             col.prop(self,'limit_z')
         col.separator()
+        row=col.row(align=True)
+        row.prop(self,'spiralized')
+        row.label(icon='MOD_SCREW')
+        if self.spiralized:
+            #row=col.row(align=True)
+            #row.prop(self,'spiral_axis')
+            #col.separator()
+            col.prop(self,'spiral_rotation')
+        col.separator()
 
         col.label(text='Clean Curves:')
         col.prop(self,'clean_distance')
         col.prop(self,'remove_open_curves')
 
     def execute(self, context):
+        n_curves = self.n_curves
         start_time = timeit.default_timer()
         try:
             check = context.object.vertex_groups[0]
@@ -2210,6 +2237,24 @@ class tissue_weight_contour_curves_pattern(Operator):
         vertices, normals = get_vertices_and_normals_numpy(me0)
         filtered_edges = get_edges_id_numpy(me0)
 
+
+        min_iso = min(self.min_iso, self.max_iso)
+        max_iso = max(self.min_iso, self.max_iso)
+
+        # Spiral
+        if self.spiralized:
+            nx = normals[:,0]
+            ny = normals[:,1]
+            ang = self.spiral_rotation + weight*pi*n_curves+arctan2(nx,ny)
+            weight = sin(ang)/2+0.5
+            n_curves = 1
+
+        if n_curves > 1:
+            delta_iso = (max_iso-min_iso)/(n_curves-1)
+
+        else:
+            delta_iso = None
+
         faces_weight = [np.array([weight[v] for v in p.vertices]) for p in me0.polygons]
         fw_min = np.array([np.min(fw) for fw in faces_weight])
         fw_max = np.array([np.max(fw) for fw in faces_weight])
@@ -2218,13 +2263,11 @@ class tissue_weight_contour_curves_pattern(Operator):
 
         #print("Contour Curves, data loaded: " + str(timeit.default_timer() - start_time) + " sec")
         step_time = timeit.default_timer()
-        for c in range(self.n_curves):
-            min_iso = min(self.min_iso, self.max_iso)
-            max_iso = max(self.min_iso, self.max_iso)
-            try:
-                iso_val = c*(max_iso-min_iso)/(self.n_curves-1)+min_iso
+        for c in range(n_curves):
+            if delta_iso:
+                iso_val = c*delta_iso + min_iso
                 if iso_val < 0: iso_val = (min_iso + max_iso)/2
-            except:
+            else:
                 iso_val = (min_iso + max_iso)/2
 
             #if c == 0 and self.auto_bevel:
@@ -2293,6 +2336,7 @@ class tissue_weight_contour_curves_pattern(Operator):
         if len(total_segments) > 0:
             step_time = timeit.default_timer()
             ordered_points = find_curves(total_segments, len(total_verts))
+
             #print("Contour Curves, point ordered in: " + str(timeit.default_timer() - step_time) + " sec")
             step_time = timeit.default_timer()
             crv = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', self.remove_open_curves, merge_distance=self.clean_distance)
@@ -2539,7 +2583,6 @@ class curvature_to_vertex_groups(Operator):
         bpy.ops.object.vertex_colors_to_vertex_groups(invert=self.invert)
         bpy.ops.mesh.vertex_color_remove()
         return {'FINISHED'}
-
 
 class face_area_to_vertex_groups(Operator):
     bl_idname = "object.face_area_to_vertex_groups"
@@ -3376,71 +3419,6 @@ def insert_weight_parameter(col, ob, name, text=''):
                 row2.prop(props, "max_" + name, text="Max")
     col.separator()
 
-if False:
-    @jit(["float64[:,:](int32, int32, float64, float64, boolean, int32, float64, float64[:,:], float64[:,:], int32[:,:], float64[:], float64[:])"]) #(nopython=True, parallel=True)
-    def contour_edges_pattern(in_steps, out_steps, in_displace, out_displace, limit_z, c, iso_val, vertices, normals, filtered_edges, weight, pattern_weight):
-        # vertices indexes
-        id0 = filtered_edges[:,0]
-        id1 = filtered_edges[:,1]
-        # vertices weight
-        w0 = weight[id0]
-        w1 = weight[id1]
-        # weight condition
-        bool_w0 = w0 < iso_val
-        bool_w1 = w1 < iso_val
-
-        # mask all edges that have one weight value below the iso value
-        mask_new_verts = np.logical_xor(bool_w0, bool_w1)
-        out_array = np.array([[0]]).astype(type='float64', order='A')
-        if not mask_new_verts.any(): return out_array, out_array, out_array
-
-        id0 = id0[mask_new_verts]
-        id1 = id1[mask_new_verts]
-        # filter arrays
-        v0 = vertices[id0]
-        v1 = vertices[id1]
-        n0 = normals[id0]
-        n1 = normals[id1]
-        w0 = w0[mask_new_verts]
-        w1 = w1[mask_new_verts]
-        pattern0 = pattern_weight[id0]
-        pattern1 = pattern_weight[id1]
-        param = (iso_val-w0)/(w1-w0)
-        # pattern displace
-        #mult = 1 if c%2 == 0 else -1
-        if c%(in_steps + out_steps) < in_steps:
-            mult = in_displace
-        else:
-            mult = out_displace
-        pattern_value = pattern0 + (pattern1-pattern0)*param
-        disp = pattern_value * mult
-        param2 = np.expand_dims(param,axis=1)
-        #param = param2
-        disp2 = np.expand_dims(disp,axis=1)
-        #disp = disp2
-        verts = v0 + (v1-v0)*param2
-        norm = n0 + (n1-n0)*param2
-        if limit_z:
-            norm2 = np.expand_dims(norm[:,2], axis=1)
-            limit_mult = 1-np.absolute(norm2)
-            disp2 *= limit_mult
-        verts = verts + norm*disp2
-
-        # indexes of edges with new vertices
-        edges_index = filtered_edges[mask_new_verts][:,2]
-
-        # remove all edges completely below the iso value
-        mask_edges = np.logical_not(np.logical_and(bool_w0, bool_w1))
-
-        _filtered_edges = filtered_edges[mask_edges]
-        filtered_edges = _filtered_edges.astype(type='float64', order='A')
-
-        _edges_index = np.expand_dims(edges_index,axis=0)
-        _edges_index = _edges_index.astype(type='float64', order='A')
-
-        _verts = verts.astype(type='float64', order='A')
-        return _filtered_edges, _edges_index, _verts
-
 def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight):
     # vertices indexes
     id0 = filtered_edges[:,0]
@@ -3472,7 +3450,13 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
         bevel0 = bevel_weight[id0]
         bevel1 = bevel_weight[id1]
     except: pass
-    param = (iso_val-w0)/(w1-w0)
+
+    ### Spiral
+    #edge_nor = (n0+n1)/2
+    #shift = np.arctan2(edge_nor[:,0], edge_nor[:,1])/2/pi*delta_iso
+
+    #param = (iso_val + shift - w0)/(w1-w0)
+    param = (iso_val - w0)/(w1-w0)
     # pattern displace
     #mult = 1 if c%2 == 0 else -1
     if c%(operator.in_steps + operator.out_steps) < operator.in_steps:
@@ -3485,12 +3469,15 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
         bevel_value = np.expand_dims(bevel_value,axis=1)
     except: bevel_value = None
     disp = pattern_value * mult
+
     param = np.expand_dims(param,axis=1)
     disp = np.expand_dims(disp,axis=1)
     verts = v0 + (v1-v0)*param
     norm = n0 + (n1-n0)*param
     if operator.limit_z: disp *= 1-abs(np.expand_dims(norm[:,2], axis=1))
     verts = verts + norm*disp
+    #verts = verts[np.flip(np.argsort(shift))]
+    #verts = verts[np.argsort(shift)]
 
     # indexes of edges with new vertices
     edges_index = filtered_edges[mask_new_verts][:,2]
@@ -3499,59 +3486,6 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
     #mask_edges = np.logical_not(np.logical_and(bool_w0, bool_w1))
     #filtered_edges = filtered_edges[mask_edges]
     return filtered_edges, edges_index, verts, bevel_value
-
-def contour_edges_pattern_eval(operator, c, verts_count, iso_val, vertices, normals, filtered_edges, weight, pattern_weight):
-    # vertices indexes
-    id0 = eval('filtered_edges[:,0]')
-    id1 = eval('filtered_edges[:,1]')
-    # vertices weight
-    w0 = eval('weight[id0]')
-    w1 = eval('weight[id1]')
-    # weight condition
-    bool_w0 = ne.evaluate('w0 < iso_val')
-    bool_w1 = ne.evaluate('w1 < iso_val')
-
-    # mask all edges that have one weight value below the iso value
-    mask_new_verts = eval('np.logical_xor(bool_w0, bool_w1)')
-    if not mask_new_verts.any(): return np.array([[None]]), {}, np.array([[None]])
-
-    id0 = eval('id0[mask_new_verts]')
-    id1 = eval('id1[mask_new_verts]')
-    # filter arrays
-    v0 = eval('vertices[id0]')
-    v1 = eval('vertices[id1]')
-    n0 = eval('normals[id0]')
-    n1 = eval('normals[id1]')
-    w0 = eval('w0[mask_new_verts]')
-    w1 = eval('w1[mask_new_verts]')
-    pattern0 = eval('pattern_weight[id0]')
-    pattern1 = eval('pattern_weight[id1]')
-    param = ne.evaluate('(iso_val-w0)/(w1-w0)')
-    # pattern displace
-    #mult = 1 if c%2 == 0 else -1
-    if c%(operator.in_steps + operator.out_steps) < operator.in_steps:
-        mult = -operator.in_displace
-    else:
-        mult = operator.out_displace
-    pattern_value = eval('pattern0 + (pattern1-pattern0)*param')
-    disp = ne.evaluate('pattern_value * mult')
-    param = eval('np.expand_dims(param,axis=1)')
-    disp = eval('np.expand_dims(disp,axis=1)')
-    verts = ne.evaluate('v0 + (v1-v0)*param')
-    norm = ne.evaluate('n0 + (n1-n0)*param')
-    if operator.limit_z:
-        mult = eval('1-abs(np.expand_dims(norm[:,2], axis=1))')
-        disp = ne.evaluate('disp * mult')
-    verts = ne.evaluate('verts + norm*disp')
-
-    # indexes of edges with new vertices
-    edges_index = eval('filtered_edges[mask_new_verts][:,2]')
-
-    # remove all edges completely below the iso value
-    mask_edges = eval('np.logical_not(np.logical_and(bool_w0, bool_w1))')
-    filtered_edges = eval('filtered_edges[mask_edges]')
-    return filtered_edges, edges_index, verts
-
 
 def contour_bmesh(me, bm, weight, iso_val):
     bm.verts.ensure_lookup_table()
