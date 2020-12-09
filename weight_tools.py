@@ -71,13 +71,17 @@ from .utils import *
 
 def reaction_diffusion_add_handler(self, context):
     # remove existing handlers
+    reaction_diffusion_remove_handler(self, context)
+    # add new handler
+    bpy.app.handlers.frame_change_post.append(reaction_diffusion_scene)
+
+def reaction_diffusion_remove_handler(self, context):
+    # remove existing handlers
     old_handlers = []
     for h in bpy.app.handlers.frame_change_post:
         if "reaction_diffusion" in str(h):
             old_handlers.append(h)
     for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
-    # add new handler
-    bpy.app.handlers.frame_change_post.append(reaction_diffusion_scene)
 
 class formula_prop(PropertyGroup):
     name : StringProperty()
@@ -312,7 +316,7 @@ class weight_formula(Operator):
         ('sin(nz*i1)','Normal Stripes'),
         ('w[0]**2','Vertex Group square'),
         ('abs(0.5-rz)*2','Double vertical gradient'),
-        ('rx', 'Relative x coordinates')
+        ('rz', 'Vertical Gradient')
     ]
     _ex_items = list((str(i),'{}   ( {} )'.format(s[0],s[1]),s[1]) for i,s in enumerate(ex_items))
     _ex_items.append(('CUSTOM', "User Formula", ""))

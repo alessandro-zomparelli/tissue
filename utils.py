@@ -119,9 +119,10 @@ def turn_off_animatable(scene):
     '''
     Prevent Blender Crashes with handlers
     '''
-    for o in bpy.data.objects:
+    for o in [o for o in bpy.data.objects if o.type == 'MESH']:
         o.tissue_tessellate.bool_run = False
-        o.reaction_diffusion_settings.run = False
+        #if not o.reaction_diffusion_settings.bool_cache:
+        #    o.reaction_diffusion_settings.run = False
         #except: pass
     return
 
@@ -165,6 +166,9 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     return new_ob
 
 def simple_to_mesh(ob, depsgraph=None):
+    '''
+    Convert object to mesh applying Modifiers and Shape Keys
+    '''
     #global evaluatedDepsgraph
     if depsgraph == None:
         if config.evaluatedDepsgraph == None:

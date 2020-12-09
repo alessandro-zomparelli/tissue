@@ -50,6 +50,7 @@ from math import *
 import random, time, copy
 import bmesh
 from .utils import *
+from .weight_tools import *
 from .numba_functions import *
 import os
 from pathlib import Path
@@ -5173,6 +5174,7 @@ class tissue_render_animation(Operator):
             # set again the handler
             blender_handlers = bpy.app.handlers.frame_change_post
             blender_handlers.append(anim_tessellate)
+            blender_handlers.append(reaction_diffusion_scene)
             context.window_manager.event_timer_remove(self.timer)
             if event.type == 'ESC':
                 print("Tissue: Render Animation aborted.")
@@ -5195,6 +5197,7 @@ class tissue_render_animation(Operator):
         scene = context.scene
         if self.start:
             remove_tessellate_handler()
+            reaction_diffusion_remove_handler(self, context)
             scene = context.scene
             scene.frame_current = scene.frame_start
             self.path = scene.render.filepath
@@ -5204,6 +5207,7 @@ class tissue_render_animation(Operator):
         else:
             scene.frame_current += scene.frame_step
         anim_tessellate(scene)
+        reaction_diffusion_scene(scene)
         scene.render.filepath = "{}{:04d}".format(self.path,scene.frame_current)
         bpy.ops.render.render(write_still=True)
         return {'RUNNING_MODAL'}
