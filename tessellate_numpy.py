@@ -219,31 +219,11 @@ class tissue_prop(PropertyGroup):
         )
 
 class tissue_tessellate_prop(PropertyGroup):
-    '''
-    bool_lock : BoolProperty(
-        name="Lock",
-        description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
-        default=False
-        )
-    '''
     bool_hold : BoolProperty(
         name="Hold",
         description="Wait...",
         default=False
         )
-    '''
-    bool_dependencies : BoolProperty(
-        name="Update Dependencies",
-        description="Automatically updates base and components as well, if results of other tessellations",
-        default=False
-        )
-    bool_run : BoolProperty(
-        name="Animatable Tessellation",
-        description="Automatically recompute the tessellation when the frame is changed. Currently is not working during  Render Animation",
-        default = False,
-        update = set_tessellate_handler
-        )
-    '''
     zscale : FloatProperty(
         name="Scale", default=1, soft_min=0, soft_max=10,
         description="Scale factor for the component thickness",
@@ -474,6 +454,7 @@ class tissue_tessellate_prop(PropertyGroup):
         items=(
             ('VERTS', 'Normals', 'Consistent direction based on vertices normal'),
             ('FACES', 'Faces', 'Based on individual faces normal'),
+            ('CUSTOM', 'Custom', 'Custom split normals'),
             ('SHAPEKEYS', 'Keys', "According to base object's shape keys"),
             ('OBJECT', 'Object', "According to a target object")),
         default='VERTS',
@@ -924,6 +905,7 @@ def props_to_dict(ob):
     tessellate_dict['smooth_normals_uv'] = props.smooth_normals_uv
     tessellate_dict['vertex_group_smooth_normals'] = props.vertex_group_smooth_normals
     tessellate_dict['invert_vertex_group_smooth_normals'] = props.invert_vertex_group_smooth_normals
+    tessellate_dict['bool_multi_components'] = props.bool_multi_components
     return tessellate_dict
 
 def tessellate_patch(props):
@@ -931,11 +913,13 @@ def tessellate_patch(props):
     start_time = time.time()
     ob = props['self']
     _ob0 = props['generator']
-    _ob1 = props['component']
+    components = props['component']
     offset = props['offset']
     zscale = props['zscale']
+    gen_modifiers = props['gen_modifiers']
     com_modifiers = props['com_modifiers']
     mode = props['mode']
+    fill_mode = props['fill_mode']
     scale_mode = props['scale_mode']
     rotation_mode = props['rotation_mode']
     rotation_shift = props['rotation_shift']
@@ -968,6 +952,7 @@ def tessellate_patch(props):
     smooth_normals_uv = props['smooth_normals_uv']
     vertex_group_smooth_normals = props['vertex_group_smooth_normals']
     invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
+    bool_multi_components = props['bool_multi_components']
 
     # reset messages
     ob.tissue_tessellate.warning_message_thickness = ''
@@ -988,24 +973,45 @@ def tessellate_patch(props):
 
     random.seed(rand_seed)
 
-    if normals_mode in ('SHAPEKEYS','OBJECT'):
-        ob0_sk = convert_object_to_mesh(target, True, True)
-        me0_sk = ob0_sk.data
-        normals_target = [0]*len(me0_sk.vertices)*3
-        me0_sk.vertices.foreach_get('co',normals_target)
-        normals_target = np.array(normals_target).reshape(len(me0_sk.vertices),3)
-        if normals_mode == 'SHAPEKEYS':
-            key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
-            for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
-
-    ob0 = convert_object_to_mesh(_ob0)
+    if normals_mode in ('SHAPEKEYS', 'OBJECT'):
+        if fill_mode == 'PATCH':
+            if normals_mode in ('SHAPEKEYS','OBJECT'):
+                ob0_sk = convert_object_to_mesh(target, True, True)
+                me0_sk = ob0_sk.data
+                normals_target = [0]*len(me0_sk.vertices)*3
+                me0_sk.vertices.foreach_get('co',normals_target)
+                normals_target = np.array(normals_target).reshape(len(me0_sk.vertices),3)
+                if normals_mode == 'SHAPEKEYS':
+                    key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
+                    for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
+        else:
+            use_modifiers = gen_modifiers
+            if normals_mode == 'SHAPEKEYS' and not gen_modifiers:
+                target = _ob0
+                for m in target.modifiers:
+                    m.show_viewport = False
+                use_modifiers = True
+            if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, use_modifiers)
+            elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, use_modifiers)
+            elif fill_mode == 'TRI': ob0_sk = convert_to_triangles(target, use_modifiers)
+            elif fill_mode == 'QUAD': ob0_sk = reduce_to_quads(target, use_modifiers)
+            me0_sk = ob0_sk.data
+            if normals_mode == 'SHAPEKEYS':
+                key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
+                for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
+    if fill_mode == 'PATCH':
+        ob0 = convert_object_to_mesh(_ob0)
+    else:
+        if fill_mode == 'FAN': ob0 = convert_to_fan(_ob0, gen_modifiers)
+        elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, props, gen_modifiers)
+        elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, gen_modifiers)
+        elif fill_mode == 'QUAD': ob0 = reduce_to_quads(_ob0, gen_modifiers)
+    ob0.name = "_tissue_tmp_ob0"
     me0 = ob0.data
     n_verts0 = len(me0.vertices)
 
     # read vertices coordinates
-    verts0_co = [0]*n_verts0*3
-    me0.vertices.foreach_get('co',verts0_co)
-    verts0_co = np.array(verts0_co).reshape(n_verts0,3)
+    verts0_co = get_vertices_numpy(me0)
 
     # base normals
     if normals_mode in ('SHAPEKEYS','OBJECT'):
@@ -1019,278 +1025,63 @@ def tessellate_patch(props):
             if normals_mode == 'SHAPEKEYS':
                 for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
             verts0_normal = normals_target - verts0_co
+            if True:
+                verts0_normal /= np.linalg.norm(verts0_normal, axis=1).reshape((-1,1))
+
+                original_normals = [0]*n_verts0*3
+                me0.vertices.foreach_get('normal',original_normals)
+                original_normals = np.array(original_normals).reshape(-1,3)
+                verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,np.newaxis]
+
             bpy.data.objects.remove(ob0_sk)
     if normals_mode in ('VERTS','FACES'):
-        verts0_normal = [0]*n_verts0*3
-        me0.vertices.foreach_get('normal',verts0_normal)
-        verts0_normal = [v.normal for v in me0.vertices]
-        verts0_normal = np.array(verts0_normal).reshape(n_verts0,3)
+        verts0_normal = get_normals_numpy(me0)
 
-    ob0.name = _ob0.name + "_apply_mod"
     _me0 = _ob0.data
 
-    # Check if zero faces are selected
-    if _ob0.type == 'MESH':
-        bool_cancel = True
-        for p in me0.polygons:
-            check_sel = check_mat = False
-            if not bool_selection or p.select: check_sel = True
-            if not bool_material_id or p.material_index == material_id: check_mat = True
-            if check_sel and check_mat:
-                    bool_cancel = False
-                    break
-        if bool_cancel:
-            bpy.data.meshes.remove(ob0.data)
-            return 0
-
     levels = 0
-    sculpt_levels = 0
-    render_levels = 0
-    bool_multires = False
-    multires_name = ""
     not_allowed  = ['FLUID_SIMULATION', 'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD',
                     'DECIMATE', 'EDGE_SPLIT', 'MASK', 'MIRROR', 'REMESH',
                     'SCREW', 'SOLIDIFY', 'TRIANGULATE', 'WIREFRAME', 'SKIN',
                     'EXPLODE', 'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SMOKE']
-    modifiers0 = list(_ob0.modifiers)#[m for m in ob0.modifiers]
-    show_modifiers = [m.show_viewport for m in _ob0.modifiers]
-    show_modifiers.reverse()
-    modifiers0.reverse()
-    for m in modifiers0:
-        visible = m.show_viewport
-        if not visible: continue
-        #m.show_viewport = False
-        if m.type in ('SUBSURF', 'MULTIRES') and visible:
-            levels = m.levels
-            multires_name = m.name
-            if m.type == 'MULTIRES':
-                bool_multires = True
-                multires_name = m.name
-                sculpt_levels = m.sculpt_levels
-                render_levels = m.render_levels
-            else: bool_multires = False
-            break
-        elif m.type in not_allowed:
-            bpy.data.meshes.remove(ob0.data)
-            #bpy.data.meshes.remove(me0)
-            return "modifiers_error"
+    modifiers0 = list(_ob0.modifiers)
+    if len(modifiers0) == 0 or fill_mode != 'PATCH':
+        before_subsurf = me0
+        if fill_mode == 'PATCH':
+            fill_mode = 'QUAD'
+    else:
+        show_modifiers = [m.show_viewport for m in _ob0.modifiers]
+        show_modifiers.reverse()
+        modifiers0.reverse()
+        for m in modifiers0:
+            visible = m.show_viewport
+            if not visible: continue
+            #m.show_viewport = False
+            if m.type in ('SUBSURF', 'MULTIRES') and visible:
+                levels = m.levels
+                break
+            elif m.type in not_allowed:
+                bpy.data.meshes.remove(ob0.data)
+                #bpy.data.meshes.remove(me0)
+                return "modifiers_error"
 
-    before = _ob0.copy()
-    before.name = _ob0.name + "_before_subs"
-    bpy.context.collection.objects.link(before)
-    #if ob0.type == 'MESH': before.data = me0
-    before_mod = list(before.modifiers)
-    before_mod.reverse()
-    for m in before_mod:
-        if m.type in ('SUBSURF', 'MULTIRES') and m.show_viewport:
-            before.modifiers.remove(m)
-            break
-        else: before.modifiers.remove(m)
+        before = _ob0.copy()
+        before.name = _ob0.name + "_before_subs"
+        bpy.context.collection.objects.link(before)
+        #if ob0.type == 'MESH': before.data = me0
+        before_mod = list(before.modifiers)
+        before_mod.reverse()
+        for m in before_mod:
+            if m.type in ('SUBSURF', 'MULTIRES') and m.show_viewport:
+                before.modifiers.remove(m)
+                break
+            else: before.modifiers.remove(m)
 
-    before_subsurf = simple_to_mesh(before)
+        before_subsurf = simple_to_mesh(before)
+        bpy.data.objects.remove(before)
 
-    if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
 
-    # set Shape Keys to zero
-    if bool_shapekeys or not com_modifiers:
-        try:
-            original_key_values = []
-            for sk in _ob1.data.shape_keys.key_blocks:
-                original_key_values.append(sk.value)
-                sk.value = 0
-        except:
-            bool_shapekeys = False
-
-    if not com_modifiers and not bool_shapekeys:
-        mod_visibility = []
-        for m in _ob1.modifiers:
-            mod_visibility.append(m.show_viewport)
-            m.show_viewport = False
-        com_modifiers = True
-
-    ob1 = convert_object_to_mesh(_ob1, com_modifiers, False)
-    me1 = ob1.data
-
-    if mode != 'BOUNDS':
-        ob1.active_shape_key_index = 0
-        # Bound X
-        if bounds_x != 'EXTEND':
-            if mode == 'GLOBAL':
-                planes_co = ((0,0,0),(1,1,1))
-                plane_no = (1,0,0)
-            if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((1,0,0)))
-                plane_no = planes_co[0]-planes_co[1]
-            bpy.ops.object.mode_set(mode='EDIT')
-            for co in planes_co:
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
-                bpy.ops.mesh.mark_seam()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            _faces = ob1.data.polygons
-            if mode == 'GLOBAL':
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x > 1]:
-                    f.select = True
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x < 0]:
-                    f.select = True
-            else:
-                for f in [f for f in _faces if f.center.x > 1]:
-                    f.select = True
-                for f in [f for f in _faces if f.center.x < 0]:
-                    f.select = True
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(type='FACE')
-            if bounds_x == 'CLIP':
-                bpy.ops.mesh.delete(type='FACE')
-                bpy.ops.object.mode_set(mode='OBJECT')
-            if bounds_x == 'CYCLIC':
-                bpy.ops.mesh.split()
-                bpy.ops.object.mode_set(mode='OBJECT')
-        # Bound Y
-        if bounds_y != 'EXTEND':
-            if mode == 'GLOBAL':
-                planes_co = ((0,0,0),(1,1,1))
-                plane_no = (0,1,0)
-            if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((0,1,0)))
-                plane_no = planes_co[0]-planes_co[1]
-            bpy.ops.object.mode_set(mode='EDIT')
-            for co in planes_co:
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
-                bpy.ops.mesh.mark_seam()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            _faces = ob1.data.polygons
-            if mode == 'GLOBAL':
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y > 1]:
-                    f.select = True
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y < 0]:
-                    f.select = True
-            else:
-                for f in [f for f in _faces if f.center.y > 1]:
-                    f.select = True
-                for f in [f for f in _faces if f.center.y < 0]:
-                    f.select = True
-
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(type='FACE')
-            if bounds_y == 'CLIP':
-                bpy.ops.mesh.delete(type='FACE')
-                bpy.ops.object.mode_set(mode='OBJECT')
-            if bounds_y == 'CYCLIC':
-                bpy.ops.mesh.split()
-                bpy.ops.object.mode_set(mode='OBJECT')
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-    # Component statistics
-    n_verts = len(me1.vertices)
-
-    # Create empty lists
-    new_verts = []
-    new_edges = []
-    new_faces = []
-    new_verts_np = np.array(())
-
-    # Component bounding box
-    min_c = Vector((0, 0, 0))
-    max_c = Vector((0, 0, 0))
-    first = True
-    for v in me1.vertices:
-        vert = v.co
-        if vert[0] < min_c[0] or first:
-            min_c[0] = vert[0]
-        if vert[1] < min_c[1] or first:
-            min_c[1] = vert[1]
-        if vert[2] < min_c[2] or first:
-            min_c[2] = vert[2]
-        if vert[0] > max_c[0] or first:
-            max_c[0] = vert[0]
-        if vert[1] > max_c[1] or first:
-            max_c[1] = vert[1]
-        if vert[2] > max_c[2] or first:
-            max_c[2] = vert[2]
-        first = False
-    bb = max_c - min_c
-
-    # adaptive XY
-    verts1 = []
-    for v in me1.vertices:
-        if mode == 'BOUNDS':
-            vert = v.co - min_c  # (ob1.matrix_world * v.co) - min_c
-            if use_origin_offset: vert[2] = v.co[2]
-            vert[0] = vert[0] / bb[0] if bb[0] != 0 else 0.5
-            vert[1] = vert[1] / bb[1] if bb[1] != 0 else 0.5
-            if scale_mode == 'CONSTANT':
-                if not use_origin_offset:
-                    vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
-                    vert[2] = vert[2] - 0.5 + offset * 0.5
-            else:
-                if not use_origin_offset:
-                    vert[2] = vert[2] + (-0.5 + offset * 0.5) * bb[2]
-            vert[2] *= zscale
-        elif mode == 'LOCAL':
-            vert = v.co.xyz
-            vert[2] *= zscale
-            #vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
-        elif mode == 'GLOBAL':
-            vert = ob1.matrix_world @ v.co
-            vert[2] *= zscale
-            try:
-                for sk in me1.shape_keys.key_blocks:
-                    sk.data[v.index].co = ob1.matrix_world @ sk.data[v.index].co
-            except: pass
-        v.co = vert
-
-    # Bounds X, Y
-    if mode != 'BOUNDS':
-        if bounds_x == 'CYCLIC':
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).x > 1]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.x -= 1
-                try:
-                    _ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.x -= 1
-                except: pass
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).x < 0]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.x += 1
-                try:
-                    _ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.x += 1
-                except: pass
-        if bounds_y == 'CYCLIC':
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).y > 1]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.y -= 1
-                try:
-                    _ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.y -= 1
-                except: pass
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).y < 0]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.y += 1
-                try:
-                    _ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.y += 1
-                except: pass
-    verts1 = [v.co for v in me1.vertices]
-    n_verts1 = len(verts1)
+    ### PATCHES ###
 
     patch_faces = 4**levels
     sides = int(sqrt(patch_faces))
@@ -1298,14 +1089,15 @@ def tessellate_patch(props):
     sides0 = sides-2
     patch_faces0 = int((sides-2)**2)
 
-    new_verts = []
-    new_edges = []
-    new_faces = []
+    if fill_mode == 'PATCH':
+        all_verts, mask, materials = get_patches(before_subsurf, me0, 4, levels, bool_selection)
+    else:
+        all_verts, mask, materials = get_quads(me0, bool_selection)
+    n_patches = len(all_verts)
 
-    for o in bpy.context.view_layer.objects: o.select_set(False)
-    new_patch = None
+    ### WEIGHT ###
 
-    # All vertex group
+    # Check if possible to use Weight Rotation
     if rotation_mode == 'WEIGHT':
         if not vertex_group_rotation in ob0.vertex_groups.keys():
             rotation_mode = 'DEFAULT'
@@ -1338,106 +1130,6 @@ def tessellate_patch(props):
 
     random.seed(rand_seed)
     bool_correct = False
-
-    # find relative UV component's vertices
-    verts1_uv_quads = [0]*len(verts1)
-    verts1_uv = [0]*len(verts1)
-    for i, vert in enumerate(verts1):
-        # grid coordinates
-        u = int(vert[0]//step)
-        v = int(vert[1]//step)
-        u1 = min(u+1, sides)
-        v1 = min(v+1, sides)
-        if mode != 'BOUNDS':
-            if u > sides-1:
-                u = sides-1
-                u1 = sides
-            if u < 0:
-                u = 0
-                u1 = 1
-            if v > sides-1:
-                v = sides-1
-                v1 = sides
-            if v < 0:
-                v = 0
-                v1 = 1
-        verts1_uv_quads[i] = (u,v,u1,v1)
-        # factor coordinates
-        fu = (vert[0]-u*step)/step
-        fv = (vert[1]-v*step)/step
-        fw = vert.z
-        # interpolate Z scaling factor
-        verts1_uv[i] = Vector((fu,fv,fw))
-
-    sk_uv_quads = []
-    sk_uv = []
-    if bool_shapekeys:
-        for sk in ob1.data.shape_keys.key_blocks:
-            source = sk.data
-            _sk_uv_quads = [0]*len(verts1)
-            _sk_uv = [0]*len(verts1)
-            for i, sk_v in enumerate(source):
-                if mode == 'BOUNDS':
-                    sk_vert = sk_v.co - min_c
-                    if use_origin_offset: sk_vert[2] = sk_v.co[2]
-                    sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
-                    sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
-                    if scale_mode == 'CONSTANT':
-                        if not use_origin_offset:
-                            sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
-                            sk_vert[2] = sk_vert[2] - 0.5 + offset * 0.5
-                    else:
-                        if not use_origin_offset:
-                            sk_vert[2] = sk_vert[2] + (- 0.5 + offset * 0.5) * bb[2]
-                    sk_vert[2] *= zscale
-                elif mode == 'LOCAL':
-                    sk_vert = sk_v.co
-                    sk_vert[2] *= zscale
-                elif mode == 'GLOBAL':
-                    sk_vert = sk_v.co
-                    sk_vert[2] *= zscale
-
-                # grid coordinates
-                u = int(sk_vert[0]//step)
-                v = int(sk_vert[1]//step)
-                u1 = min(u+1, sides)
-                v1 = min(v+1, sides)
-                if mode != 'BOUNDS':
-                    if u > sides-1:
-                        u = sides-1
-                        u1 = sides
-                    if u < 0:
-                        u = 0
-                        u1 = 1
-                    if v > sides-1:
-                        v = sides-1
-                        v1 = sides
-                    if v < 0:
-                        v = 0
-                        v1 = 1
-                _sk_uv_quads[i] = (u,v,u1,v1)
-                # factor coordinates
-                fu = (sk_vert[0]-u*step)/step
-                fv = (sk_vert[1]-v*step)/step
-                fw = sk_vert.z
-                _sk_uv[i] = Vector((fu,fv,fw))
-            sk_uv_quads.append(_sk_uv_quads)
-            sk_uv.append(_sk_uv)
-        store_sk_coordinates = [[] for t in ob1.data.shape_keys.key_blocks]
-        sk_uv_quads = np.array(sk_uv_quads)
-        sk_uv = np.array(sk_uv)
-
-    np_verts1_uv = np.array(verts1_uv)
-    verts1_uv_quads = np.array(verts1_uv_quads)
-    np_u = verts1_uv_quads[:,0]
-    np_v = verts1_uv_quads[:,1]
-    np_u1 = verts1_uv_quads[:,2]
-    np_v1 = verts1_uv_quads[:,3]
-
-    #end_time = time.time()
-    #print('Tissue: Patch preparation in {:.4f} sec'.format(end_time-start_time))
-    all_verts, mask = get_patches(before_subsurf, me0, 4, levels, bool_selection, bool_material_id, material_id)
-    n_patches = len(all_verts)
 
     ### ROTATE PATCHES ###
 
@@ -1504,7 +1196,7 @@ def tessellate_patch(props):
                         else: shift = 1
                     #UV_shift.append(shift)
                     UV_shift[f.index] = shift
-            #print(mask.shape)
+
             UV_shift = np.array(UV_shift)[mask]
             bm.free()
 
@@ -1519,1065 +1211,440 @@ def tessellate_patch(props):
         all_verts[flip_v] = all_verts[flip_v,:,::-1]
         all_verts[flip_uv] = np.transpose(all_verts[flip_uv],(0,2,1))
 
-    ### DEFORM PATCHES ###
+    for o in bpy.context.view_layer.objects: o.select_set(False)
+    new_patch = None
 
-    verts_xyz = verts0_co[all_verts]
-    v00 = verts_xyz[:, np_u, np_v]
-    v10 = verts_xyz[:, np_u1, np_v]
-    v01 = verts_xyz[:, np_u, np_v1]
-    v11 = verts_xyz[:, np_u1, np_v1]
-    vx = np_verts1_uv[:,0].reshape((1,n_verts1,1))
-    vy = np_verts1_uv[:,1].reshape((1,n_verts1,1))
-    vz = np_verts1_uv[:,2].reshape((1,n_verts1,1))
-    co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
 
-    ### PATCHES WEIGHT ###
-    weight_thickness = 1
-    weight_smooth_normals = 0.2
-    weight_smooth_normals0 = 0.2
-    if bool_vertex_group:
-        patches_weight = weight[:, all_verts]
-        w00 = patches_weight[:, :, np_u, np_v]
-        w10 = patches_weight[:, :, np_u1, np_v]
-        w01 = patches_weight[:, :, np_u, np_v1]
-        w11 = patches_weight[:, :, np_u1, np_v1]
-        store_weight = np_lerp2(w00,w10,w01,w11,vx.transpose(0,2,1),vy.transpose(0,2,1))
+    ### COMPONENT ###
+    new_objects = []
 
-        if vertex_group_thickness in ob0.vertex_groups.keys():
-            vg_id = ob0.vertex_groups[vertex_group_thickness].index
-            weight_thickness = store_weight[vg_id,:,:,np.newaxis]
-        if vertex_group_smooth_normals in ob0.vertex_groups.keys():
-            vg_id = ob0.vertex_groups[vertex_group_smooth_normals].index
-            weight_smooth_normals = store_weight[vg_id,:,:,np.newaxis]
-    else:
-        # Read vertex group Thickness
-        if vertex_group_thickness in ob0.vertex_groups.keys():
-            vg = ob0.vertex_groups[vertex_group_thickness]
-            weight_thickness = get_weight_numpy(vg, n_verts0)
-            wt = weight_thickness[all_verts]
-            wt = wt[:,:,:,np.newaxis]
-            w00 = wt[:, np_u, np_v]
-            w10 = wt[:, np_u1, np_v]
-            w01 = wt[:, np_u, np_v1]
-            w11 = wt[:, np_u1, np_v1]
-            weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
-            try:
-                weight_thickness.shape
-                if invert_vertex_group_thickness:
-                    weight_thickness = 1-weight_thickness
-                fact = vertex_group_thickness_factor
-                if fact > 0:
-                    weight_thickness = weight_thickness*(1-fact) + fact
-            except: pass
+    # Store original values
+    _com_modifiers = com_modifiers
+    _bool_shapekeys = bool_shapekeys
 
-        # Read vertex group smooth normals
+    for mat_id, _ob1 in enumerate(components):
+        if _ob1 == None: continue
+
+        # Set original values (for next commponents)
+        com_modifiers = _com_modifiers
+        bool_shapekeys = _bool_shapekeys
+
+        if bool_multi_components:
+            masked_verts = all_verts[materials == mat_id]
+        elif bool_material_id:
+            masked_verts = all_verts[materials == material_id]
+        else:
+            masked_verts = all_verts
+        n_patches = len(masked_verts)
+        if n_patches == 0: continue
+
+        if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
+
+        # set Shape Keys to zero
+        original_key_values = None
+        if bool_shapekeys or not com_modifiers:
+            if _ob1.data.shape_keys:
+                original_key_values = []
+                for sk in _ob1.data.shape_keys.key_blocks:
+                    original_key_values.append(sk.value)
+                    sk.value = 0
+            else:
+                bool_shapekeys = False
+
+        if not com_modifiers and not bool_shapekeys:
+            mod_visibility = []
+            for m in _ob1.modifiers:
+                mod_visibility.append(m.show_viewport)
+                m.show_viewport = False
+            com_modifiers = True
+        ob1 = convert_object_to_mesh(_ob1, com_modifiers, False)
+        ob1, com_area = tessellate_prepare_component(ob1, props)
+        ob1.name = "_tissue_tmp_ob1"
+
+        # restore original modifiers visibility for component object
+        try:
+            for m, vis in zip(_ob1.modifiers, mod_visibility):
+                m.show_viewport = vis
+        except: pass
+
+        me1 = ob1.data
+        verts1 = [v.co for v in me1.vertices]
+        n_verts1 = len(verts1)
+
+        ### COMPONENT GRID COORDINATES ###
+
+        # find relative UV component's vertices
+        if fill_mode == 'PATCH':
+            verts1_uv_quads = [0]*n_verts1
+            verts1_uv = [0]*n_verts1
+            for i, vert in enumerate(verts1):
+                # grid coordinates
+                u = int(vert[0]//step)
+                v = int(vert[1]//step)
+                u1 = min(u+1, sides)
+                v1 = min(v+1, sides)
+                if mode != 'BOUNDS':
+                    if u > sides-1:
+                        u = sides-1
+                        u1 = sides
+                    if u < 0:
+                        u = 0
+                        u1 = 1
+                    if v > sides-1:
+                        v = sides-1
+                        v1 = sides
+                    if v < 0:
+                        v = 0
+                        v1 = 1
+                verts1_uv_quads[i] = (u,v,u1,v1)
+                # factor coordinates
+                fu = (vert[0]-u*step)/step
+                fv = (vert[1]-v*step)/step
+                fw = vert.z
+                # interpolate Z scaling factor
+                verts1_uv[i] = Vector((fu,fv,fw))
+        else:
+            verts1_uv = verts1
+
+        if bool_shapekeys:
+            sk_uv_quads = []
+            sk_uv = []
+            for sk in ob1.data.shape_keys.key_blocks:
+                source = sk.data
+                _sk_uv_quads = [0]*n_verts1
+                _sk_uv = [0]*n_verts1
+                for i, sk_v in enumerate(source):
+                    sk_vert = sk_v.co
+
+                    # grid coordinates
+                    u = int(sk_vert[0]//step)
+                    v = int(sk_vert[1]//step)
+                    u1 = min(u+1, sides)
+                    v1 = min(v+1, sides)
+                    if mode != 'BOUNDS':
+                        if u > sides-1:
+                            u = sides-1
+                            u1 = sides
+                        if u < 0:
+                            u = 0
+                            u1 = 1
+                        if v > sides-1:
+                            v = sides-1
+                            v1 = sides
+                        if v < 0:
+                            v = 0
+                            v1 = 1
+                    _sk_uv_quads[i] = (u,v,u1,v1)
+                    # factor coordinates
+                    fu = (sk_vert[0]-u*step)/step
+                    fv = (sk_vert[1]-v*step)/step
+                    fw = sk_vert.z
+                    _sk_uv[i] = Vector((fu,fv,fw))
+                sk_uv_quads.append(_sk_uv_quads)
+                sk_uv.append(_sk_uv)
+            store_sk_coordinates = [[] for t in ob1.data.shape_keys.key_blocks]
+            sk_uv_quads = np.array(sk_uv_quads)
+            sk_uv = np.array(sk_uv)
+
+        np_verts1_uv = np.array(verts1_uv)
+        if fill_mode == 'PATCH':
+            verts1_uv_quads = np.array(verts1_uv_quads)
+            np_u = verts1_uv_quads[:,0]
+            np_v = verts1_uv_quads[:,1]
+            np_u1 = verts1_uv_quads[:,2]
+            np_v1 = verts1_uv_quads[:,3]
+        else:
+            np_u = 0
+            np_v = 0
+            np_u1 = 1
+            np_v1 = 1
+
+        ### DEFORM PATCHES ###
+        verts_xyz = verts0_co[masked_verts]
+        v00 = verts_xyz[:, np_u, np_v].reshape((n_patches,-1,3))
+        v10 = verts_xyz[:, np_u1, np_v].reshape((n_patches,-1,3))
+        v01 = verts_xyz[:, np_u, np_v1].reshape((n_patches,-1,3))
+        v11 = verts_xyz[:, np_u1, np_v1].reshape((n_patches,-1,3))
+        vx = np_verts1_uv[:,0].reshape((1,n_verts1,1))
+        vy = np_verts1_uv[:,1].reshape((1,n_verts1,1))
+        vz = np_verts1_uv[:,2].reshape((1,n_verts1,1))
+        co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
+
+        ### PATCHES WEIGHT ###
+        weight_thickness = 1
+        weight_smooth_normals = 0.2
+        weight_smooth_normals0 = 0.2
+        if bool_vertex_group:
+            n_vg = len(weight)
+            patches_weight = weight[:, masked_verts]
+            w00 = patches_weight[:, :, np_u, np_v].reshape((n_vg, n_patches,-1,1))
+            w10 = patches_weight[:, :, np_u1, np_v].reshape((n_vg, n_patches,-1,1))
+            w01 = patches_weight[:, :, np_u, np_v1].reshape((n_vg, n_patches,-1,1))
+            w11 = patches_weight[:, :, np_u1, np_v1].reshape((n_vg, n_patches,-1,1))
+            #store_weight = np_lerp2(w00,w10,w01,w11,vx.transpose(0,2,1),vy.transpose(0,2,1))
+            store_weight = np_lerp2(w00,w10,w01,w11,vx[None,:,:,:],vy[None,:,:,:])
+
+            if vertex_group_thickness in ob0.vertex_groups.keys():
+                vg_id = ob0.vertex_groups[vertex_group_thickness].index
+                weight_thickness = store_weight[vg_id,:,:]
+            if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+                vg_id = ob0.vertex_groups[vertex_group_smooth_normals].index
+                weight_smooth_normals = store_weight[vg_id,:,:]
+        else:
+            # Read vertex group Thickness
+            if vertex_group_thickness in ob0.vertex_groups.keys():
+                vg = ob0.vertex_groups[vertex_group_thickness]
+                weight_thickness = get_weight_numpy(vg, n_verts0)
+                wt = weight_thickness[masked_verts]
+                wt = wt[:,:,:,np.newaxis]
+                w00 = wt[:, np_u, np_v].reshape((n_patches, -1, 1))
+                w10 = wt[:, np_u1, np_v].reshape((n_patches, -1, 1))
+                w01 = wt[:, np_u, np_v1].reshape((n_patches, -1, 1))
+                w11 = wt[:, np_u1, np_v1].reshape((n_patches, -1, 1))
+                weight_thickness = np_lerp2(w00,w10,w01,w11,vx,vy)
+                try:
+                    weight_thickness.shape
+                    if invert_vertex_group_thickness:
+                        weight_thickness = 1-weight_thickness
+                    fact = vertex_group_thickness_factor
+                    if fact > 0:
+                        weight_thickness = weight_thickness*(1-fact) + fact
+                except: pass
+
+            # Read vertex group smooth normals
+            if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+                vg = ob0.vertex_groups[vertex_group_smooth_normals]
+                weight_smooth_normals = get_weight_numpy(vg, n_verts0)
+                wt = weight_smooth_normals[masked_verts]
+                wt = wt[:,:,:,np.newaxis]
+                w00 = wt[:, np_u, np_v].reshape((n_patches, -1, 1))
+                w10 = wt[:, np_u1, np_v].reshape((n_patches, -1, 1))
+                w01 = wt[:, np_u, np_v1].reshape((n_patches, -1, 1))
+                w11 = wt[:, np_u1, np_v1].reshape((n_patches, -1, 1))
+                weight_smooth_normals = np_lerp2(w00,w10,w01,w11,vx,vy)
+                try:
+                    weight_smooth_normals.shape
+                    if invert_vertex_group_smooth_normals:
+                        weight_smooth_normals = 1-weight_smooth_normals
+                    #fact = vertex_group_thickness_factor
+                    #if fact > 0:
+                    #    weight_thickness = weight_thickness*(1-fact) + fact
+                except: pass
+
         if vertex_group_smooth_normals in ob0.vertex_groups.keys():
             vg = ob0.vertex_groups[vertex_group_smooth_normals]
-            weight_smooth_normals = get_weight_numpy(vg, n_verts0)
-            wt = weight_smooth_normals[all_verts]
-            wt = wt[:,:,:,np.newaxis]
-            w00 = wt[:, np_u, np_v]
-            w10 = wt[:, np_u1, np_v]
-            w01 = wt[:, np_u, np_v1]
-            w11 = wt[:, np_u1, np_v1]
-            weight_smooth_normals = np_lerp2(w00,w10,w01,w11,vx,vy)
-            try:
-                weight_smooth_normals.shape
-                if invert_vertex_group_smooth_normals:
-                    weight_smooth_normals = 1-weight_smooth_normals
-                #fact = vertex_group_thickness_factor
-                #if fact > 0:
-                #    weight_thickness = weight_thickness*(1-fact) + fact
-            except: pass
+            weight_smooth_normals0 = get_weight_numpy(vg, n_verts0)
+            if invert_vertex_group_smooth_normals:
+                weight_smooth_normals0 = 1-weight_smooth_normals0
+            weight_smooth_normals0 *= 0.2
 
-    if vertex_group_smooth_normals in ob0.vertex_groups.keys():
-        vg = ob0.vertex_groups[vertex_group_smooth_normals]
-        weight_smooth_normals0 = get_weight_numpy(vg, n_verts0)
-        if invert_vertex_group_smooth_normals:
-            weight_smooth_normals0 = 1-weight_smooth_normals0
-        weight_smooth_normals0 *= 0.2
-
-    if normals_mode == 'FACES':
-        n2 = [0]*len(mask)*3
-        before_subsurf.polygons.foreach_get('normal',n2)
-        n2 = np.array(n2).reshape(len(mask),3)[mask][:,np.newaxis]
-        #n2 = np.mean(verts_norm, axis=(1,2))
-        #n2 = np.expand_dims(n2, axis=1)
-    else:
-
-        ### SMOOTH NORMALS
-        if smooth_normals:
-
-            new_normals0 = mesh_diffusion_vector(me0, verts0_normal, smooth_normals_iter, weight_smooth_normals0, smooth_normals_uv)
-            # Normalize
-            new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
-            # Even Thickness
-            if True:
-                mult = np.zeros(len(verts0_normal))
-                for i in range(len(verts0_normal)):
-                    vec0 = Vector(verts0_normal[i])
-                    vec1 = Vector(new_normals0[i])
-                    ang = min(vec1.angle(vec0), pi/4)
-                    mult[i] = 1/cos(ang)
-            #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
-            verts0_normal = new_normals0*mult[:,np.newaxis]
-
-        verts_norm = verts0_normal[all_verts]
-        n00 = verts_norm[:, np_u, np_v]
-        n10 = verts_norm[:, np_u1, np_v]
-        n01 = verts_norm[:, np_u, np_v1]
-        n11 = verts_norm[:, np_u1, np_v1]
-        n2 = np_lerp2(n00, n10, n01, n11, vx, vy)
-
-
-    # thickness variation
-    mean_area = []
-    if scale_mode == 'ADAPTIVE':
-        com_area = bb[0]*bb[1]
-        if mode != 'BOUNDS' or com_area == 0: com_area = 1
         if normals_mode == 'FACES':
-            if levels == 0:
-                areas = [0]*len(mask)
-                before_subsurf.polygons.foreach_get('area',areas)
-                areas = np.sqrt(np.array(areas)/com_area)[mask]
-                a2 = areas[:,np.newaxis,np.newaxis]
+            n2 = [0]*len(mask)*3
+            before_subsurf.polygons.foreach_get('normal',n2)
+            n2 = np.array(n2).reshape(-1,3)[mask][:,np.newaxis]
+            #n2 = np.mean(verts_norm, axis=(1,2))
+            #n2 = np.expand_dims(n2, axis=1)
+        else:
+            if normals_mode == 'CUSTOM':
+                me0.calc_normals_split()
+                normals_split = [0]*len(me0.loops)*3
+                vertex_indexes = [0]*len(me0.loops)
+                me0.loops.foreach_get('normal', normals_split)
+                me0.loops.foreach_get('vertex_index', vertex_indexes)
+                normals_split = np.array(normals_split).reshape(-1,3)
+                vertex_indexes = np.array(vertex_indexes)
+                verts0_normal = np.zeros((len(me0.vertices),3))
+                np.add.at(verts0_normal, vertex_indexes, normals_split)
+                indexes, counts = np.unique(vertex_indexes,return_counts=True)
+                verts0_normal[indexes] /= counts[:,np.newaxis]
+
+            ### SMOOTH NORMALS
+            if smooth_normals:
+
+                new_normals0 = mesh_diffusion_vector(me0, verts0_normal, smooth_normals_iter, weight_smooth_normals0, smooth_normals_uv)
+                # Normalize
+                new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
+                # Even Thickness
+                if True:
+                    mult = np.zeros(len(verts0_normal))
+                    for i in range(len(verts0_normal)):
+                        vec0 = Vector(verts0_normal[i])
+                        vec1 = Vector(new_normals0[i])
+                        ang = min(vec1.angle(vec0), pi/4)
+                        mult[i] = 1/cos(ang)
+                #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
+                verts0_normal = new_normals0*mult[:,np.newaxis]
+
+            bm1 = bmesh.new()
+            bm1.from_mesh(me1)
+            if 'Eval_Normals' in bm1.loops.layers.uv.keys():
+                uv_co = np.array(uv_from_bmesh(bm1, 'Eval_Normals'))
+                vx_nor = uv_co[:,0]#.reshape((1,n_verts1,1))
+                #vy_nor = uv_co[:,1]#.reshape((1,n_verts1,1))
+
+                # grid coordinates
+                np_u = np.maximum(vx_nor//step, 0).astype('int')
+                #np_v = np.maximum(vy_nor//step, 0).astype('int')
+                np_u1 = np.minimum(np_u+1, sides).astype('int')
+                #np_v1 = np.minimum(np_v+1, sides).astype('int')
+
+                vx_nor = (vx_nor - np_u * step)/step
+                #vy_nor = (vy_nor - np_v * step)/step
+                vx_nor = vx_nor.reshape((1,n_verts1,1))
+                #vy_nor = vy_nor.reshape((1,n_verts1,1))
+                vy_nor = vy
+            else:
+                vx_nor = vx
+                vy_nor = vy
+            bm1.free()
+
+            verts_norm = verts0_normal[masked_verts]
+            n00 = verts_norm[:, np_u, np_v].reshape((n_patches,-1,3))
+            n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,-1,3))
+            n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,-1,3))
+            n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,-1,3))
+            n2 = np_lerp2(n00, n10, n01, n11, vx_nor, vy_nor)
+
+        # thickness variation
+        mean_area = []
+        if scale_mode == 'ADAPTIVE':
+            #com_area = bb[0]*bb[1]
+            if mode != 'BOUNDS' or com_area == 0: com_area = 1
+            if normals_mode == 'FACES':
+                if levels == 0:
+                    areas = [0]*len(mask)
+                    before_subsurf.polygons.foreach_get('area',areas)
+                    areas = np.sqrt(np.array(areas)/com_area)[mask]
+                    a2 = areas[:,np.newaxis,np.newaxis]
+                else:
+                    areas = calc_verts_area_bmesh(me0)
+                    verts_area = np.sqrt(areas*patch_faces/com_area)
+                    verts_area = verts_area[masked_verts]
+                    verts_area = verts_area.mean(axis=(1,2)).reshape((n_patches,1,1))
+                    a2 = verts_area
             else:
                 areas = calc_verts_area_bmesh(me0)
                 verts_area = np.sqrt(areas*patch_faces/com_area)
-                verts_area = verts_area[all_verts]
-                verts_area = verts_area.mean(axis=(1,2)).reshape((n_patches,1,1))
-                a2 = verts_area
-        else:
-            areas = calc_verts_area_bmesh(me0)
-            verts_area = np.sqrt(areas*patch_faces/com_area)
-            verts_area = verts_area[all_verts]
-            a00 = verts_area[:, np_u, np_v].reshape((n_patches,n_verts1,1))
-            a10 = verts_area[:, np_u1, np_v].reshape((n_patches,n_verts1,1))
-            a01 = verts_area[:, np_u, np_v1].reshape((n_patches,n_verts1,1))
-            a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,n_verts1,1))
-            # remapped z scale
-            a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
-        co3 = co2 + n2 * vz * a2 * weight_thickness
-    else:
-        co3 = co2 + n2 * vz * weight_thickness
-
-    store_coordinates = co3
-
-    if bool_shapekeys:
-        n_sk = len(sk_uv_quads)
-        # ids of face corners for each vertex (n_sk, n_verts1, 4)
-        np_u = sk_uv_quads[:,:,0]
-        np_v = sk_uv_quads[:,:,1]
-        np_u1 = sk_uv_quads[:,:,2]
-        np_v1 = sk_uv_quads[:,:,3]
-        # face corners for each vertex  (n_patches, n_sk, n_verts1, 4)
-        v00 = verts_xyz[:,np_u,np_v]
-        v10 = verts_xyz[:,np_u1,np_v]
-        v01 = verts_xyz[:,np_u,np_v1]
-        v11 = verts_xyz[:,np_u1,np_v1]
-        vx = sk_uv[:,:,0].reshape((1,2,n_verts1,1))
-        vy = sk_uv[:,:,1].reshape((1,2,n_verts1,1))
-        vz = sk_uv[:,:,2].reshape((1,2,n_verts1,1))
-        co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
-
-        if normals_mode == 'FACES':
-            n2 = n2[:,np.newaxis,:,:]
-        else:
-            n00 = verts_norm[:, np_u, np_v].reshape((n_patches,2,n_verts1,3))
-            n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,2,n_verts1,3))
-            n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,2,n_verts1,3))
-            n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,2,n_verts1,3))
-            n2 = np_lerp2(n00,n10,n01,n11,vx,vy)#[:,np.newaxis,:,:]
-
-        # NOTE: weight thickness is based on the base position of the
-        #       vertices, not on the coordinates of the shape keys
-
-        if scale_mode == 'ADAPTIVE':
-            if normals_mode == 'FACES':
-                a2 = mean_area
-            else:
-                a00 = verts_area[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,1))
-                a10 = verts_area[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,1))
-                a01 = verts_area[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,1))
-                a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,1))
+                verts_area = verts_area[masked_verts]
+                a00 = verts_area[:, np_u, np_v].reshape((n_patches,-1,1))
+                a10 = verts_area[:, np_u1, np_v].reshape((n_patches,-1,1))
+                a01 = verts_area[:, np_u, np_v1].reshape((n_patches,-1,1))
+                a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,-1,1))
                 # remapped z scale
                 a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
             co3 = co2 + n2 * vz * a2 * weight_thickness
         else:
             co3 = co2 + n2 * vz * weight_thickness
 
-        store_sk_coordinates = co3
+        store_coordinates = co3
 
-    new_me = array_mesh(ob1, len(all_verts))
-    new_patch = bpy.data.objects.new("tessellate_temp", new_me)
-    bpy.context.collection.objects.link(new_patch)
-    new_patch.select_set(True)
-    bpy.context.view_layer.objects.active = new_patch
+        if bool_shapekeys:
+            n_sk = len(sk_uv_quads)
+            # ids of face corners for each vertex (n_sk, n_verts1, 4)
+            np_u = sk_uv_quads[:,:,0]
+            np_v = sk_uv_quads[:,:,1]
+            np_u1 = sk_uv_quads[:,:,2]
+            np_v1 = sk_uv_quads[:,:,3]
+            # face corners for each vertex  (n_patches, n_sk, n_verts1, 4)
+            v00 = verts_xyz[:,np_u,np_v]
+            v10 = verts_xyz[:,np_u1,np_v]
+            v01 = verts_xyz[:,np_u,np_v1]
+            v11 = verts_xyz[:,np_u1,np_v1]
+            vx = sk_uv[:,:,0].reshape((1,2,n_verts1,1))
+            vy = sk_uv[:,:,1].reshape((1,2,n_verts1,1))
+            vz = sk_uv[:,:,2].reshape((1,2,n_verts1,1))
+            co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
 
-    for area in bpy.context.screen.areas:
-        for space in area.spaces:
-            try: new_patch.local_view_set(space, True)
-            except: pass
+            if normals_mode == 'FACES':
+                n2 = n2[:,np.newaxis,:,:]
+            else:
+                n00 = verts_norm[:, np_u, np_v].reshape((n_patches,2,n_verts1,3))
+                n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,2,n_verts1,3))
+                n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,2,n_verts1,3))
+                n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,2,n_verts1,3))
+                n2 = np_lerp2(n00,n10,n01,n11,vx,vy)#[:,np.newaxis,:,:]
 
-    # Vertex Group
-    for vg in ob1.vertex_groups:
-        new_patch.vertex_groups.new(name=vg.name)
-    if bool_vertex_group:
-        for vg in ob0.vertex_groups:
+            # NOTE: weight thickness is based on the base position of the
+            #       vertices, not on the coordinates of the shape keys
+
+            if scale_mode == 'ADAPTIVE':
+                if normals_mode == 'FACES':
+                    a2 = mean_area
+                else:
+                    a00 = verts_area[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,1))
+                    a10 = verts_area[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,1))
+                    a01 = verts_area[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,1))
+                    a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,1))
+                    # remapped z scale
+                    a2 = np_lerp2(a00,a10,a01,a11,vx,vy)
+                co3 = co2 + n2 * vz * a2 * weight_thickness
+            else:
+                co3 = co2 + n2 * vz * weight_thickness
+
+            store_sk_coordinates = co3
+
+        patch_time = time.time()
+        new_me = array_mesh(ob1, len(masked_verts))
+        patch_end_time = time.time()
+        print('Tissue: array mesh in {:.4f} sec'.format(patch_end_time - patch_time))
+
+        new_patch = bpy.data.objects.new("_tissue_tmp_patch", new_me)
+        bpy.context.collection.objects.link(new_patch)
+        new_patch.select_set(True)
+        bpy.context.view_layer.objects.active = new_patch
+        coordinates = np.concatenate(store_coordinates, axis=0)
+        coordinates = coordinates.flatten().tolist()
+        new_me.vertices.foreach_set('co',coordinates)
+
+        for area in bpy.context.screen.areas:
+            for space in area.spaces:
+                try: new_patch.local_view_set(space, True)
+                except: pass
+
+        # Vertex Group
+        for vg in ob1.vertex_groups:
             new_patch.vertex_groups.new(name=vg.name)
-
-    coordinates = np.concatenate(store_coordinates, axis=0)
-    coordinates = coordinates.flatten().tolist()
-    new_me.vertices.foreach_set('co',coordinates)
-
-    if bool_vertex_group:
-        bm = bmesh.new()
-        bm.from_mesh(new_me)
-        for i in range(len(store_weight)):
-            np_weight = store_weight[i].flatten()
-            bm = bmesh_set_weight_numpy(bm, i + len(ob1.vertex_groups), np_weight)
-        bm.to_mesh(new_me)
-        new_me.update()
-
-    if bool_shapekeys:
-        for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
-            sk.value = val
-            new_patch.shape_key_add(name=sk.name, from_mix=False)
-            new_patch.data.shape_keys.key_blocks[sk.name].value = val
-        for i in range(n_sk):
-            coordinates = np.concatenate(store_sk_coordinates[:,i,:,:], axis=0)
-            coordinates = coordinates.flatten().tolist()
-            new_patch.data.shape_keys.key_blocks[i].data.foreach_set('co', coordinates)
-
-    ############# if not bool_correct: return 0
-
-    if bool_shapekeys:
-        # set original values and combine Shape Keys and Vertex Groups
-        for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
-            sk.value = val
-            new_patch.data.shape_keys.key_blocks[sk.name].value = val
         if bool_vertex_group:
-            for sk in new_patch.data.shape_keys.key_blocks:
-                for vg in new_patch.vertex_groups:
-                    if sk.name == vg.name:
-                        sk.vertex_group = vg.name
-    else:
-        try:
+            for vg in ob0.vertex_groups:
+                new_patch.vertex_groups.new(name=vg.name)
+            for vg, weight in zip(new_patch.vertex_groups, store_weight):
+                set_weight_numpy(vg, weight.reshape(-1))
+            new_patch.vertex_groups.update()
+
+        if bool_shapekeys:
             for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
                 sk.value = val
-        except: pass
+                new_patch.shape_key_add(name=sk.name, from_mix=False)
+                new_patch.data.shape_keys.key_blocks[sk.name].value = val
+            for i in range(n_sk):
+                coordinates = np.concatenate(store_sk_coordinates[:,i,:,:], axis=0)
+                coordinates = coordinates.flatten().tolist()
+                new_patch.data.shape_keys.key_blocks[i].data.foreach_set('co', coordinates)
 
-    new_name = ob0.name + "_" + ob1.name
-    new_patch.name = "tessellate_temp"
-
-    if bool_multires:
-        for m in ob0.modifiers:
-            if m.type == 'MULTIRES' and m.name == multires_name:
-                m.levels = levels
-                m.sculpt_levels = sculpt_levels
-                m.render_levels = render_levels
-    # restore original modifiers visibility for component object
-    try:
-        for m, vis in zip(_ob1.modifiers, mod_visibility):
-            m.show_viewport = vis
-    except: pass
-
-    bpy.data.objects.remove(before)
-    bpy.data.objects.remove(ob0)
-    bpy.data.objects.remove(ob1)
-    new_patch.data.update() # solve normals issues if Smooth Shading is on
-    return new_patch
-
-def tessellate_original(props):
-    ob = props['self']
-    _ob0 = props['generator']
-    _ob1 = props['component']
-    offset = props['offset']
-    zscale = props['zscale']
-    gen_modifiers = props['gen_modifiers']
-    com_modifiers = props['com_modifiers']
-    mode = props['mode']
-    scale_mode = props['scale_mode']
-    rotation_mode = props['rotation_mode']
-    rotation_shift = props['rotation_shift']
-    rotation_direction = props['rotation_direction']
-    rand_seed = props['rand_seed']
-    rand_step = props['rand_step']
-    fill_mode = props['fill_mode']
-    bool_vertex_group = props['bool_vertex_group']
-    bool_selection = props['bool_selection']
-    bool_shapekeys = props['bool_shapekeys']
-    bool_material_id = props['bool_material_id']
-    material_id = props['material_id']
-    normals_mode = props['normals_mode']
-    bounds_x = props['bounds_x']
-    bounds_y = props['bounds_y']
-    use_origin_offset = props['use_origin_offset']
-    target = props['target']
-    vertex_group_thickness = props['vertex_group_thickness']
-    invert_vertex_group_thickness = props['invert_vertex_group_thickness']
-    vertex_group_thickness_factor = props['vertex_group_thickness_factor']
-    vertex_group_cap_owner = props['vertex_group_cap_owner']
-    vertex_group_cap = props['vertex_group_cap']
-    invert_vertex_group_cap = props['invert_vertex_group_cap']
-    vertex_group_bridge_owner = props['vertex_group_bridge_owner']
-    vertex_group_bridge = props['vertex_group_bridge']
-    invert_vertex_group_bridge = props['invert_vertex_group_bridge']
-    vertex_group_rotation = props['vertex_group_rotation']
-    invert_vertex_group_rotation = props['invert_vertex_group_rotation']
-    vertex_group_smooth_normals = props['vertex_group_smooth_normals']
-    invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
-    smooth_normals = props['smooth_normals']
-    smooth_normals_iter = props['smooth_normals_iter']
-    smooth_normals_uv = props['smooth_normals_uv']
-    custom_mode = 'OBJECT'
-
-    # reset messages
-    ob.tissue_tessellate.warning_message_thickness = ''
-
-    if normals_mode == 'SHAPEKEYS':
-        if _ob0.data.shape_keys != None:
-            target = _ob0
-        else:
-            normals_mode = 'VERTS'
-            message = "Base mesh doesn't have Shape Keys"
-            ob.tissue_tessellate.warning_message_thickness = message
-            print("Tissue: " + message)
-    if normals_mode == 'OBJECT' and target == None:
-        normals_mode = 'VERTS'
-        message = "Please select a target object"
-        ob.tissue_tessellate.warning_message_thickness = message
-        print("Tissue: " + message)
-
-    if com_modifiers or _ob1.type != 'MESH': bool_shapekeys = False
-    random.seed(rand_seed)
-
-    if len(_ob0.vertex_groups) == 0: bool_vertex_group = False
-
-    if bool_shapekeys:
-        try:
-            original_key_values = []
-            for sk in _ob1.data.shape_keys.key_blocks:
-                original_key_values.append(sk.value)
-                sk.value = 0
-        except:
-            bool_shapekeys = False
-
-    if normals_mode in ('SHAPEKEYS', 'OBJECT'):
-        use_modifiers = gen_modifiers
-        if normals_mode == 'SHAPEKEYS' and not gen_modifiers:
-            target = _ob0
-            for m in target.modifiers:
-                m.show_viewport = False
-            use_modifiers = True
-        if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, props, use_modifiers)
-        elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, use_modifiers)
-        elif fill_mode == 'TRI': ob0_sk = convert_to_triangles(target, props, use_modifiers)
-        else: ob0_sk = convert_object_to_mesh(target, use_modifiers, True)
-        me0_sk = ob0_sk.data
-        if normals_mode == 'SHAPEKEYS':
-            key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
-            for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
-
-    if fill_mode == 'FAN': ob0 = convert_to_fan(_ob0, props, gen_modifiers)
-    elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, props, gen_modifiers)
-    elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, props, gen_modifiers)
-    else: ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
-    #ob0 = convert_object_to_mesh(_ob0, gen_modifiers, True)
-    me0 = ob0.data
-    ob1 = convert_object_to_mesh(_ob1, com_modifiers, True)
-    me1 = ob1.data
-
-    # base normals
-    normals0 = []
-    if normals_mode in ('SHAPEKEYS', 'OBJECT'):
-        if len(me0_sk.vertices) != len(me0.vertices):
-            normals_mode = 'VERTS'
-            message = "Base mesh and Target mesh doesn't match"
-            ob.tissue_tessellate.warning_message_thickness = message
-            print("Tissue: " + message)
-            bpy.data.objects.remove(ob0_sk)
-        else:
-            if normals_mode == 'SHAPEKEYS':
-                for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0):
-                    sk.value = val
-            for v0, v1 in zip(me0.vertices, me0_sk.vertices):
-                normals0.append(v1.co - v0.co)
-            bpy.data.objects.remove(ob0_sk)
-
-    if normals_mode in ('VERTS','FACES'):
-        me0.update()
-        normals0 = [v.normal for v in me0.vertices]
-
-    if smooth_normals:
-        #bm0 = bmesh.new()
-        #bm0.from_mesh(me0)
-        new_normals0 = mesh_diffusion_vector(me0, normals0, smooth_normals_iter, 0.2, smooth_normals_uv)
-        # Normalize
-        new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
-        # Even Thickness
-        if False:
-            mult = np.zeros(len(normals0))
-            for i in range(len(normals0)):
-                vec0 = Vector(normals0[i])
-                vec1 = Vector(new_normals0[i])
-                ang = min(vec1.angle(vec0), pi/4)
-                mult[i] = 1/cos(ang)
-        #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
-        normals0 = new_normals0#*mult[:,np.newaxis]
+            # set original values and combine Shape Keys and Vertex Groups
+            #for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
+            #    sk.value = val
+            #    new_patch.data.shape_keys.key_blocks[sk.name].value = val
+            if bool_vertex_group:
+                vg_keys = new_patch.vertex_groups.keys()
+                for sk in new_patch.data.shape_keys.key_blocks:
+                    if sk.name in vg_keys:
+                        sk.vertex_group = sk.name
+        elif original_key_values:
+            for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
+                sk.value = val
 
 
-    base_polygons = []
-    base_face_normals = []
+        new_name = ob0.name + "_" + ob1.name
+        new_patch.name = "_tissue_tmp_patch"
 
-    n_faces0 = len(me0.polygons)
-
-    # Check if zero faces are selected
-    if (bool_selection and ob0.type == 'MESH') or bool_material_id:
-        for p in me0.polygons:
-            if (bool_selection and ob0.type == 'MESH'):
-                is_sel = p.select
-            else: is_sel = True
-            if bool_material_id:
-                is_mat = p.material_index == material_id
-            else: is_mat = True
-            if is_sel and is_mat:
-                base_polygons.append(p)
-                base_face_normals.append(p.normal)
-    else:
-        base_polygons = me0.polygons
-        base_face_normals = [p.normal for p in me0.polygons]
-
-        # numpy test: slower
-        #base_face_normals = np.zeros(n_faces0*3)
-        #me0.polygons.foreach_get("normal", base_face_normals)
-        #base_face_normals = base_face_normals.reshape((n_faces0,3))
-
-    if len(base_polygons) == 0:
-        bpy.data.objects.remove(ob0)
+        new_patch.data.update() # solve normals issues if Smooth Shading is on
+        new_objects.append(new_patch)
         bpy.data.objects.remove(ob1)
-        bpy.data.meshes.remove(me1)
-        bpy.data.meshes.remove(me0)
-        return 0
-
-    if mode != 'BOUNDS':
-        bpy.ops.object.select_all(action='DESELECT')
-        for o in bpy.context.view_layer.objects: o.select_set(False)
-        bpy.context.view_layer.objects.active = ob1
-        ob1.select_set(True)
-        ob1.active_shape_key_index = 0
-        # Bound X
-        if bounds_x != 'EXTEND':
-            if mode == 'GLOBAL':
-                planes_co = ((0,0,0),(1,1,1))
-                plane_no = (1,0,0)
-            if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world.translation, ob1.matrix_world @ Vector((1,0,0)))
-                plane_no = planes_co[0]-planes_co[1]
-            bpy.ops.object.mode_set(mode='EDIT')
-            for co in planes_co:
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
-                bpy.ops.mesh.mark_seam()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            _faces = ob1.data.polygons
-            if mode == 'GLOBAL':
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x > 1]:
-                    f.select = True
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x < 0]:
-                    f.select = True
-            else:
-                for f in [f for f in _faces if f.center.x > 1]:
-                    f.select = True
-                for f in [f for f in _faces if f.center.x < 0]:
-                    f.select = True
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(type='FACE')
-            if bounds_x == 'CLIP':
-                bpy.ops.mesh.delete(type='FACE')
-                bpy.ops.object.mode_set(mode='OBJECT')
-            if bounds_x == 'CYCLIC':
-                bpy.ops.mesh.split()
-                bpy.ops.object.mode_set(mode='OBJECT')
-        # Bound Y
-        if bounds_y != 'EXTEND':
-            if mode == 'GLOBAL':
-                planes_co = ((0,0,0),(1,1,1))
-                plane_no = (0,1,0)
-            if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world.translation, ob1.matrix_world @ Vector((0,1,0)))
-                plane_no = planes_co[0]-planes_co[1]
-            bpy.ops.object.mode_set(mode='EDIT')
-            for co in planes_co:
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
-                bpy.ops.mesh.mark_seam()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            _faces = ob1.data.polygons
-            if mode == 'GLOBAL':
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y > 1]:
-                    f.select = True
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y < 0]:
-                    f.select = True
-            else:
-                for f in [f for f in _faces if f.center.y > 1]:
-                    f.select = True
-                for f in [f for f in _faces if f.center.y < 0]:
-                    f.select = True
-
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(type='FACE')
-            if bounds_y == 'CLIP':
-                bpy.ops.mesh.delete(type='FACE')
-                bpy.ops.object.mode_set(mode='OBJECT')
-            if bounds_y == 'CYCLIC':
-                bpy.ops.mesh.split()
-                bpy.ops.object.mode_set(mode='OBJECT')
-            bpy.ops.object.mode_set(mode='OBJECT')
-        #ob1 = new_ob1
-
-        me1 = ob1.data
-
-    verts0 = me0.vertices   # Collect generator vertices
-
-    # Component statistics
-    n_verts1 = len(me1.vertices)
-    n_edges1 = len(me1.edges)
-    n_faces1 = len(me1.polygons)
-
-    # Create empty lists
-    new_verts = []
-    new_edges = []
-    new_faces = []
-    new_verts_np = np.array(())
-
-    # Component Coordinates
-    co1 = [0]*n_verts1*3
-
-    if mode == 'GLOBAL':
-        for v in me1.vertices:
-            v.co = ob1.matrix_world @ v.co
-            try:
-                for sk in me1.shape_keys.key_blocks:
-                    sk.data[v.index].co = ob1.matrix_world @ sk.data[v.index].co
-            except: pass
-    if mode != 'BOUNDS':
-        if bounds_x == 'CYCLIC':
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).x > 1]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.x -= 1
-                try:
-                    _ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.x -= 1
-                except: pass
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).x < 0]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.x += 1
-                try:
-                    _ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.x += 1
-                except: pass
-        if bounds_y == 'CYCLIC':
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).y > 1]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.y -= 1
-                try:
-                    #new_ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.y -= 1
-                except: pass
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).y < 0]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.y += 1
-                try:
-                    #new_ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.y += 1
-                except: pass
-    if len(me1.vertices) == 0:
-        bpy.data.objects.remove(ob0)
-        bpy.data.objects.remove(ob1)
-        return 0
-
-    me1.vertices.foreach_get("co", co1)
-    co1 = np.array(co1)
-    vx = co1[0::3].reshape((n_verts1,1))
-    vy = co1[1::3].reshape((n_verts1,1))
-    vz = co1[2::3].reshape((n_verts1,1))
-    min_c = Vector((vx.min(), vy.min(), vz.min()))          # Min BB Corner
-    max_c = Vector((vx.max(), vy.max(), vz.max()))          # Max BB Corner
-    bb = max_c - min_c                                      # Bounding Box Size
-
-    # Component Coordinates
-    if mode == 'BOUNDS':
-        vx = (vx - min_c[0]) / bb[0] if bb[0] != 0 else 0.5
-        vy = (vy - min_c[1]) / bb[1] if bb[1] != 0 else 0.5
-        if use_origin_offset:
-            offset = 0
-        else:
-            vz = vz - min_c[2]
-        if scale_mode == 'CONSTANT':
-            if not use_origin_offset:
-                vz = vz / bb[2] if bb[2] != 0 else 0
-                vz = (vz - 0.5 + offset * 0.5) * zscale
-            else: vz *= zscale
-        else:
-            if not use_origin_offset:
-                vz = (vz + (- 0.5 + offset * 0.5) * bb[2]) * zscale
-            else: vz *= zscale
-        #vz = ((vz - min_c[2]) + (-0.5 + offset * 0.5) * bb[2]) * zscale
-    else:
-        vz *= zscale
-
-    # Component polygons
-    fs1 = [[i for i in p.vertices] for p in me1.polygons]
-    new_faces = fs1[:]
-
-    # Component edges
-    es1 = np.array([[i for i in e.vertices] for e in me1.edges])
-    #es1 = [[i for i in e.vertices] for e in me1.edges if e.is_loose]
-    new_edges = es1[:]
-
-    # SHAPE KEYS
-    if bool_shapekeys:
-        basis = True #com_modifiers
-        vx_key = []
-        vy_key = []
-        vz_key = []
-        sk_np = []
-        for sk in ob1.data.shape_keys.key_blocks:
-            do_shapekeys = True
-            # set all keys to 0
-            for _sk in ob1.data.shape_keys.key_blocks: _sk.value = 0
-            sk.value = 1
-
-            if basis:
-                basis = False
-                continue
-
-            # Apply component modifiers
-            if com_modifiers:
-                sk_ob = convert_object_to_mesh(_ob1)
-                sk_data = sk_ob.data
-                source = sk_data.vertices
-            else:
-                source = sk.data
-
-            shapekeys = []
-            for v in source:
-                if mode == 'BOUNDS':
-                    vert = v.co - min_c
-                    vert[0] = (vert[0] / bb[0] if bb[0] != 0 else 0.5)
-                    vert[1] = (vert[1] / bb[1] if bb[1] != 0 else 0.5)
-                    vert[2] = v.co.z
-                    if scale_mode == 'CONSTANT':
-                        if not use_origin_offset:
-                            vert[2] = (vert[2] / bb[2] if bb[2] != 0 else vert[2])
-                            vert[2] = vert[2] - 0.5 + offset * 0.5
-                    else:
-                        if not use_origin_offset:
-                            vert[2] = vert[2] + (-0.5 + offset * 0.5) * bb[2]
-                    vert[2] *= zscale
-                elif mode == 'LOCAL':
-                    vert = v.co.xyz
-                    vert[2] *= zscale
-                    #vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * \
-                    #          zscale
-                elif mode == 'GLOBAL':
-                    vert = v.co.xyz
-                    #vert = ob1.matrix_world @ v.co
-                    vert[2] *= zscale
-                shapekeys.append(vert)
-
-            # Component vertices
-            key1 = np.array([v for v in shapekeys]).reshape(len(shapekeys), 3, 1)
-            vx_key.append(key1[:, 0])
-            vy_key.append(key1[:, 1])
-            vz_key.append(key1[:, 2])
-            #sk_np.append([])
-
-    # All vertex group
-    bool_weight_thickness = vertex_group_thickness in ob0.vertex_groups.keys()
-    bool_weight_cap = vertex_group_cap_owner == 'BASE' and vertex_group_cap in ob0.vertex_groups.keys()
-    bool_weight_bridge = vertex_group_bridge_owner == 'BASE' and vertex_group_bridge in ob0.vertex_groups.keys()
-    if bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge:
-        try:
-            weight = []
-            for vg in ob0.vertex_groups:
-                _weight = []
-                for i,v in enumerate(me0.vertices):
-                    try:
-                        _weight.append(vg.weight(i))
-                    except:
-                        _weight.append(0)
-                weight.append(_weight)
-        except:
-            bool_vertex_group = False
-
-    # Adaptive Z
-    if scale_mode == 'ADAPTIVE':
-        com_area = bb[0]*bb[1]
-        if mode != 'BOUNDS' or com_area == 0: com_area = 1
-        com_mult = 1/sqrt(com_area)
-        verts_area = []
-        bm = bmesh.new()
-        bm.from_mesh(me0)
-        bm.verts.ensure_lookup_table()
-        for v in bm.verts:
-            area = 0
-            faces = v.link_faces
-            if len(faces) == 0:
-                verts_area.append(1)
-            else:
-                for f in faces:
-                    area += f.calc_area()
-                area/=len(faces) # average area
-                base = sqrt(area)
-                verts_area.append(base*com_mult)
-        if normals_mode == 'FACES':
-            faces_area = [sqrt(f.calc_area())*com_mult for f in bm.faces]
-
-    count = 0   # necessary for UV calculation
-
-    # TESSELLATION
-    j = 0
-    jj = -1
-    bool_correct = False
-
-    # optimization test
-    n_faces = len(base_polygons)
-    _vs0 = [0]*n_faces
-    _nvs0 = [0]*n_faces
-    _sz = [0]*n_faces
-    n_vg = len(ob0.vertex_groups)
-    _w0 = [[0]*n_faces for i in range(n_vg)]
-
-    face_verts1 = []
-    for j, p in enumerate(base_polygons):
-
-        bool_correct = True
-        if rotation_mode in ['UV', 'WEIGHT'] and ob0.type != 'MESH':
-            rotation_mode = 'DEFAULT'
-
-        ordered = p.vertices
-
-        # Random rotation
-        if rotation_mode == 'RANDOM':
-            shifted_vertices = []
-            n_poly_verts = len(p.vertices)
-            rand = random.randint(0, n_poly_verts)*rand_step
-            for i in range(n_poly_verts):
-                shifted_vertices.append(p.vertices[(i + rand) % n_poly_verts])
-            if scale_mode == 'ADAPTIVE':
-                verts_area0 = np.array([verts_area[i] for i in shifted_vertices])
-            ordered = shifted_vertices
-
-        # UV rotation
-        elif rotation_mode == 'UV':
-            if len(ob0.data.uv_layers) > 0:
-                i = p.index
-                if bool_material_id:
-                    count = sum([len(p.vertices) for p in me0.polygons[:i]])
-                    #if i == 0: count = 0
-                v01 = (me0.uv_layers.active.data[count].uv +
-                       me0.uv_layers.active.data[count + 1].uv)
-                if len(p.vertices) > 3:
-                    v32 = (me0.uv_layers.active.data[count + 3].uv +
-                           me0.uv_layers.active.data[count + 2].uv)
-                else:
-                    v32 = (me0.uv_layers.active.data[count].uv +
-                           me0.uv_layers.active.data[count + 2].uv)
-                v0132 = v32 - v01
-                v0132.normalize()
-
-                v12 = (me0.uv_layers.active.data[count + 1].uv +
-                       me0.uv_layers.active.data[count + 2].uv)
-                if len(p.vertices) > 3:
-                    v03 = (me0.uv_layers.active.data[count].uv +
-                           me0.uv_layers.active.data[count + 3].uv)
-                else:
-                    v03 = (me0.uv_layers.active.data[count].uv +
-                           me0.uv_layers.active.data[count].uv)
-                v1203 = v03 - v12
-                v1203.normalize()
-
-                vertUV = []
-                dot1203 = v1203.x
-                dot0132 = v0132.x
-                if(abs(dot1203) < abs(dot0132)):
-                    if (dot0132 > 0):
-                        vertUV = p.vertices[1:] + p.vertices[:1]
-                    else:
-                        vertUV = p.vertices[3:] + p.vertices[:3]
-                else:
-                    if(dot1203 < 0):
-                        vertUV = p.vertices[:]
-                    else:
-                        vertUV = p.vertices[2:] + p.vertices[:2]
-                ordered = vertUV
-                count += len(p.vertices)
-
-        # Weight Rotation
-        elif rotation_mode == 'WEIGHT':
-            if vertex_group_rotation in ob0.vertex_groups.keys():
-                rotation_weight = weight[ob0.vertex_groups[vertex_group_rotation].index]
-                i = p.index
-                if invert_vertex_group_rotation:
-                    face_weights = [1-rotation_weight[v] for v in p.vertices]
-                else:
-                    face_weights = [rotation_weight[v] for v in p.vertices]
-                fsides = len(face_weights)
-                if rotation_direction == 'DIAG':
-                    differential = [-face_weights[(ii)%fsides]+face_weights[(ii+2)%fsides] for ii in range(4)]
-                else:
-                    differential = [-face_weights[(ii)%fsides]-face_weights[(ii+1)%fsides]+face_weights[(ii+2)%fsides]+face_weights[(ii+3)%fsides] for ii in range(4)]
-                starting = differential.index(max(differential))
-
-                ordered = p.vertices[starting:] + p.vertices[:starting]
-
-        if rotation_mode != 'RANDOM':
-            ordered = np.roll(np.array(ordered),rotation_shift)
-        ordered = np.array((ordered[0], ordered[1], ordered[2], ordered[-1]))
-
-        # assign vertices and values
-        vs0 = np.array([verts0[i].co for i in ordered])
-        #nvs0 = np.array([verts0[i].normal for i in ordered])
-        nvs0 = np.array([normals0[i] for i in ordered])
-        if scale_mode == 'ADAPTIVE':
-            np_verts_area = np.array([verts_area[i] for i in ordered])
-            if normals_mode == 'FACES':
-                #np_verts_area = np.ones(len(ordered))*np.mean(np_verts_area)
-                np_verts_area = np.ones(len(ordered))*faces_area[p.index]
-            _sz[j] = np_verts_area
-
-        # Vertex weight
-        if bool_vertex_group or bool_weight_thickness:
-            ws0 = []
-            for w in weight:
-                _ws0 = []
-                for i in ordered:
-                    try:
-                        _ws0.append(w[i])
-                    except:
-                        _ws0.append(0)
-                ws0.append(np.array(_ws0))
-
-        # optimization test
-        _vs0[j] = (vs0[0], vs0[1], vs0[2], vs0[-1])
-        if normals_mode != 'FACES':
-            _nvs0[j] = (nvs0[0], nvs0[1], nvs0[2], nvs0[-1])
-
-        if bool_vertex_group or bool_weight_thickness:
-            for i_vg, ws0_face in enumerate(ws0):
-                _w0[i_vg][j] = (ws0_face[0], ws0_face[1], ws0_face[2], ws0_face[-1])
-
-    # optimization test
-    _vs0 = np.array(_vs0)   # (n faces0, n verts, n coordinates: 3)
-    _sz = np.array(_sz)     # (n faces0, n verts)
-
-    use_numba = False #bool_numba
-
-    if use_numba:
-        v2 = numba_lerp2_vec(_vs0, vx, vy)
-        v2 = np.nan_to_num(v2)
-    else:
-        _vs0_0 = _vs0[:,0].reshape((n_faces,1,3))
-        _vs0_1 = _vs0[:,1].reshape((n_faces,1,3))
-        _vs0_2 = _vs0[:,2].reshape((n_faces,1,3))
-        _vs0_3 = _vs0[:,3].reshape((n_faces,1,3))
-
-        # remapped vertex coordinates
-        v2 = np_lerp2(_vs0_0, _vs0_1, _vs0_3, _vs0_2, vx, vy)
-
-    # remapped vertex normal
-    if normals_mode != 'FACES':
-        _nvs0 = np.array(_nvs0)
-        if use_numba:
-            nv2 = numba_lerp2_vec(_nvs0, vx, vy)
-        else:
-            _nvs0_0 = _nvs0[:,0].reshape((n_faces,1,3))
-            _nvs0_1 = _nvs0[:,1].reshape((n_faces,1,3))
-            _nvs0_2 = _nvs0[:,2].reshape((n_faces,1,3))
-            _nvs0_3 = _nvs0[:,3].reshape((n_faces,1,3))
-            nv2 = np_lerp2(_nvs0_0, _nvs0_1, _nvs0_3, _nvs0_2, vx, vy)
-    else:
-        nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
-
-    # interpolate vertex groups
-    if bool_vertex_group or bool_weight_thickness:
-        w = np.array(_w0)
-        w_0 = w[:,:,0].reshape((n_vg, n_faces,1,1))
-        w_1 = w[:,:,1].reshape((n_vg, n_faces,1,1))
-        w_2 = w[:,:,2].reshape((n_vg, n_faces,1,1))
-        w_3 = w[:,:,3].reshape((n_vg, n_faces,1,1))
-        # remapped weight
-        w = np_lerp2(w_0, w_1, w_3, w_2, vx, vy)
-        w = w.reshape((n_vg, n_faces*n_verts1))
-
-    if bool_weight_thickness:
-        vg_index = ob0.vertex_groups[vertex_group_thickness].index
-        weight_thickness = w[vg_index]
-        weight_thickness = weight_thickness.reshape((n_faces,n_verts1,1))
-        if normals_mode == 'FACES':
-            weight_thickness = weight_thickness.mean(axis=1).repeat(n_verts1,axis=1).reshape((n_faces,n_verts1,1))
-        if invert_vertex_group_thickness: weight_thickness = 1-weight_thickness
-        fact = vertex_group_thickness_factor
-        if fact > 0:
-            weight_thickness = weight_thickness*(1-fact) + fact
-    else:
-        weight_thickness = 1
-
-    if scale_mode == 'ADAPTIVE':
-        if use_numba:
-            sz2 = numba_lerp2(_sz, vx, vy)
-            sz2 = np.nan_to_num(sz2)
-        else:
-            _sz_0 = _sz[:,0].reshape((n_faces,1,1))
-            _sz_1 = _sz[:,1].reshape((n_faces,1,1))
-            _sz_2 = _sz[:,2].reshape((n_faces,1,1))
-            _sz_3 = _sz[:,3].reshape((n_faces,1,1))
-            # remapped z scale
-            sz2 = np_lerp2(_sz_0, _sz_1, _sz_3, _sz_2, vx, vy)
-        v3 = v2 + nv2 * vz * sz2 * weight_thickness
-    else:
-        v3 = v2 + nv2 * vz * weight_thickness
-
-    new_verts_np = v3.reshape((n_faces*n_verts1,3))
-
-    if bool_shapekeys:
-        n_sk = len(vx_key)
-        sk_np = [0]*n_sk
-        for i in range(n_sk):
-            vx = np.array(vx_key[i])
-            vy = np.array(vy_key[i])
-            vz = np.array(vz_key[i])
-
-            if use_numba:
-                v2 = numba_lerp2_vec(_vs0, vx, vy)
-            else:
-                # remapped vertex coordinates
-                v2 = np_lerp2(_vs0_0, _vs0_1, _vs0_3, _vs0_2, vx, vy)
-
-            # remapped vertex normal
-            if normals_mode != 'FACES':
-                if use_numba:
-                    nv2 = numba_lerp2_vec(_nvs0, vx, vy)
-                else:
-                    nv2 = np_lerp2(_nvs0_0, _nvs0_1, _nvs0_3, _nvs0_2, vx, vy)
-            else:
-                nv2 = np.array(base_face_normals).reshape((n_faces,1,3))
-
-            if scale_mode == 'ADAPTIVE':
-                if use_numba:
-                    sz2 = numba_lerp2(_sz, vx, vy)
-                    sz2 = np.nan_to_num(sz2)
-                else:
-                    # remapped z scale
-                    sz2 = np_lerp2(_sz_0, _sz_1, _sz_3, _sz_2, vx, vy)
-                v3 = v2 + nv2 * vz * sz2 * weight_thickness
-            else:
-                v3 = v2 + nv2 * vz * weight_thickness
-
-            sk_np[i] = v3.reshape((n_faces*n_verts1,3))
-
-    #if ob0.type == 'MESH': ob0.data = old_me0
-
-    if not bool_correct:
-        #bpy.data.objects.remove(ob1)
-        return 0
-
-    new_name = ob0.name + "_" + ob1.name
-    if True:
-        new_me = array_mesh(ob1, len(base_polygons))
-        new_me.name = new_name
-        new_verts = new_verts_np.flatten().tolist()
-        new_me.vertices.foreach_set('co', new_verts)
-    else:
-        # build edges list
-        n_edges1 = new_edges.shape[0]       # (n edges, n verts: 2)
-        new_edges = new_edges.reshape((1, n_edges1, 2))
-        new_edges = new_edges.repeat(n_faces,axis=0)
-        new_edges = new_edges.reshape((n_edges1*n_faces, 2))
-        increment = np.arange(n_faces)*n_verts1
-        increment = increment.repeat(n_edges1, axis=0)
-        increment = increment.reshape((n_faces*n_edges1,1))
-        new_edges = new_edges + increment
-
-        new_verts = new_verts_np.tolist()
-        new_me = bpy.data.meshes.new(new_name)
-
-        new_me.from_pydata(new_verts, new_edges.tolist(), new_faces)
-        new_me.update(calc_edges=True)
-    new_ob = bpy.data.objects.new("tessellate_temp", new_me)
-
-    # vertex group
-    for vg in ob1.vertex_groups:
-        new_ob.vertex_groups.new(name=vg.name)
-
-    if bool_vertex_group:
-        for vg in ob0.vertex_groups:
-            new_ob.vertex_groups.new(name=vg.name)
-        bm = bmesh.new()
-        bm.from_mesh(new_me)
-        for i in range(len(w)):
-            np_weight = np.array(w[i])
-            bm = bmesh_set_weight_numpy(bm, i + len(ob1.vertex_groups), np_weight)
-        bm.to_mesh(new_me)
-        new_me.update()
-
-    if bool_shapekeys:
-        basis = com_modifiers
-        sk_count = 0
-        for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
-            sk.value = val
-            new_ob.shape_key_add(name=sk.name, from_mix=False)
-            new_ob.data.shape_keys.key_blocks[sk.name].value = val
-            # set shape keys vertices
-            sk_data = new_ob.data.shape_keys.key_blocks[sk.name].data
-            if sk_count == 0:
-                sk_count += 1
-                continue
-            for id in range(len(sk_data)):
-                sk_data[id].co = sk_np[sk_count-1][id]
-            sk_count += 1
-        if bool_vertex_group:
-            for sk in new_ob.data.shape_keys.key_blocks:
-                for vg in new_ob.vertex_groups:
-                    if sk.name == vg.name:
-                        sk.vertex_group = vg.name
-
-    bpy.ops.object.select_all(action='DESELECT')
-    bpy.context.collection.objects.link(new_ob)
-    new_ob.select_set(True)
-    bpy.context.view_layer.objects.active = new_ob
-
-    try:
-        bpy.data.objects.remove(new_ob1)
-    except: pass
 
     bpy.data.objects.remove(ob0)
-    bpy.data.meshes.remove(me0)
-    bpy.data.objects.remove(ob1)
-    bpy.data.meshes.remove(me1)
 
-    new_ob.data.update() # solve normals issues if Smooth Shading is on
-
-    return new_ob
-
+    return new_objects
 
 class tissue_tessellate(Operator):
     bl_idname = "object.tissue_tessellate"
@@ -3567,7 +2634,6 @@ class tissue_update_tessellate(Operator):
                     break
         base_ob.modifiers.update()
 
-
         # clear vertex groups before creating new ones
         ob.vertex_groups.clear()
 
@@ -3598,11 +2664,31 @@ class tissue_update_tessellate(Operator):
                 tess_props['normals_mode'] = 'VERTS'
             same_iteration = []
             matched_materials = []
+
+            if bool_multi_components:
+                components = []
+                objects_keys = bpy.data.objects.keys()
+                for mat_slot in base_ob.material_slots:
+                    mat_name = mat_slot.material.name
+                    if mat_name in objects_keys:
+                        ob1 = bpy.data.objects[mat_name]
+                        if ob1.type in ('MESH', 'CURVE','SURFACE','FONT','META'):
+                            components.append(bpy.data.objects[mat_name])
+                        else:
+                            components.append(None)
+                    else:
+                        components.append(None)
+            else:
+                components = [ob1]
+            tess_props['component'] = components
+
+            '''
             # iterate base object materials (needed for multi-components)
             if bool_multi_components: mat_iter = len(base_ob.material_slots)
             else: mat_iter = 1
             for m_id in range(mat_iter):
                 if bool_multi_components:
+
                     # check if material and components match
                     try:
                         mat = base_ob.material_slots[m_id].material
@@ -3617,71 +2703,82 @@ class tissue_update_tessellate(Operator):
                         tess_props['bool_material_id'] = bool_material_id
                     except:
                         continue
-                if com_modifiers or ob1.type != 'MESH':
-                    data1 = simple_to_mesh(ob1)
-                else:
-                    data1 = ob1.data.copy()
-                n_edges1 = len(data1.edges)
-                bpy.data.meshes.remove(data1)
+
+                #if com_modifiers or ob1.type != 'MESH':
+                #    data1 = simple_to_mesh(ob1)
+                #else:
+                #    data1 = ob1.data.copy()
+                #n_edges1 = len(data1.edges)
 
                 #if iter != 0: gen_modifiers = True
+            '''
+            if fill_mode == 'PATCH' or True:
+                # patch subdivisions for additional iterations
+                if iter > 0:
+                    temp_mod = base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
+                    temp_mod.levels = patch_subs
 
-                if fill_mode == 'PATCH':
-                    # patch subdivisions for additional iterations
-                    if iter > 0:
-                        #if len(same_iteration) > 1: gen_modifiers = False
-                        base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
-                        base_ob.modifiers['Tissue_Subsurf'].levels = patch_subs
-                        temp_mod = base_ob.modifiers['Tissue_Subsurf']
-                    # patch tessellation
-                    new_ob = tessellate_patch(tess_props)
-                    if iter > 0:
-                        base_ob.modifiers.remove(temp_mod)
-                else:
-                    if iter != 0: gen_modifiers = True
-                    new_ob = tessellate_original(tess_props)
+                # patch tessellation
+                patch_time = time.time()
+                same_iteration = tessellate_patch(tess_props)
+                patch_end_time = time.time()
+                print('Tissue: tessellate_patch in {:.4f} sec'.format(patch_end_time - patch_time))
 
-                # if empty or error, continue
-                if type(new_ob) is not bpy.types.Object:
-                    continue
+                if iter > 0:
+                    base_ob.modifiers.remove(temp_mod)
+            else:
+                if iter != 0: gen_modifiers = True
+                same_iteration = tessellate_original(tess_props)
 
+            # if empty or error, continue
+            if type(same_iteration) != list:#is not bpy.types.Object and :
+                continue
+
+            #if fill_mode == 'PATCH':
+            #    subdivide_base = True
+
+            '''
                 # prepare base object
                 if fill_mode == 'PATCH':
-                    if bool_multi_components:
+                if bool_multi_components:
                         subdivide_base = m_id == mat_iter-1
                     else: subdivide_base = True
                 else:
                     subdivide_base = iter == 0 and gen_modifiers
                 if subdivide_base:
                     temp_base_ob = convert_object_to_mesh(base_ob, True, True)
-                    #bpy.data.objects.remove(base_ob)
                     base_ob = temp_base_ob
                     iter_objects = [base_ob]
+            '''
 
+            for id, new_ob in enumerate(same_iteration):
                 # rename, make active and change transformations
-                new_ob.name = '_tissue_tmp_{}_{}'.format(iter,m_id)
+                new_ob.name = '_tissue_tmp_{}_{}'.format(iter,id)
                 new_ob.select_set(True)
                 context.view_layer.objects.active = new_ob
                 new_ob.location = ob_location
                 new_ob.matrix_world = ob_matrix_world
 
-                n_components = int(len(new_ob.data.edges) / n_edges1)
-                # SELECTION
-                if bool_selection:
-                    try:
-                        # create selection list
-                        polygon_selection = [p.select for p in ob1.data.polygons] * int(
-                                len(new_ob.data.polygons) / len(ob1.data.polygons))
-                        new_ob.data.polygons.foreach_set("select", polygon_selection)
-                    except:
-                        pass
-                if bool_multi_components: same_iteration.append(new_ob)
+            #n_components = int(len(new_ob.data.edges) / n_edges1)
+            # SELECTION
+            #if bool_selection:
+            #    try:
+                    # create selection list
+            #        polygon_selection = [p.select for p in data1.polygons] * int(
+            #                len(new_ob.data.polygons) / len(data1.polygons))
+            #        new_ob.data.polygons.foreach_set("select", polygon_selection)
+            #    except:
+            #        pass
+            #if bool_multi_components: same_iteration.append(new_ob)
+            #bpy.data.meshes.remove(data1)
+
 
             base_ob.location = ob_location
             base_ob.matrix_world = ob_matrix_world
 
             # join together multiple components iterations
-            if bool_multi_components:
+            if type(same_iteration) == list:
+                generated_data = [o.data for o in same_iteration]
                 if len(same_iteration) > 0:
                     context.view_layer.update()
                     for o in context.view_layer.objects:
@@ -3690,6 +2787,9 @@ class tissue_update_tessellate(Operator):
                     new_ob = context.view_layer.objects.active
                     new_ob.select_set(True)
                     #new_ob.data.update()
+                for me in generated_data:
+                    if me != new_ob.data:
+                        bpy.data.meshes.remove(me)
 
             if type(new_ob) in (int,str):
                 if iter == 0:
@@ -3810,9 +2910,6 @@ class tissue_update_tessellate(Operator):
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
 
-        #new_ob.location = ob_location
-        #new_ob.matrix_world = ob_matrix_world
-
         # update data and preserve name
         if ob.type != 'MESH':
             loc, matr = ob.location, ob.matrix_world
@@ -3820,8 +2917,9 @@ class tissue_update_tessellate(Operator):
             ob.location, ob.matrix_world = loc, matr
         data_name = ob.data.name
         old_data = ob.data
+        old_data.name = '_tissue_tmp_old_data'
         #ob.data = bpy.data.meshes.new_from_object(new_ob)#
-        ob.data = new_ob.data.copy()
+        ob.data = new_ob.data
         ob.data.name = data_name
         bpy.data.meshes.remove(old_data)
 
@@ -3829,6 +2927,8 @@ class tissue_update_tessellate(Operator):
         for vg in new_ob.vertex_groups:
             if not vg.name in ob.vertex_groups.keys():
                 ob.vertex_groups.new(name=vg.name)
+            # Apparently not necessary code
+            '''
             if vg.name not in ob0.vertex_groups.keys(): continue
             new_vg = ob.vertex_groups[vg.name]
             for i in range(len(ob.data.vertices)):
@@ -3837,6 +2937,7 @@ class tissue_update_tessellate(Operator):
                 except:
                     weight = 0
                 new_vg.add([i], weight, 'REPLACE')
+            '''
 
         selected_objects = [o for o in context.selected_objects]
         for o in selected_objects: o.select_set(False)
@@ -4936,25 +4037,51 @@ def convert_to_frame(ob, props, use_modifiers):
     bm.free()
     return new_ob
 
-def convert_to_fan_old(ob, props, use_modifiers):
+def reduce_to_quads(ob, use_modifiers):
+    '''
+    Convert an input object to a mesh with polygons that have maximum 4 vertices
+    '''
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
-    # make base object selected and active
-    for o in bpy.context.view_layer.objects: o.select_set(False)
-    new_ob.select_set(True)
-    bpy.context.view_layer.objects.active = new_ob
-    sk_index0 = new_ob.active_shape_key_index
-    new_ob.active_shape_key_index = 0
+    me = new_ob.data
 
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='FACE')
-    if not props['bool_selection']:
-        bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.poke()
-    bpy.ops.object.mode_set(mode='OBJECT')
+    # Check if there are polygons with more than 4 sides
+    np_sides = get_attribute_numpy(me.polygons, 'loop_total')
+    mask = np_sides > 4
+    if not np.any(mask):
+        return new_ob
+
+    # create bmesh
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    np_faces = np.array(bm.faces)
+    np_faces = np_faces[mask]
+
+    new_faces = []
+    for f in np_faces:
+        verts = list(f.verts)
+        while True:
+            n_verts = len(verts)
+            if n_verts < 3: break
+            elif n_verts == 3:
+                face_verts = [verts[-2], verts.pop(-1), verts.pop(0)]
+            else:
+                face_verts = [verts[-2], verts.pop(-1), verts.pop(0), verts[0]]
+            new_face = bm.faces.new(face_verts)
+            new_face.material_index = f.material_index
+            new_face.select = f.select
+            new_faces.append(new_face)
+
+    for f in np_faces: bm.faces.remove(f)
+    bm.to_mesh(me)
+    me.update()
+    bm.free()
     return new_ob
 
-
-def convert_to_fan(ob, props, use_modifiers):
+def convert_to_fan(ob, use_modifiers):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)
@@ -4963,7 +4090,7 @@ def convert_to_fan(ob, props, use_modifiers):
     new_ob.data.update()
     return new_ob
 
-def convert_to_triangles(ob, props, use_modifiers):
+def convert_to_triangles(ob, use_modifiers):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)

@@ -292,12 +292,12 @@ def calc_verts_area_bmesh(me):
 
 import time
 
-def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, material_id):
+def get_patches____(me_low, me_high, sides, subs, bool_selection, bool_material_id, material_id):
     #start_time = time.time()
     nv = len(me_low.vertices)       # number of vertices
     ne = len(me_low.edges)          # number of edges
     nf = len(me_low.polygons)       # number of polygons
-    n = 2**subs + 1
+    n = 2**subs + 1            # number of vertices along each patch edge
     nev = ne * n               # number of vertices along the subdivided edges
     nevi = nev - 2*ne          # internal vertices along subdividede edges
 
@@ -342,13 +342,377 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
         patches[:,0,n-1] = verts[:,3]
 
         if subs != 0:
-            shift_verts = np.roll(verts, -1, axis=1)[:,:,np.newaxis]
-            edge_keys = np.concatenate((shift_verts, verts[:,:,np.newaxis]), axis=2)
+            shift_verts = np.roll(verts, -1, axis=1)[:,:,None]
+            edge_keys = np.concatenate((shift_verts, verts[:,:,None]), axis=2)
             edge_keys.sort()
 
-            edge_verts = me_low.edge_keys             # edges keys
-            edge_verts = np.array(edge_verts)
+            edge_verts = np.array(me_low.edge_keys) # edges keys
             edges_index = np.zeros((ne,ne),dtype='int')
+            edges_index[edge_verts[:,0],edge_verts[:,1]] = np.arange(ne)
+
+            evi = np.arange(nevi) + nv
+            evi = evi.reshape(ne,n-2)           # edges inner verts
+            straight = np.arange(n-2)+1
+            inverted = np.flip(straight)
+            inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
+
+            ek1 = np.array(me_high.edge_keys)   # edges keys
+            ids0 = np.arange(ne)*(n-1)      # edge keys highres
+            keys0 = ek1[ids0]               # first inner edge
+            keys1 = ek1[ids0 + n-2]         # last inner edge
+            keys = np.concatenate((keys0,keys1))
+            pick_verts = np.array((inverted,straight))
+
+            patch_index = np.arange(nf)[:,None,None]
+
+            # edge 0
+            e0 = edge_keys[:,0]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            test = np.concatenate((verts[:,0,None], edge_verts[:,0,None]),axis=1)
+            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
+            #dir = np.full(verts[:,0].shape, 0, dtype='int8')
+            ids = pick_verts[dir][:,None,:]                           # indexes order along the side
+            patches[patch_index,ids,0] = edge_verts[:,None,:]                   # assign indexes
+            #patches[:,msk] = inverted # np.flip(patches[msk])
+
+            # edge 1
+            e0 = edge_keys[:,1]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            test = np.concatenate((verts[:,1,None], edge_verts[:,0,None]),axis=1)
+            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
+            ids = pick_verts[dir][:,:,None]                           # indexes order along the side
+            patches[patch_index,n-1,ids] = edge_verts[:,:,None]                   # assign indexes
+
+            # edge 2
+            e0 = edge_keys[:,2]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            test = np.concatenate((verts[:,3,None], edge_verts[:,0,None]),axis=1)
+            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
+            ids = pick_verts[dir][:,None,:]                           # indexes order along the side
+            patches[patch_index,ids,n-1] = edge_verts[:,None,:]                   # assign indexes
+
+            # edge 3
+            e0 = edge_keys[:,3]                             # get edge key (faces, 2)
+            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
+            edge_verts = evi[edge_id]                       # indexes of inner vertices
+            test = np.concatenate((verts[:,0,None], edge_verts[:,0,None]),axis=1)
+            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
+            ids = pick_verts[dir][:,:,None]                           # indexes order along the side
+            patches[patch_index,0,ids] = edge_verts[:,:,None]                   # assign indexes
+
+            # fill inners
+            patches[:,1:-1,1:-1] = inners[None,:,:] + ips[:,None,None]
+
+    #end_time = time.time()
+    #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
+
+    return patches, mask
+
+def tessellate_prepare_component(ob1, props):
+    mode = props['mode']
+    bounds_x = props['bounds_x']
+    bounds_y = props['bounds_y']
+    scale_mode = props['scale_mode']
+    zscale = props['zscale']
+    offset = props['offset']
+    use_origin_offset = props['use_origin_offset']
+    bool_shapekeys = props['bool_shapekeys']
+
+    me1 = ob1.data
+    if mode != 'BOUNDS':
+        ob1.active_shape_key_index = 0
+        # Bound X
+        if bounds_x != 'EXTEND':
+            if mode == 'GLOBAL':
+                planes_co = ((0,0,0),(1,1,1))
+                plane_no = (1,0,0)
+            if mode == 'LOCAL':
+                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((1,0,0)))
+                plane_no = planes_co[0]-planes_co[1]
+            bpy.ops.object.mode_set(mode='EDIT')
+            for co in planes_co:
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
+                bpy.ops.mesh.mark_seam()
+            bpy.ops.object.mode_set(mode='OBJECT')
+            _faces = ob1.data.polygons
+            if mode == 'GLOBAL':
+                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x > 1]:
+                    f.select = True
+                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x < 0]:
+                    f.select = True
+            else:
+                for f in [f for f in _faces if f.center.x > 1]:
+                    f.select = True
+                for f in [f for f in _faces if f.center.x < 0]:
+                    f.select = True
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_mode(type='FACE')
+            if bounds_x == 'CLIP':
+                bpy.ops.mesh.delete(type='FACE')
+                bpy.ops.object.mode_set(mode='OBJECT')
+            if bounds_x == 'CYCLIC':
+                bpy.ops.mesh.split()
+                bpy.ops.object.mode_set(mode='OBJECT')
+        # Bound Y
+        if bounds_y != 'EXTEND':
+            if mode == 'GLOBAL':
+                planes_co = ((0,0,0),(1,1,1))
+                plane_no = (0,1,0)
+            if mode == 'LOCAL':
+                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((0,1,0)))
+                plane_no = planes_co[0]-planes_co[1]
+            bpy.ops.object.mode_set(mode='EDIT')
+            for co in planes_co:
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
+                bpy.ops.mesh.mark_seam()
+            bpy.ops.object.mode_set(mode='OBJECT')
+            _faces = ob1.data.polygons
+            if mode == 'GLOBAL':
+                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y > 1]:
+                    f.select = True
+                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y < 0]:
+                    f.select = True
+            else:
+                for f in [f for f in _faces if f.center.y > 1]:
+                    f.select = True
+                for f in [f for f in _faces if f.center.y < 0]:
+                    f.select = True
+
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_mode(type='FACE')
+            if bounds_y == 'CLIP':
+                bpy.ops.mesh.delete(type='FACE')
+                bpy.ops.object.mode_set(mode='OBJECT')
+            if bounds_y == 'CYCLIC':
+                bpy.ops.mesh.split()
+                bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Component statistics
+    n_verts = len(me1.vertices)
+
+    # Component bounding box
+    min_c = Vector((0, 0, 0))
+    max_c = Vector((0, 0, 0))
+    first = True
+    for v in me1.vertices:
+        vert = v.co
+        if vert[0] < min_c[0] or first:
+            min_c[0] = vert[0]
+        if vert[1] < min_c[1] or first:
+            min_c[1] = vert[1]
+        if vert[2] < min_c[2] or first:
+            min_c[2] = vert[2]
+        if vert[0] > max_c[0] or first:
+            max_c[0] = vert[0]
+        if vert[1] > max_c[1] or first:
+            max_c[1] = vert[1]
+        if vert[2] > max_c[2] or first:
+            max_c[2] = vert[2]
+        first = False
+    bb = max_c - min_c
+
+    # adaptive XY
+    verts1 = []
+    for v in me1.vertices:
+        if mode == 'BOUNDS':
+            vert = v.co - min_c  # (ob1.matrix_world * v.co) - min_c
+            if use_origin_offset: vert[2] = v.co[2]
+            vert[0] = vert[0] / bb[0] if bb[0] != 0 else 0.5
+            vert[1] = vert[1] / bb[1] if bb[1] != 0 else 0.5
+            if scale_mode == 'CONSTANT':
+                if not use_origin_offset:
+                    vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
+                    vert[2] = vert[2] - 0.5 + offset * 0.5
+            else:
+                if not use_origin_offset:
+                    vert[2] = vert[2] + (-0.5 + offset * 0.5) * bb[2]
+            vert[2] *= zscale
+        elif mode == 'LOCAL':
+            vert = v.co.xyz
+            vert[2] *= zscale
+            #vert[2] = (vert[2] - min_c[2] + (-0.5 + offset * 0.5) * bb[2]) * zscale
+        elif mode == 'GLOBAL':
+            vert = ob1.matrix_world @ v.co
+            vert[2] *= zscale
+            try:
+                for sk in me1.shape_keys.key_blocks:
+                    sk.data[v.index].co = ob1.matrix_world @ sk.data[v.index].co
+            except: pass
+        v.co = vert
+
+    # Bounds X, Y
+    if mode != 'BOUNDS':
+        if bounds_x == 'CYCLIC':
+            move_verts = []
+            for f in [f for f in me1.polygons if (f.center).x > 1]:
+                for v in f.vertices:
+                    if v not in move_verts: move_verts.append(v)
+            for v in move_verts:
+                me1.vertices[v].co.x -= 1
+                try:
+                    _ob1.active_shape_key_index = 0
+                    for sk in me1.shape_keys.key_blocks:
+                        sk.data[v].co.x -= 1
+                except: pass
+            move_verts = []
+            for f in [f for f in me1.polygons if (f.center).x < 0]:
+                for v in f.vertices:
+                    if v not in move_verts: move_verts.append(v)
+            for v in move_verts:
+                me1.vertices[v].co.x += 1
+                try:
+                    _ob1.active_shape_key_index = 0
+                    for sk in me1.shape_keys.key_blocks:
+                        sk.data[v].co.x += 1
+                except: pass
+        if bounds_y == 'CYCLIC':
+            move_verts = []
+            for f in [f for f in me1.polygons if (f.center).y > 1]:
+                for v in f.vertices:
+                    if v not in move_verts: move_verts.append(v)
+            for v in move_verts:
+                me1.vertices[v].co.y -= 1
+                try:
+                    _ob1.active_shape_key_index = 0
+                    for sk in me1.shape_keys.key_blocks:
+                        sk.data[v].co.y -= 1
+                except: pass
+            move_verts = []
+            for f in [f for f in me1.polygons if (f.center).y < 0]:
+                for v in f.vertices:
+                    if v not in move_verts: move_verts.append(v)
+            for v in move_verts:
+                me1.vertices[v].co.y += 1
+                try:
+                    _ob1.active_shape_key_index = 0
+                    for sk in me1.shape_keys.key_blocks:
+                        sk.data[v].co.y += 1
+                except: pass
+
+    # ShapeKeys
+    if bool_shapekeys:
+        for sk in ob1.data.shape_keys.key_blocks:
+            source = sk.data
+            _sk_uv_quads = [0]*len(verts1)
+            _sk_uv = [0]*len(verts1)
+            for i, sk_v in enumerate(source):
+                if mode == 'BOUNDS':
+                    sk_vert = sk_v.co - min_c
+                    if use_origin_offset: sk_vert[2] = sk_v.co[2]
+                    sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
+                    sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
+                    if scale_mode == 'CONSTANT':
+                        if not use_origin_offset:
+                            sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
+                            sk_vert[2] = sk_vert[2] - 0.5 + offset * 0.5
+                    else:
+                        if not use_origin_offset:
+                            sk_vert[2] = sk_vert[2] + (- 0.5 + offset * 0.5) * bb[2]
+                    sk_vert[2] *= zscale
+                elif mode == 'LOCAL':
+                    sk_vert = sk_v.co
+                    sk_vert[2] *= zscale
+                elif mode == 'GLOBAL':
+                    sk_vert = sk_v.co
+                    sk_vert[2] *= zscale
+                sk_v.co = sk_vert
+
+    com_area = bb[0]*bb[1]
+    return ob1, com_area
+
+def get_quads(me, bool_selection):
+    nf = len(me.polygons)
+
+    verts = []
+    materials = []
+    mask = []
+    for poly in me.polygons:
+        p = list(poly.vertices)
+        sides = len(p)
+        if sides == 3:
+            verts.append([[p[0], p[-1]], [p[1], p[2]]])
+            materials.append(poly.material_index)
+            mask.append(poly.select if bool_selection else True)
+        elif sides == 4:
+            verts.append([[p[0], p[3]], [p[1], p[2]]])
+            materials.append(poly.material_index)
+            mask.append(poly.select if bool_selection else True)
+        else:
+            while True:
+                new_poly = [[p[-2], p.pop(-1)], [p[1], p.pop(0)]]
+                verts.append(new_poly)
+                materials.append(poly.material_index)
+                mask.append(poly.select if bool_selection else True)
+                if len(p) < 3: break
+    mask = np.array(mask)
+    materials = np.array(materials)[mask]
+    verts = np.array(verts)[mask]
+    return verts, mask, materials
+
+def get_patches(me_low, me_high, sides, subs, bool_selection): #, bool_material_id, material_id):
+    start_time = time.time()
+    nv = len(me_low.vertices)       # number of vertices
+    ne = len(me_low.edges)          # number of edges
+    nf = len(me_low.polygons)       # number of polygons
+    n = 2**subs + 1
+    nev = ne * n               # number of vertices along the subdivided edges
+    nevi = nev - 2*ne          # internal vertices along subdividede edges
+
+    n0 = 2**(subs-1) - 1
+
+    # filtered polygonal faces
+    poly_sides = [0]*nf
+    me_low.polygons.foreach_get('loop_total',poly_sides)
+    poly_sides = np.array(poly_sides)
+    mask = poly_sides == sides
+
+    if bool_selection:
+        mask_selection = [True]*nf
+        me_low.polygons.foreach_get('select',mask_selection)
+        mask = np.array(mask_selection)
+
+    materials = [1]*nf
+    me_low.polygons.foreach_get('material_index',materials)
+    materials = np.array(materials)[mask]
+
+    polys = np.array(me_low.polygons)[mask]
+    mult = n0**2 + n0
+    ps = poly_sides * mult + 1
+    ps = np.insert(ps,0,nv + nevi, axis=0)[:-1]
+    ips = ps.cumsum()[mask]                    # incremental polygon sides
+    nf = len(polys)
+
+    # when subdivided quad faces follows a different pattern
+    if sides == 4:
+        n_patches = nf
+    else:
+        n_patches = nf*sides
+
+    if sides == 4:
+        patches = np.empty((nf,n,n),dtype='int')
+        verts = [list(p.vertices) for p in polys if len(p.vertices) == sides]
+        verts = np.array(verts).reshape((-1,sides))
+
+        # filling corners
+
+        patches[:,0,0] = verts[:,0]
+        patches[:,n-1,0] = verts[:,1]
+        patches[:,n-1,n-1] = verts[:,2]
+        patches[:,0,n-1] = verts[:,3]
+
+        if subs != 0:
+            shift_verts = np.roll(verts, -1, axis=1)[:,:,None]
+            edge_keys = np.concatenate((shift_verts, verts[:,:,None]), axis=2)
+            edge_keys.sort()
+
+            edge_verts = np.array(me_low.edge_keys)         # edges keys
+            edges_index = np.empty((ne,ne),dtype='int')
             edges_index[edge_verts[:,0],edge_verts[:,1]] = np.arange(ne)
 
             evi = np.arange(nevi) + nv
@@ -361,141 +725,53 @@ def get_patches(me_low, me_high, sides, subs, bool_selection, bool_material_id, 
             ek1 = np.array(ek1)                             # edge keys highres
             keys0 = ek1[np.arange(ne)*(n-1)]                # first inner edge
             keys1 = ek1[np.arange(ne)*(n-1)+n-2]            # last inner edge
-            edges_dir = np.zeros((nev,nev), dtype='int')
+            edges_dir = np.zeros((nev,nev),dtype='bool')    # Better memory usage
+            #edges_dir = np.zeros((nev,nev),dtype='int8')     ### Memory usage not efficient, dictionary as alternative?
             edges_dir[keys0[:,0], keys0[:,1]] = 1
             edges_dir[keys1[:,0], keys1[:,1]] = 1
             pick_verts = np.array((inverted,straight))
 
-            patch_index = np.arange(nf)[:,np.newaxis,np.newaxis]
+            patch_index = np.arange(nf)[:,None,None]
 
             # edge 0
             e0 = edge_keys[:,0]                             # get edge key (faces, 2)
             edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
             edge_verts = evi[edge_id]                       # indexes of inner vertices
-            dir = edges_dir[verts[:,0], edge_verts[:,0]]       # check correct direction
-            ids = pick_verts[dir][:,np.newaxis,:]                           # indexes order along the side
-            patches[patch_index,ids,0] = edge_verts[:,np.newaxis,:]                   # assign indexes
+            dir = edges_dir[verts[:,0], edge_verts[:,0]]    # check correct direction
+            ids = pick_verts[dir.astype('int8')][:,None,:]                           # indexes order along the side
+            patches[patch_index,ids,0] = edge_verts[:,None,:]                   # assign indexes
 
             # edge 1
             e0 = edge_keys[:,1]                             # get edge key (faces, 2)
             edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
             edge_verts = evi[edge_id]                       # indexes of inner vertices
             dir = edges_dir[verts[:,1], edge_verts[:,0]]       # check correct direction
-            ids = pick_verts[dir][:,:,np.newaxis]                           # indexes order along the side
-            patches[patch_index,n-1,ids] = edge_verts[:,:,np.newaxis]                   # assign indexes
+            ids = pick_verts[dir.astype('int8')][:,:,None]                           # indexes order along the side
+            patches[patch_index,n-1,ids] = edge_verts[:,:,None]                   # assign indexes
 
             # edge 2
             e0 = edge_keys[:,2]                             # get edge key (faces, 2)
             edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
             edge_verts = evi[edge_id]                       # indexes of inner vertices
             dir = edges_dir[verts[:,3], edge_verts[:,0]]       # check correct direction
-            ids = pick_verts[dir][:,np.newaxis,:]                           # indexes order along the side
-            patches[patch_index,ids,n-1] = edge_verts[:,np.newaxis,:]                   # assign indexes
+            ids = pick_verts[dir.astype('int8')][:,None,:]                           # indexes order along the side
+            patches[patch_index,ids,n-1] = edge_verts[:,None,:]                   # assign indexes
 
             # edge 3
             e0 = edge_keys[:,3]                             # get edge key (faces, 2)
             edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
             edge_verts = evi[edge_id]                       # indexes of inner vertices
             dir = edges_dir[verts[:,0], edge_verts[:,0]]       # check correct direction
-            ids = pick_verts[dir][:,:,np.newaxis]                           # indexes order along the side
-            patches[patch_index,0,ids] = edge_verts[:,:,np.newaxis]                   # assign indexes
+            ids = pick_verts[dir.astype('int8')][:,:,None]                           # indexes order along the side
+            patches[patch_index,0,ids] = edge_verts[:,:,None]                   # assign indexes
 
             # fill inners
-            patches[:,1:-1,1:-1] = inners[np.newaxis,:,:] + ips[:,np.newaxis,np.newaxis]
+            patches[:,1:-1,1:-1] = inners[None,:,:] + ips[:,None,None]
 
-    #end_time = time.time()
-    #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
+    end_time = time.time()
+    print('Tissue: get_patches in {:.4f} sec'.format(end_time-start_time))
 
-    return patches, mask
-
-def get_patches_(me_low, me_high, sides, subs):
-
-    start_time = time.time()
-    nv = len(me_low.vertices)       # number of vertices
-    ne = len(me_low.edges)          # number of edges
-    n = 2**subs + 1
-    nev = ne * n            # number of vertices along the subdivided edges
-    nevi = nev - 2*ne          # internal vertices along subdividede edges
-
-    # filtered polygonal faces
-    polys = [p for p in me_low.polygons if len(p.vertices)==sides]
-    n0 = 2**(subs-1) - 1
-    ps = [nv + nevi]
-    for p in me_low.polygons:
-        psides = len(p.vertices)
-        increment = psides * (n0**2 + n0) + 1
-        ps.append(increment)
-    ips = np.array(ps).cumsum()                    # incremental polygon sides
-    nf = len(polys)
-    # when subdivided quad faces follows a different pattern
-    if sides == 4:
-        n_patches = nf
-    else:
-        n_patches = nf*sides
-
-    ek = me_low.edge_keys               # edges keys
-    ek1 = me_high.edge_keys             # edges keys
-    evi = np.arange(nevi) + nv
-    evi = evi.reshape(ne,n-2)           # edges verts
-    straight = np.arange(n-2)+1
-    inverted = np.flip(straight)
-    inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
-
-    edges_dict = {e : e1 for e,e1 in zip(ek,evi)}
-    keys0 = [ek1[i*(n-1)] for i in range(len(ek))]
-    keys1 = [ek1[i*(n-1)+n-2] for i in range(len(ek))]
-    edges_straight = dict.fromkeys(keys0 + keys1, straight)
-    keys2 = [(k0[0],k1[1]) for k0,k1 in zip(keys0, keys1)]
-    keys3 = [(k1[0],k0[1]) for k0,k1 in zip(keys0, keys1)]
-    edges_inverted = dict.fromkeys(keys2 + keys3, inverted)
-    filter_edges = {**edges_straight, **edges_inverted}
-    if sides == 4:
-        patches = np.zeros((nf,n,n))
-        for count, p in enumerate(polys):
-            patch = patches[count]
-            pid = p.index
-            verts = p.vertices
-
-            # filling corners
-
-            patch[0,0] = verts[0]
-            patch[n-1,0] = verts[1]
-            patch[n-1,n-1] = verts[2]
-            patch[0,n-1] = verts[3]
-
-            if subs == 0: continue
-
-            edge_keys = p.edge_keys
-
-            # fill edges
-            e0 = edge_keys[0]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[0], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[ids,0] = edge_verts
-
-            e0 = edge_keys[1]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[1], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[n-1,ids] = evi[ek.index(e0)]
-
-            e0 = edge_keys[2]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[3], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[ids,n-1] = evi[ek.index(e0)]
-
-            e0 = edge_keys[3]
-            edge_verts = edges_dict[e0]
-            e1 = (verts[0], edge_verts[0])
-            ids = filter_edges[e1]
-            patch[0,ids] = evi[ek.index(e0)]
-
-            # fill inners
-            patch[1:-1,1:-1] = inners + ips[pid]
-
-    return patches.astype(dtype='int')
+    return patches, mask, materials
 
 def get_vertices_numpy(mesh):
     '''
@@ -548,6 +824,25 @@ def get_edges_id_numpy(mesh):
     indexes = np.arange(n_edges).reshape((n_edges,1))
     edges = np.concatenate((edges,indexes), axis=1)
     return edges
+
+def get_polygons_select_numpy(mesh):
+    n_polys = len(mesh.polygons)
+    selections = [0]*n_polys*2
+    mesh.polygons.foreach_get('select', selections)
+    selections = np.array(selections)
+    return selections
+
+def get_attribute_numpy(elements_list, attribute='select', mult=1):
+    '''
+    Generate a numpy array getting attribute from a list of element using
+    the foreach_get() function.
+    '''
+    n_elements = len(elements_list)
+    values = [0]*n_elements*mult
+    elements_list.foreach_get(attribute, values)
+    values = np.array(values)
+    if mult > 1: values = values.reshape((n_elements,mult))
+    return values
 
 def get_vertices(mesh):
     n_verts = len(mesh.vertices)
@@ -909,6 +1204,23 @@ def bmesh_set_weight_numpy(bm, group_index, weight):
         #if group_index in dvert:
         dvert[group_index] = weight[i]
     return bm
+
+def set_weight_numpy(vg, weight):
+    for i, w in enumerate(weight):
+        vg.add([i], w, 'REPLACE')
+    return vg
+
+def uv_from_bmesh(bm, uv_index=None):
+    if uv_index:
+        uv_lay = bm.loops.layers.uv[uv_index]
+    else:
+        uv_lay = bm.loops.layers.uv.active
+    uv_co = [0]*len(bm.verts)
+
+    for face in bm.faces:
+        for vert,loop in zip(face.verts, face.loops):
+            uv_co[vert.index] = loop[uv_lay].uv
+    return uv_co
 
 def get_uv_edge_vectors(me, uv_map = 0, only_positive=False):
     count = 0
