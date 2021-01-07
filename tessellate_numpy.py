@@ -3022,7 +3022,7 @@ class TISSUE_PT_tessellate(Panel):
         col.label(text="Rotate Faces:")
         row = col.row(align=True)
         row.operator("mesh.tissue_rotate_face_left", text='Left', icon='LOOP_BACK')
-        row.operator("mesh.tissue_rotate_face_twice", text='Flip', icon='UV_SYNC_SELECT')
+        row.operator("mesh.tissue_rotate_face_flip", text='Flip', icon='UV_SYNC_SELECT')
         row.operator("mesh.tissue_rotate_face_right", text='Right', icon='LOOP_FORWARDS')
 
         col.separator()
@@ -3737,8 +3737,8 @@ class tissue_rotate_face_right(Operator):
 
         return {'FINISHED'}
 
-class tissue_rotate_face_twice(Operator):
-    bl_idname = "mesh.tissue_rotate_face_twice"
+class tissue_rotate_face_flip(Operator):
+    bl_idname = "mesh.tissue_rotate_face_flip"
     bl_label = "Tissue Rotate Faces Flip"
     bl_description = "Fully rotate selected faces and update tessellated meshes"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3762,7 +3762,8 @@ class tissue_rotate_face_twice(Operator):
         for face in bm.faces:
             if (face.select):
                 vs = face.verts[:]
-                vs2 = vs[-2:]+vs[:-2]
+                nrot = int(len(vs)/2)
+                vs2 = vs[-nrot:]+vs[:-nrot]
                 material_index = face.material_index
                 bm.faces.remove(face)
                 f2 = bm.faces.new(vs2)
