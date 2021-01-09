@@ -21,12 +21,25 @@ import threading
 import numpy as np
 import multiprocessing
 from multiprocessing import Process, Pool
-from mathutils import Vector
+from mathutils import Vector, Matrix
 from math import *
 try: from .numba_functions import numba_lerp2, numba_lerp2_4
 except: pass
 
 from . import config
+
+def tissue_time(start_time, name, levels=0):
+    tissue_addon = bpy.context.preferences.addons[__package__]
+    if levels < tissue_addon.preferences['print_stats']:
+        if "Tissue: " in name: head = ""
+        else: head = "        "
+        end_time = time.time()
+        if start_time:
+            print('{}{}{} in {:.4f} sec'.format(head, "|   "*levels, name, end_time - start_time))
+        else:
+            print('{}{}{}'.format(head, "|   "*levels, name))
+    return
+
 
 # ------------------------------------------------------------------
 # MATH
@@ -43,7 +56,8 @@ def _lerp2(v1, v2, v3, v4, v):
 def lerp2(v1, v2, v3, v4, v):
     v12 = v1 + (v2 - v1) * v.x
     v34 = v3 + (v4 - v3) * v.x
-    return v12 + (v34 - v12) * v.y
+    v = v12 + (v34 - v12) * v.y
+    return v
 
 def lerp3(v1, v2, v3, v4, v):
     loc = lerp2(v1.co, v2.co, v3.co, v4.co, v)
@@ -63,6 +77,7 @@ def np_lerp2(v00, v10, v01, v11, vx, vy):
         co0 = v00 + (v10 - v00) * vx
         co1 = v01 + (v11 - v01) * vx
         co2 = co0 + (co1 - co0) * vy
+
     return co2
 
 def flatten_vector(vec, x, y):
@@ -181,8 +196,8 @@ def simple_to_mesh(ob, depsgraph=None):
     me.calc_normals()
     return me
 
-def join_objects(objects, link_to_scene=True, make_active=False):
-    C = bpy.context
+def _join_objects(context, objects, link_to_scene=True, make_active=True):
+    C = context
     bm = bmesh.new()
 
     materials = {}
@@ -219,7 +234,40 @@ def join_objects(objects, link_to_scene=True, make_active=False):
         C.view_layer.objects.active = ob
     # add materials
     for m in materials.keys(): ob.data.materials.append(m)
+
     return ob
+
+def join_objects(context, objects):
+    generated_data = [o.data for o in objects]
+    context.view_layer.update()
+    for o in context.view_layer.objects:
+        o.select_set(o in objects)
+    bpy.ops.object.join()
+    new_ob = context.view_layer.objects.active
+    new_ob.select_set(True)
+    for me in generated_data:
+        if me != new_ob.data:
+            bpy.data.meshes.remove(me)
+    return new_ob
+
+def join_objects(objects):
+    override = bpy.context.copy()
+    new_ob = objects[0]
+    override['active_object'] = new_ob
+    override['selected_editable_objects'] = objects
+    bpy.ops.object.join(override)
+    return new_ob
+
+def repeat_mesh(me, n):
+    '''
+    Return Mesh data adding and applying an array without offset (Slower)
+    '''
+    bm = bmesh.new()
+    for i in range(n): bm.from_mesh(me)
+    new_me = me.copy()
+    bm.to_mesh(new_me)
+    bm.free()
+    return new_me
 
 def array_mesh(ob, n):
     '''
@@ -234,6 +282,21 @@ def array_mesh(ob, n):
     me = simple_to_mesh(ob, depsgraph=dg)
     ob.modifiers.remove(arr)
     return me
+
+def array_mesh_object(ob, n):
+    '''
+    Return Mesh data adding and applying an array without offset
+    '''
+    arr = ob.modifiers.new('Repeat','ARRAY')
+    arr.relative_offset_displace[0] = 0
+    arr.count = n
+    ob.modifiers.update()
+    override = bpy.context.copy()
+    override['active_object'] = ob
+    override = {'active_object': ob}
+    bpy.ops.object.modifier_apply(override, modifier=arr.name)
+    return ob
+
 
 def get_mesh_before_subs(ob):
     not_allowed  = ('FLUID_SIMULATION', 'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD',
@@ -293,7 +356,6 @@ def calc_verts_area_bmesh(me):
 import time
 
 def get_patches____(me_low, me_high, sides, subs, bool_selection, bool_material_id, material_id):
-    #start_time = time.time()
     nv = len(me_low.vertices)       # number of vertices
     ne = len(me_low.edges)          # number of edges
     nf = len(me_low.polygons)       # number of polygons
@@ -656,7 +718,6 @@ def get_quads(me, bool_selection):
     return verts, mask, materials
 
 def get_patches(me_low, me_high, sides, subs, bool_selection): #, bool_material_id, material_id):
-    start_time = time.time()
     nv = len(me_low.vertices)       # number of vertices
     ne = len(me_low.edges)          # number of edges
     nf = len(me_low.polygons)       # number of polygons
@@ -767,9 +828,6 @@ def get_patches(me_low, me_high, sides, subs, bool_selection): #, bool_material_
 
             # fill inners
             patches[:,1:-1,1:-1] = inners[None,:,:] + ips[:,None,None]
-
-    end_time = time.time()
-    print('Tissue: get_patches in {:.4f} sec'.format(end_time-start_time))
 
     return patches, mask, materials
 

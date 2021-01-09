@@ -911,6 +911,8 @@ def props_to_dict(ob):
 def tessellate_patch(props):
 
     start_time = time.time()
+    tt = time.time()
+
     ob = props['self']
     _ob0 = props['generator']
     components = props['component']
@@ -973,17 +975,10 @@ def tessellate_patch(props):
 
     random.seed(rand_seed)
 
+    # Target mesh used for normals
     if normals_mode in ('SHAPEKEYS', 'OBJECT'):
         if fill_mode == 'PATCH':
-            if normals_mode in ('SHAPEKEYS','OBJECT'):
-                ob0_sk = convert_object_to_mesh(target, True, True)
-                me0_sk = ob0_sk.data
-                normals_target = [0]*len(me0_sk.vertices)*3
-                me0_sk.vertices.foreach_get('co',normals_target)
-                normals_target = np.array(normals_target).reshape(len(me0_sk.vertices),3)
-                if normals_mode == 'SHAPEKEYS':
-                    key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
-                    for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
+            ob0_sk = convert_object_to_mesh(target, True, True)
         else:
             use_modifiers = gen_modifiers
             if normals_mode == 'SHAPEKEYS' and not gen_modifiers:
@@ -995,10 +990,13 @@ def tessellate_patch(props):
             elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, props, use_modifiers)
             elif fill_mode == 'TRI': ob0_sk = convert_to_triangles(target, use_modifiers)
             elif fill_mode == 'QUAD': ob0_sk = reduce_to_quads(target, use_modifiers)
-            me0_sk = ob0_sk.data
-            if normals_mode == 'SHAPEKEYS':
-                key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
-                for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
+        me0_sk = ob0_sk.data
+        normals_target = get_vertices_numpy(me0_sk)
+        bpy.data.objects.remove(ob0_sk)
+        if normals_mode == 'SHAPEKEYS':
+            key_values0 = [sk.value for sk in _ob0.data.shape_keys.key_blocks]
+            for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
+    # Base mesh
     if fill_mode == 'PATCH':
         ob0 = convert_object_to_mesh(_ob0)
     else:
@@ -1015,26 +1013,25 @@ def tessellate_patch(props):
 
     # base normals
     if normals_mode in ('SHAPEKEYS','OBJECT'):
-        if len(me0_sk.vertices) != len(me0.vertices):
+        if len(normals_target) != len(me0.vertices):
             normals_mode = 'VERTS'
             message = "Base mesh and Target mesh don't match"
             ob.tissue_tessellate.warning_message_thickness = message
             print("Tissue: " + message)
-            bpy.data.objects.remove(ob0_sk)
         else:
             if normals_mode == 'SHAPEKEYS':
                 for sk, val in zip(_ob0.data.shape_keys.key_blocks, key_values0): sk.value = val
             verts0_normal = normals_target - verts0_co
-            if True:
+            '''
+            While in Relative thickness method the components are built
+            between the two surfaces, in Constant mode the thickness is uniform.
+            '''
+            if scale_mode == 'CONSTANT':
+                # Normalize vectors
                 verts0_normal /= np.linalg.norm(verts0_normal, axis=1).reshape((-1,1))
-
-                original_normals = [0]*n_verts0*3
-                me0.vertices.foreach_get('normal',original_normals)
-                original_normals = np.array(original_normals).reshape(-1,3)
-                verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,np.newaxis]
-
-            bpy.data.objects.remove(ob0_sk)
-    if normals_mode in ('VERTS','FACES'):
+                original_normals = get_normals_numpy(me0)
+                verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
+    elif normals_mode in ('VERTS','FACES'):
         verts0_normal = get_normals_numpy(me0)
 
     _me0 = _ob0.data
@@ -1080,8 +1077,11 @@ def tessellate_patch(props):
         before_subsurf = simple_to_mesh(before)
         bpy.data.objects.remove(before)
 
+    tissue_time(tt, "Meshes preparation", levels=2)
 
     ### PATCHES ###
+
+    tt = time.time()
 
     patch_faces = 4**levels
     sides = int(sqrt(patch_faces))
@@ -1095,7 +1095,10 @@ def tessellate_patch(props):
         all_verts, mask, materials = get_quads(me0, bool_selection)
     n_patches = len(all_verts)
 
+    tissue_time(tt, "Indexing", levels=2)
+
     ### WEIGHT ###
+    tt = time.time()
 
     # Check if possible to use Weight Rotation
     if rotation_mode == 'WEIGHT':
@@ -1131,9 +1134,38 @@ def tessellate_patch(props):
     random.seed(rand_seed)
     bool_correct = False
 
+    tissue_time(tt, "Reading Vertex Groups", levels=2)
+
+    ### SMOOTH NORMALS
+    if smooth_normals:
+        tt = time.time()
+        weight_smooth_normals = 0.2
+        weight_smooth_normals0 = 0.2
+        if vertex_group_smooth_normals in ob0.vertex_groups.keys():
+            vg = ob0.vertex_groups[vertex_group_smooth_normals]
+            weight_smooth_normals0 = get_weight_numpy(vg, n_verts0)
+            if invert_vertex_group_smooth_normals:
+                weight_smooth_normals0 = 1-weight_smooth_normals0
+            weight_smooth_normals0 *= 0.2
+
+        verts0_normal = mesh_diffusion_vector(me0, verts0_normal, smooth_normals_iter, weight_smooth_normals0, smooth_normals_uv)
+        '''
+        While in Relative thickness method the components are built
+        between the two surfaces, in Constant mode the thickness is uniform.
+        '''
+        if scale_mode == 'CONSTANT':
+            # Normalize vectors
+            verts0_normal /= np.linalg.norm(verts0_normal, axis=1).reshape((-1,1))
+            # Compare to the original normals direction
+            original_normals = get_normals_numpy(me0)
+            verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
+
+        tissue_time(tt, "Smooth Normals", levels=2)
+
     ### ROTATE PATCHES ###
 
     if rotation_mode != 'DEFAULT' or rotation_shift != 0:
+        tt = time.time()
 
         # Weight rotation
         weight_shift = 0
@@ -1211,6 +1243,8 @@ def tessellate_patch(props):
         all_verts[flip_v] = all_verts[flip_v,:,::-1]
         all_verts[flip_uv] = np.transpose(all_verts[flip_uv],(0,2,1))
 
+        tissue_time(tt, "Rotations", levels=2)
+
     for o in bpy.context.view_layer.objects: o.select_set(False)
     new_patch = None
 
@@ -1224,6 +1258,8 @@ def tessellate_patch(props):
 
     for mat_id, _ob1 in enumerate(components):
         if _ob1 == None: continue
+
+        tt = time.time()
 
         # Set original values (for next commponents)
         com_modifiers = _com_modifiers
@@ -1270,6 +1306,9 @@ def tessellate_patch(props):
         me1 = ob1.data
         verts1 = [v.co for v in me1.vertices]
         n_verts1 = len(verts1)
+        if n_verts1 == 0:
+            bpy.data.objects.remove(ob1)
+            continue
 
         ### COMPONENT GRID COORDINATES ###
 
@@ -1359,7 +1398,12 @@ def tessellate_patch(props):
             np_u1 = 1
             np_v1 = 1
 
+        tissue_time(tt, "Component preparation", levels=2)
+
         ### DEFORM PATCHES ###
+
+        tt = time.time()
+
         verts_xyz = verts0_co[masked_verts]
         v00 = verts_xyz[:, np_u, np_v].reshape((n_patches,-1,3))
         v10 = verts_xyz[:, np_u1, np_v].reshape((n_patches,-1,3))
@@ -1372,8 +1416,6 @@ def tessellate_patch(props):
 
         ### PATCHES WEIGHT ###
         weight_thickness = 1
-        weight_smooth_normals = 0.2
-        weight_smooth_normals0 = 0.2
         if bool_vertex_group:
             n_vg = len(weight)
             patches_weight = weight[:, masked_verts]
@@ -1431,13 +1473,6 @@ def tessellate_patch(props):
                     #    weight_thickness = weight_thickness*(1-fact) + fact
                 except: pass
 
-        if vertex_group_smooth_normals in ob0.vertex_groups.keys():
-            vg = ob0.vertex_groups[vertex_group_smooth_normals]
-            weight_smooth_normals0 = get_weight_numpy(vg, n_verts0)
-            if invert_vertex_group_smooth_normals:
-                weight_smooth_normals0 = 1-weight_smooth_normals0
-            weight_smooth_normals0 *= 0.2
-
         if normals_mode == 'FACES':
             n2 = [0]*len(mask)*3
             before_subsurf.polygons.foreach_get('normal',n2)
@@ -1458,26 +1493,9 @@ def tessellate_patch(props):
                 indexes, counts = np.unique(vertex_indexes,return_counts=True)
                 verts0_normal[indexes] /= counts[:,np.newaxis]
 
-            ### SMOOTH NORMALS
-            if smooth_normals:
-
-                new_normals0 = mesh_diffusion_vector(me0, verts0_normal, smooth_normals_iter, weight_smooth_normals0, smooth_normals_uv)
-                # Normalize
-                new_normals0 = new_normals0 / np.linalg.norm(new_normals0, axis=1)[:,np.newaxis]
-                # Even Thickness
-                if True:
-                    mult = np.zeros(len(verts0_normal))
-                    for i in range(len(verts0_normal)):
-                        vec0 = Vector(verts0_normal[i])
-                        vec1 = Vector(new_normals0[i])
-                        ang = min(vec1.angle(vec0), pi/4)
-                        mult[i] = 1/cos(ang)
-                #mult = bmesh_diffusion(bm0, mult, 5, 0.2)[:,np.newaxis]
-                verts0_normal = new_normals0*mult[:,np.newaxis]
-
-            bm1 = bmesh.new()
-            bm1.from_mesh(me1)
-            if 'Eval_Normals' in bm1.loops.layers.uv.keys():
+            if 'Eval_Normals' in me1.uv_layers.keys():
+                bm1 = bmesh.new()
+                bm1.from_mesh(me1)
                 uv_co = np.array(uv_from_bmesh(bm1, 'Eval_Normals'))
                 vx_nor = uv_co[:,0]#.reshape((1,n_verts1,1))
                 #vy_nor = uv_co[:,1]#.reshape((1,n_verts1,1))
@@ -1493,10 +1511,10 @@ def tessellate_patch(props):
                 vx_nor = vx_nor.reshape((1,n_verts1,1))
                 #vy_nor = vy_nor.reshape((1,n_verts1,1))
                 vy_nor = vy
+                bm1.free()
             else:
                 vx_nor = vx
                 vy_nor = vy
-            bm1.free()
 
             verts_norm = verts0_normal[masked_verts]
             n00 = verts_norm[:, np_u, np_v].reshape((n_patches,-1,3))
@@ -1507,7 +1525,7 @@ def tessellate_patch(props):
 
         # thickness variation
         mean_area = []
-        if scale_mode == 'ADAPTIVE':
+        if scale_mode == 'ADAPTIVE' and normals_mode not in ('SHAPEKEYS','OBJECT'):
             #com_area = bb[0]*bb[1]
             if mode != 'BOUNDS' or com_area == 0: com_area = 1
             if normals_mode == 'FACES':
@@ -1583,15 +1601,17 @@ def tessellate_patch(props):
 
             store_sk_coordinates = co3
 
-        patch_time = time.time()
-        new_me = array_mesh(ob1, len(masked_verts))
-        patch_end_time = time.time()
-        print('Tissue: array mesh in {:.4f} sec'.format(patch_end_time - patch_time))
+        tissue_time(tt, "Coordinates adaptation", levels=2)
 
+        tt = time.time()
+        new_me = array_mesh(ob1, len(masked_verts))
+        tissue_time(tt, "Repeat component", levels=2)
+
+        tt = time.time()
         new_patch = bpy.data.objects.new("_tissue_tmp_patch", new_me)
         bpy.context.collection.objects.link(new_patch)
-        new_patch.select_set(True)
-        bpy.context.view_layer.objects.active = new_patch
+        #new_patch.select_set(True)
+        #bpy.context.view_layer.objects.active = new_patch
         coordinates = np.concatenate(store_coordinates, axis=0)
         coordinates = coordinates.flatten().tolist()
         new_me.vertices.foreach_set('co',coordinates)
@@ -1600,21 +1620,28 @@ def tessellate_patch(props):
             for space in area.spaces:
                 try: new_patch.local_view_set(space, True)
                 except: pass
+        tissue_time(tt, "Store coordinates", levels=2)
 
         # Vertex Group
         for vg in ob1.vertex_groups:
-            new_patch.vertex_groups.new(name=vg.name)
+            vg_name = vg.name
+            if vg_name in ob0.vertex_groups.keys():
+                vg_name = '_{}_'.format(vg_name)
+            new_patch.vertex_groups.new(name=vg_name)
         if bool_vertex_group:
+            tt = time.time()
+            new_groups = []
             for vg in ob0.vertex_groups:
-                new_patch.vertex_groups.new(name=vg.name)
-            for vg, weight in zip(new_patch.vertex_groups, store_weight):
-                set_weight_numpy(vg, weight.reshape(-1))
-            new_patch.vertex_groups.update()
+                new_groups.append(new_patch.vertex_groups.new(name=vg.name))
+            for vg, w in zip(new_groups, store_weight):
+                set_weight_numpy(vg, w.reshape(-1))
+            tissue_time(tt, "Write Vertex Groups", levels=2)
 
         if bool_shapekeys:
+            tt = time.time()
             for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
                 sk.value = val
-                new_patch.shape_key_add(name=sk.name, from_mix=False)
+                #new_patch.shape_key_add(name=sk.name, from_mix=False)
                 new_patch.data.shape_keys.key_blocks[sk.name].value = val
             for i in range(n_sk):
                 coordinates = np.concatenate(store_sk_coordinates[:,i,:,:], axis=0)
@@ -1622,18 +1649,18 @@ def tessellate_patch(props):
                 new_patch.data.shape_keys.key_blocks[i].data.foreach_set('co', coordinates)
 
             # set original values and combine Shape Keys and Vertex Groups
-            #for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
-            #    sk.value = val
-            #    new_patch.data.shape_keys.key_blocks[sk.name].value = val
+            for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
+                sk.value = val
+                new_patch.data.shape_keys.key_blocks[sk.name].value = val
             if bool_vertex_group:
                 vg_keys = new_patch.vertex_groups.keys()
                 for sk in new_patch.data.shape_keys.key_blocks:
                     if sk.name in vg_keys:
                         sk.vertex_group = sk.name
+            tissue_time(tt, "Shape Keys", levels=2)
         elif original_key_values:
             for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
                 sk.value = val
-
 
         new_name = ob0.name + "_" + ob1.name
         new_patch.name = "_tissue_tmp_patch"
@@ -2475,19 +2502,15 @@ class tissue_update_tessellate(Operator):
 
     @classmethod
     def poll(cls, context):
-        #try:
-        try: #context.object == None: return False
+        try:
             return context.object.tissue_tessellate.generator != None and \
                 context.object.tissue_tessellate.component != None
         except:
             return False
 
-    #@staticmethod
-    #def check_gen_comp(checking):
-        # note pass the stored name key in here to check it out
-    #    return checking in bpy.data.objects.keys()
-
     def execute(self, context):
+
+        tissue_time(None,'Tissue: Tessellating...', levels=0)
         start_time = time.time()
 
 
@@ -2682,74 +2705,24 @@ class tissue_update_tessellate(Operator):
                 components = [ob1]
             tess_props['component'] = components
 
-            '''
-            # iterate base object materials (needed for multi-components)
-            if bool_multi_components: mat_iter = len(base_ob.material_slots)
-            else: mat_iter = 1
-            for m_id in range(mat_iter):
-                if bool_multi_components:
+            # patch subdivisions for additional iterations
+            if iter > 0:
+                temp_mod = base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
+                temp_mod.levels = patch_subs
 
-                    # check if material and components match
-                    try:
-                        mat = base_ob.material_slots[m_id].material
-                        ob1 = bpy.data.objects[mat.name]
-                        tess_props['component'] = ob1
-                        if ob1.type not in ('MESH', 'CURVE','SURFACE','FONT', 'META'):
-                            continue
-                        material_id = m_id
-                        tess_props['material_id'] = material_id
-                        matched_materials.append(m_id)
-                        bool_material_id = True
-                        tess_props['bool_material_id'] = bool_material_id
-                    except:
-                        continue
+            # patch tessellation
+            tissue_time(None,"Tessellate iteration...",levels=1)
+            tt = time.time()
+            same_iteration = tessellate_patch(tess_props)
+            tissue_time(tt, "Tessellate iteration",levels=1)
 
-                #if com_modifiers or ob1.type != 'MESH':
-                #    data1 = simple_to_mesh(ob1)
-                #else:
-                #    data1 = ob1.data.copy()
-                #n_edges1 = len(data1.edges)
-
-                #if iter != 0: gen_modifiers = True
-            '''
-            if fill_mode == 'PATCH' or True:
-                # patch subdivisions for additional iterations
-                if iter > 0:
-                    temp_mod = base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
-                    temp_mod.levels = patch_subs
-
-                # patch tessellation
-                patch_time = time.time()
-                same_iteration = tessellate_patch(tess_props)
-                patch_end_time = time.time()
-                print('Tissue: tessellate_patch in {:.4f} sec'.format(patch_end_time - patch_time))
-
-                if iter > 0:
-                    base_ob.modifiers.remove(temp_mod)
-            else:
-                if iter != 0: gen_modifiers = True
-                same_iteration = tessellate_original(tess_props)
+            tt = time.time()
+            if iter > 0:
+                base_ob.modifiers.remove(temp_mod)
 
             # if empty or error, continue
             if type(same_iteration) != list:#is not bpy.types.Object and :
                 continue
-
-            #if fill_mode == 'PATCH':
-            #    subdivide_base = True
-
-            '''
-                # prepare base object
-                if fill_mode == 'PATCH':
-                if bool_multi_components:
-                        subdivide_base = m_id == mat_iter-1
-                    else: subdivide_base = True
-                else:
-                    subdivide_base = iter == 0 and gen_modifiers
-                if subdivide_base:
-                    temp_base_ob = convert_object_to_mesh(base_ob, True, True)
-                    base_ob = temp_base_ob
-                    iter_objects = [base_ob]
-            '''
 
             for id, new_ob in enumerate(same_iteration):
                 # rename, make active and change transformations
@@ -2759,37 +2732,13 @@ class tissue_update_tessellate(Operator):
                 new_ob.location = ob_location
                 new_ob.matrix_world = ob_matrix_world
 
-            #n_components = int(len(new_ob.data.edges) / n_edges1)
-            # SELECTION
-            #if bool_selection:
-            #    try:
-                    # create selection list
-            #        polygon_selection = [p.select for p in data1.polygons] * int(
-            #                len(new_ob.data.polygons) / len(data1.polygons))
-            #        new_ob.data.polygons.foreach_set("select", polygon_selection)
-            #    except:
-            #        pass
-            #if bool_multi_components: same_iteration.append(new_ob)
-            #bpy.data.meshes.remove(data1)
-
-
             base_ob.location = ob_location
             base_ob.matrix_world = ob_matrix_world
-
             # join together multiple components iterations
             if type(same_iteration) == list:
-                generated_data = [o.data for o in same_iteration]
-                if len(same_iteration) > 0:
-                    context.view_layer.update()
-                    for o in context.view_layer.objects:
-                        o.select_set(o in same_iteration)
-                    bpy.ops.object.join()
-                    new_ob = context.view_layer.objects.active
-                    new_ob.select_set(True)
-                    #new_ob.data.update()
-                for me in generated_data:
-                    if me != new_ob.data:
-                        bpy.data.meshes.remove(me)
+                if len(same_iteration) > 1:
+                    #join_objects(context, same_iteration)
+                    new_ob = join_objects(same_iteration)
 
             if type(new_ob) in (int,str):
                 if iter == 0:
@@ -2842,7 +2791,7 @@ class tissue_update_tessellate(Operator):
                 base_ob.name = '_tissue_tmp_base'
             elif combine_mode == 'ALL':
                 base_ob = new_ob.copy()
-                iter_objects.append(new_ob)
+                iter_objects = [new_ob] + iter_objects
             else:
                 if base_ob != new_ob:
                     bpy.data.objects.remove(base_ob)
@@ -2850,14 +2799,13 @@ class tissue_update_tessellate(Operator):
                 iter_objects = [new_ob]
 
             # Combine
-            if combine_mode != 'LAST' and len(iter_objects)>0:
+            if combine_mode != 'LAST' and len(iter_objects) > 1:
                 if base_ob not in iter_objects and type(base_ob) == bpy.types.Object:
                     bpy.data.objects.remove(base_ob)
-                for o in context.view_layer.objects:
-                    o.select_set(o in iter_objects)
-                bpy.ops.object.join()
-                new_ob.data.update()
+                new_ob = join_objects(iter_objects)
                 iter_objects = [new_ob]
+
+            tissue_time(tt, "Combine tessellations", levels=1)
 
             if merge:
                 use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components)
@@ -2866,22 +2814,28 @@ class tissue_update_tessellate(Operator):
                     message = "Can't make the bridge!"
                     ob.tissue_tessellate.warning_message_merge = message
 
-            base_ob = context.view_layer.objects.active
+            base_ob = new_ob #context.view_layer.objects.active
 
+        tt = time.time()
+
+        '''
         # Combine iterations
-        if combine_mode != 'LAST' and len(iter_objects)>0:
-            #if base_ob not in iter_objects and type(base_ob) == bpy.types.Object:
-            #    bpy.data.objects.remove(base_ob)
-            for o in context.view_layer.objects:
-                o.select_set(o in iter_objects)
-            bpy.ops.object.join()
-            new_ob = context.view_layer.objects.active
+        if combine_mode != 'LAST' and len(iter_objects) > 1:
+            if base_ob not in iter_objects and type(base_ob) == bpy.types.Object:
+                bpy.data.objects.remove(base_ob)
+            #for o in context.view_layer.objects:
+            #    o.select_set(o in iter_objects)
+            #bpy.ops.object.join()
+            #new_ob = context.view_layer.objects.active
+            new_ob = join_objects(iter_objects)
+            print(dded)
         elif combine_mode == 'LAST' and type(new_ob) != bpy.types.Object:
             # if last iteration gives error, then use the last correct iteration
             try:
                 if type(iter_objects[-1]) == bpy.types.Object:
                     new_ob = iter_objects[-1]
             except: pass
+        '''
 
         if new_ob == 0:
             #bpy.data.objects.remove(base_ob.data)
@@ -2927,17 +2881,6 @@ class tissue_update_tessellate(Operator):
         for vg in new_ob.vertex_groups:
             if not vg.name in ob.vertex_groups.keys():
                 ob.vertex_groups.new(name=vg.name)
-            # Apparently not necessary code
-            '''
-            if vg.name not in ob0.vertex_groups.keys(): continue
-            new_vg = ob.vertex_groups[vg.name]
-            for i in range(len(ob.data.vertices)):
-                try:
-                    weight = vg.weight(i)
-                except:
-                    weight = 0
-                new_vg.add([i], weight, 'REPLACE')
-            '''
 
         selected_objects = [o for o in context.selected_objects]
         for o in selected_objects: o.select_set(False)
@@ -2958,8 +2901,6 @@ class tissue_update_tessellate(Operator):
         for o in selected_objects:
             try: o.select_set(True)
             except: pass
-
-        # bpy.ops.object.mode_set(mode=starting_mode)
 
         ob.tissue_tessellate.error_message = ""
 
@@ -2984,8 +2925,9 @@ class tissue_update_tessellate(Operator):
             if "_tissue_tmp" in o.name:
                 bpy.data.objects.remove(o)
 
-        end_time = time.time()
-        print('Tissue: object "{}" tessellated in {:.4f} sec'.format(ob.name, end_time-start_time))
+        tissue_time(tt, "Closing tessellation", levels=1)
+
+        tissue_time(start_time,'Tessellation of "{}"'.format(ob.name),levels=0)
         return {'FINISHED'}
 
     def check(self, context):
@@ -3407,7 +3349,7 @@ class TISSUE_PT_tessellate_direction(Panel):
             if props.warning_message_thickness != '':
                 col.separator()
                 col.label(text=props.warning_message_thickness, icon='ERROR')
-            if props.normals_mode == 'VERTS':
+            if props.normals_mode != 'FACES':
                 col.separator()
                 col.prop(props, "smooth_normals")
                 if props.smooth_normals:

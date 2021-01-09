@@ -1,23 +1,28 @@
 import bpy
+from bpy.props import (
+    IntProperty,
+    BoolProperty
+    )
 
 evaluatedDepsgraph = None
 
 class tissuePreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    add_bevel: bpy.props.EnumProperty(
-        items=[
-            ('bevel', 'Add bevel', '', '', 0),
-            ('no_bevel', 'No bevel', '', '', 1)
-        ],
-        default='no_bevel'
-    )
+    print_stats : IntProperty(
+        name="Print Stats",
+        description="Print in the console all details about the computing time.",
+        default=1,
+        min=0,
+        max=3
+        )
 
     def draw(self, context):
 
         from .utils_pip import Pip
         Pip._ensure_user_site_package()
         layout = self.layout
+        layout.prop(self, "print_stats")
         import importlib
         numba_spec = importlib.util.find_spec('numba')
         found = numba_spec is not None

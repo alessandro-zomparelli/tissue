@@ -63,6 +63,12 @@ class dual_mesh_tessellated(Operator):
             options={'LIBRARY_EDITABLE'}
             )
 
+    link_component : BoolProperty(
+        name="Editable Component",
+        default=False,
+        description="Add Component Object to the Scene"
+        )
+
     def execute(self, context):
         auto_layer_collection()
         ob0 = context.object
@@ -103,23 +109,17 @@ class dual_mesh_tessellated(Operator):
             else: seams = (0,1,2,3,4,5,7)
             for i in seams: me.edges[i].use_seam = True
             ob1 = bpy.data.objects.new(name1, me)
-            context.collection.objects.link(ob1)
             # fix visualization issue
-            context.view_layer.objects.active = ob1
-            ob1.select_set(True)
-            bpy.ops.object.editmode_toggle()
-            bpy.ops.object.editmode_toggle()
-            ob1.select_set(False)
-            # hide component
-            #ob1.hide_select = True
-            ob1.hide_render = True
-            #ob1.hide_viewport = True
+            if self.link_component:
+                context.collection.objects.link(ob1)
+                context.view_layer.objects.active = ob1
+                ob1.select_set(True)
+                bpy.ops.object.editmode_toggle()
+                bpy.ops.object.editmode_toggle()
+                ob1.select_set(False)
+                ob1.hide_render = True
         ob = convert_object_to_mesh(ob0,False,False)
         ob.name = 'DualMesh'
-        #ob = bpy.data.objects.new("DualMesh", convert_object_to_mesh(ob0,False,False))
-        #context.collection.objects.link(ob)
-        #context.view_layer.objects.active = ob
-        #ob.select_set(True)
         ob.tissue.tissue_type = 'TESSELLATE'
         ob.tissue.bool_lock = True
         ob.tissue_tessellate.component = ob1
