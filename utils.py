@@ -30,7 +30,11 @@ from . import config
 
 def tissue_time(start_time, name, levels=0):
     tissue_addon = bpy.context.preferences.addons[__package__]
-    if levels < tissue_addon.preferences['print_stats']:
+    if 'print_stats' in tissue_addon.preferences.keys():
+        ps = tissue_addon.preferences['print_stats']
+    else:
+        ps = 1
+    if levels < ps:
         if "Tissue: " in name: head = ""
         else: head = "        "
         end_time = time.time()
