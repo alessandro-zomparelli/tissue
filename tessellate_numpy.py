@@ -1568,18 +1568,18 @@ def tessellate_patch(props):
             v10 = verts_xyz[:,np_u1,np_v]
             v01 = verts_xyz[:,np_u,np_v1]
             v11 = verts_xyz[:,np_u1,np_v1]
-            vx = sk_uv[:,:,0].reshape((1,2,n_verts1,1))
-            vy = sk_uv[:,:,1].reshape((1,2,n_verts1,1))
-            vz = sk_uv[:,:,2].reshape((1,2,n_verts1,1))
+            vx = sk_uv[:,:,0].reshape((1,n_sk,n_verts1,1))
+            vy = sk_uv[:,:,1].reshape((1,n_sk,n_verts1,1))
+            vz = sk_uv[:,:,2].reshape((1,n_sk,n_verts1,1))
             co2 = np_lerp2(v00,v10,v01,v11,vx,vy)
 
             if normals_mode == 'FACES':
                 n2 = n2[:,np.newaxis,:,:]
             else:
-                n00 = verts_norm[:, np_u, np_v].reshape((n_patches,2,n_verts1,3))
-                n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,2,n_verts1,3))
-                n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,2,n_verts1,3))
-                n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,2,n_verts1,3))
+                n00 = verts_norm[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,3))
+                n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,3))
                 n2 = np_lerp2(n00,n10,n01,n11,vx,vy)#[:,np.newaxis,:,:]
 
             # NOTE: weight thickness is based on the base position of the
@@ -1641,7 +1641,7 @@ def tessellate_patch(props):
             tt = time.time()
             for sk, val in zip(_ob1.data.shape_keys.key_blocks, original_key_values):
                 sk.value = val
-                #new_patch.shape_key_add(name=sk.name, from_mix=False)
+                new_patch.shape_key_add(name=sk.name, from_mix=False)
                 new_patch.data.shape_keys.key_blocks[sk.name].value = val
             for i in range(n_sk):
                 coordinates = np.concatenate(store_sk_coordinates[:,i,:,:], axis=0)
