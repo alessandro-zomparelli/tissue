@@ -14,7 +14,13 @@ class tissuePreferences(bpy.types.AddonPreferences):
         description="Print in the console all details about the computing time.",
         default=1,
         min=0,
-        max=3
+        max=4
+        )
+
+    use_numba_tess : BoolProperty(
+        name="Numba Tessellate",
+        description="Boost the Tessellation using Numba module. It will be slower during the first execution",
+        default=True
         )
 
     def draw(self, context):
@@ -28,6 +34,7 @@ class tissuePreferences(bpy.types.AddonPreferences):
         found = numba_spec is not None
         if found:
             layout.label(text='Numba module installed correctly!', icon='INFO')
+            layout.prop(self, "use_numba_tess")
         else:
             layout.label(text='Numba module not installed!', icon='ERROR')
             layout.label(text='Installing Numba will make Tissue faster', icon='INFO')

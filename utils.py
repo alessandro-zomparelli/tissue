@@ -23,13 +23,21 @@ import multiprocessing
 from multiprocessing import Process, Pool
 from mathutils import Vector, Matrix
 from math import *
-try: from .numba_functions import numba_lerp2, numba_lerp2_4
+try: from .numba_functions import *
 except: pass
 
 from . import config
 
+def use_numba_tess():
+    tissue_addon = bpy.context.preferences.addons[__package__]
+    if 'use_numba_tess' in tissue_addon.preferences.keys():
+        return tissue_addon.preferences['use_numba_tess']
+    else:
+        return True
+
 def tissue_time(start_time, name, levels=0):
     tissue_addon = bpy.context.preferences.addons[__package__]
+    end_time = time.time()
     if 'print_stats' in tissue_addon.preferences.keys():
         ps = tissue_addon.preferences['print_stats']
     else:
@@ -37,17 +45,31 @@ def tissue_time(start_time, name, levels=0):
     if levels < ps:
         if "Tissue: " in name: head = ""
         else: head = "        "
-        end_time = time.time()
         if start_time:
             print('{}{}{} in {:.4f} sec'.format(head, "|   "*levels, name, end_time - start_time))
         else:
             print('{}{}{}'.format(head, "|   "*levels, name))
-    return
+    return end_time
 
 
 # ------------------------------------------------------------------
 # MATH
 # ------------------------------------------------------------------
+
+def _np_broadcast(arrays):
+    shapes = [arr.shape for arr in arrays]
+    for i in range(len(shapes[0])):
+        ish = [sh[i] for sh in shapes]
+        print(ish)
+        max_len = max(ish)
+        for j in range(len(arrays)):
+            leng = ish[j]
+            if leng == 1: arrays[j] = np.repeat(arrays[j], max_len, axis=i)
+    for arr in arrays:
+        arr = arr.flatten()
+        print(arr.shape)
+    #vt = v0 + (v1 - v0) * t
+    return arrays
 
 def lerp(a, b, t):
     return a + (b - a) * t
@@ -70,18 +92,78 @@ def lerp3(v1, v2, v3, v4, v):
     return loc + nor * v.z
 
 import sys
-def np_lerp2(v00, v10, v01, v11, vx, vy):
-    if 'numba' in sys.modules and False:
-        if len(v00.shape) == 3:
+def np_lerp2(v00, v10, v01, v11, vx, vy, mode=''):
+    if 'numba' in sys.modules and use_numba_tess():
+        if mode == 'verts':
+            co2 = numba_interp_points(v00, v10, v01, v11, vx, vy)
+        elif mode == 'shapekeys':
+            co2 = numba_interp_points_sk(v00, v10, v01, v11, vx, vy)
+        else:
             co2 = numba_lerp2(v00, v10, v01, v11, vx, vy)
-        elif len(v00.shape) == 4:
-            co2 = numba_lerp2_4(v00, v10, v01, v11, vx, vy)
-    #except:
     else:
         co0 = v00 + (v10 - v00) * vx
         co1 = v01 + (v11 - v01) * vx
         co2 = co0 + (co1 - co0) * vy
+    return co2
 
+def calc_thickness(co2,n2,vz,a,weight):
+    if 'numba' in sys.modules and use_numba_tess():
+        if len(co2.shape) == 3:
+            if type(a) != np.ndarray:
+                a = np.ones(len(co2)).reshape((-1,1,1))
+            if type(weight) != np.ndarray:
+                weight = np.ones(len(co2)).reshape((-1,1,1))
+            co3 = numba_calc_thickness_area_weight(co2,n2,vz,a,weight)
+        elif len(co2.shape) == 4:
+            n_patches = co2.shape[0]
+            n_sk = co2.shape[1]
+            n_verts = co2.shape[2]
+            if type(a) != np.ndarray:
+                a = np.ones(n_patches).reshape((n_patches,1,1,1))
+            if type(weight) != np.ndarray:
+                weight = np.ones(n_patches).reshape((n_patches,1,1,1))
+            na = a.shape[1]-1
+            nw = weight.shape[1]-1
+            co3 = np.empty((n_sk,n_patches,n_verts,3))
+            for i in range(n_sk):
+                co3[i] = numba_calc_thickness_area_weight(co2[:,i],n2[:,i],vz[:,i],a[:,min(i,na)],weight[:,min(i,nw)])
+            co3 = co3.swapaxes(0,1)
+    else:
+        use_area = type(a) == np.ndarray
+        use_weight = type(weight) == np.ndarray
+        if use_area:
+            if use_weight:
+                co3 = co2 + n2 * vz * a * weight
+            else:
+                co3 = co2 + n2 * vz * a
+        else:
+            if use_weight:
+                co3 = co2 + n2 * vz * weight
+            else:
+                co3 = co2 + n2 * vz
+    return co3
+
+def combine_and_flatten(arrays):
+    if 'numba' in sys.modules:
+        new_list = numba_combine_and_flatten(arrays)
+    else:
+        new_list = np.concatenate(arrays, axis=0)
+        new_list = new_list.flatten().tolist()
+    return new_list
+
+def np_interp2(grid, vx, vy):
+    grid_shape = grid.shape[-2:]
+    levels = len(grid.shape)-2
+    nu = grid_shape[0]
+    nv = grid_shape[1]
+    u = np.arange(nu)/(nu-1)
+    v = np.arange(nv)/(nv-1)
+    u_shape = [1]*levels + [nu]
+    v_shape = [1]*levels + [nv]
+
+    co0 = np.interp()
+    co1 = np.interp()
+    co2 = np.interp()
     return co2
 
 def flatten_vector(vec, x, y):
@@ -280,6 +362,8 @@ def array_mesh(ob, n):
     arr = ob.modifiers.new('Repeat','ARRAY')
     arr.relative_offset_displace[0] = 0
     arr.count = n
+    #bpy.ops.object.modifier_apply({'active_object':ob},modifier='Repeat')
+    #me = ob.data
     ob.modifiers.update()
 
     dg = bpy.context.evaluated_depsgraph_get()
