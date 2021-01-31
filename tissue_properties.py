@@ -430,10 +430,10 @@ class tissue_tessellate_prop(PropertyGroup):
         update = anim_tessellate_active
         )
     material_id : IntProperty(
-        name="Material ID",
+        name="Index",
         default=0,
         min=0,
-        description="Material ID",
+        description="Only the faces with the chosen Material Index will be used",
         update = anim_tessellate_active
         )
     bool_dissolve_seams : BoolProperty(

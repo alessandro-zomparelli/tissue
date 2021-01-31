@@ -366,9 +366,9 @@ def tessellate_patch(props):
             v11 = all_verts[:,-1,-1]
             face_weight = (weight_distribution[v00] + weight_distribution[v01] + weight_distribution[v10] + weight_distribution[v11])/4 * len(components)
             face_weight = face_weight.clip(max=len(components)-1)
-            coll_materials = materials.astype('float')
-            coll_materials = face_weight + (materials - face_weight)*vertex_group_distribution_factor
-            coll_materials = materials.astype('int')
+            coll_materials = coll_materials.astype('float')
+            coll_materials = face_weight + (coll_materials - face_weight)*vertex_group_distribution_factor
+            coll_materials = coll_materials.astype('int')
 
     random.seed(rand_seed)
     bool_correct = False
@@ -2005,6 +2005,7 @@ class tissue_update_tessellate(Operator):
 
         for iter in range(iterations):
             tess_props['generator'] = base_ob
+            print(base_ob.modifiers)
 
             if iter > 0 and len(iter_objects) == 0: break
             if iter > 0 and normals_mode in ('SHAPEKEYS','OBJECT'):
@@ -2021,12 +2022,12 @@ class tissue_update_tessellate(Operator):
                         ob1 = bpy.data.objects[mat_name]
                         if ob1.type in ('MESH', 'CURVE','SURFACE','FONT','META'):
                             components.append(bpy.data.objects[mat_name])
+                            matched_materials.append(mat_name)
                         else:
                             components.append(None)
                     else:
                         components.append(None)
             tess_props['component'] = components
-
             # patch subdivisions for additional iterations
             if iter > 0 and fill_mode == 'PATCH':
                 temp_mod = base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
@@ -2039,8 +2040,6 @@ class tissue_update_tessellate(Operator):
             tissue_time(tt, "Tessellate iteration",levels=1)
 
             tt = time.time()
-            if iter > 0 and fill_mode == 'PATCH':
-                base_ob.modifiers.remove(temp_mod)
 
             # if empty or error, continue
             #if type(same_iteration) != list:#is not bpy.types.Object and :
@@ -2079,8 +2078,8 @@ class tissue_update_tessellate(Operator):
             if (bool_selection or bool_material_id) and combine_mode == 'UNUSED':
                 # remove faces from last mesh
                 bm = bmesh.new()
-                if fill_mode == 'PATCH' and iter == 0:
-                    last_mesh = simple_to_mesh(ob0)
+                if (fill_mode == 'PATCH' or gen_modifiers) and iter == 0:
+                    last_mesh = simple_to_mesh(base_ob)#(ob0)
                 else:
                     last_mesh = iter_objects[-1].data.copy()
                 bm.from_mesh(last_mesh)
@@ -2125,11 +2124,15 @@ class tissue_update_tessellate(Operator):
                 base_ob = new_ob
                 iter_objects = [new_ob]
 
+            if iter > 0:# and fill_mode == 'PATCH':
+                base_ob.modifiers.clear()#remove(temp_mod)
+
             # Combine
             if combine_mode != 'LAST' and len(iter_objects) > 1:
                 if base_ob not in iter_objects and type(base_ob) == bpy.types.Object:
                     bpy.data.objects.remove(base_ob)
                 new_ob = join_objects(iter_objects)
+                new_ob.modifiers.clear()
                 iter_objects = [new_ob]
 
             tissue_time(tt, "Combine tessellations", levels=1)
@@ -2889,7 +2892,7 @@ class TISSUE_PT_tessellate_selective(Panel):
         if props.generator.type != 'MESH':
             col2.enabled = False
         col2 = row.column(align=True)
-        col2.prop(props, "bool_material_id", icon='MATERIAL_DATA', text="Material ID")
+        col2.prop(props, "bool_material_id", icon='MATERIAL_DATA', text="Material Index")
         #if props.bool_material_id and not props.component_mode == 'MATERIALS':
             #col2 = row.column(align=True)
         col2.prop(props, "material_id")
