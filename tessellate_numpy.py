@@ -53,10 +53,38 @@ from .utils import *
 from .weight_tools import *
 from .numba_functions import *
 from .tissue_properties import *
-import os
+import os, mathutils
 from pathlib import Path
 
 from . import config
+
+def allowed_objects():
+    return ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META')
+
+def remove_temp_objects():
+    # clean objects
+    for o in bpy.data.objects:
+        if "_tissue_tmp" in o.name:
+            bpy.data.objects.remove(o)
+    return
+
+def tessellated(ob):
+    tess_props = ob.tissue_tessellate
+    if tess_props.generator not in list(bpy.data.objects):
+        return False
+    elif tess_props.component_mode == 'OBJECT':
+        return tess_props.component in list(bpy.data.objects)
+    elif tess_props.component_mode == 'COLLECTION':
+        if tess_props.component_coll in list(bpy.data.collections):
+            for o in list(tess_props.component_coll.objects):
+                if o.type in allowed_objects():
+                    return True
+    else:
+        for mat in tess_props.generator.material_slots.keys():
+            if mat in bpy.data.objects.keys():
+                if bpy.data.objects[mat].type in allowed_objects():
+                    return True
+    return False
 
 def tessellate_patch(props):
     tt = time.time()
@@ -87,6 +115,9 @@ def tessellate_patch(props):
     vertex_group_thickness = props['vertex_group_thickness']
     invert_vertex_group_thickness = props['invert_vertex_group_thickness']
     vertex_group_thickness_factor = props['vertex_group_thickness_factor']
+    vertex_group_distribution = props['vertex_group_distribution']
+    invert_vertex_group_distribution = props['invert_vertex_group_distribution']
+    vertex_group_distribution_factor = props['vertex_group_distribution_factor']
     vertex_group_cap_owner = props['vertex_group_cap_owner']
     vertex_group_cap = props['vertex_group_cap']
     invert_vertex_group_cap = props['invert_vertex_group_cap']
@@ -102,7 +133,9 @@ def tessellate_patch(props):
     smooth_normals_uv = props['smooth_normals_uv']
     vertex_group_smooth_normals = props['vertex_group_smooth_normals']
     invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
-    bool_multi_components = props['bool_multi_components']
+    #bool_multi_components = props['bool_multi_components']
+    component_mode = props['component_mode']
+    coll_rand_seed = props['coll_rand_seed']
 
     # reset messages
     ob.tissue_tessellate.warning_message_thickness = ''
@@ -176,10 +209,46 @@ def tessellate_patch(props):
             between the two surfaces, in Constant mode the thickness is uniform.
             '''
             if scale_mode == 'CONSTANT':
+                even_thickness = True
                 # Normalize vectors
                 verts0_normal /= np.linalg.norm(verts0_normal, axis=1).reshape((-1,1))
-                original_normals = get_normals_numpy(me0)
-                verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
+                if not even_thickness:
+                    original_normals = get_normals_numpy(me0)
+                    verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
+                else:
+                    dist = 6*3
+                    sample_pts = verts0_co + verts0_normal*dist
+                    kd = mathutils.kdtree.KDTree(len(verts0_co))
+                    for i, v in enumerate(verts0_co):
+                        kd.insert(v, i)
+                    kd.balance()
+                    # Find the closest point to the sample point
+                    closest_dist = []
+                    for find in sample_pts:
+                         closest_dist.append(kd.find(find)[2]) # co, index, dist
+                    closest_dist = np.array(closest_dist)[:,None]
+                    verts0_normal_pos = verts0_normal*dist/closest_dist
+                    # Compute negative normals module
+                    dist = 4*3
+                    mult = 1
+                    for i in range(5):
+                        dist1 = dist*mult
+                        sample_pts = verts0_co - verts0_normal*dist1
+                        # Find the closest point to the sample point
+                        closest_dist = []
+                        #closest_nor = []
+                        for find in sample_pts:
+                             closest_dist.append(kd.find(find)[2]) # co, index, dist
+                             #closest_nor.append(kd.find(find)[1]) # co, index, dist
+                        closest_dist = np.array(closest_dist)[:,None]
+                        #original_normals = get_normals_numpy(me0)
+                        #closest_nor = original_normals[np.array(closest_nor)]
+                        #verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
+                        mult = dist1/closest_dist
+                    verts0_normal_neg = verts0_normal*mult#dist/closest_dist
+
+
+
     elif normals_mode in ('VERTS','FACES'):
         verts0_normal = get_normals_numpy(me0)
 
@@ -253,10 +322,11 @@ def tessellate_patch(props):
 
     bool_weight_smooth_normals = vertex_group_smooth_normals in ob0.vertex_groups.keys()
     bool_weight_thickness = vertex_group_thickness in ob0.vertex_groups.keys()
+    bool_weight_distribution = vertex_group_distribution in ob0.vertex_groups.keys()
     bool_weight_cap = vertex_group_cap_owner == 'BASE' and vertex_group_cap in ob0.vertex_groups.keys()
     bool_weight_bridge = vertex_group_bridge_owner == 'BASE' and vertex_group_bridge in ob0.vertex_groups.keys()
 
-    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge or bool_weight_smooth_normals
+    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge or bool_weight_smooth_normals or bool_weight_distribution
     weight = weight_thickness = weight_rotation = None
     if read_vertex_groups:
         if bool_vertex_group:
@@ -269,6 +339,9 @@ def tessellate_patch(props):
             if bool_weight_smooth_normals:
                 vg_id = ob0.vertex_groups[bool_weight_smooth_normals].index
                 weight_rotation =  weight[vg_id]
+            if bool_weight_distribution:
+                vg_id = ob0.vertex_groups[vertex_group_distribution].index
+                weight_distribution =  weight[vg_id]
         else:
             if rotation_mode == 'WEIGHT':
                 vg = ob0.vertex_groups[vertex_group_rotation]
@@ -276,6 +349,26 @@ def tessellate_patch(props):
             if bool_weight_smooth_normals:
                 vg = ob0.vertex_groups[vertex_group_smooth_normals]
                 weight_smooth_normals = get_weight_numpy(vg, n_verts0)
+            if bool_weight_distribution:
+                vg = ob0.vertex_groups[vertex_group_distribution]
+                weight_distribution = get_weight_numpy(vg, n_verts0)
+
+    if component_mode == 'COLLECTION':
+        np.random.seed(coll_rand_seed)
+        coll_materials = np.random.randint(len(components),size=n_patches)
+        gradient_distribution = []
+        if bool_weight_distribution:
+            if invert_vertex_group_distribution:
+                weight_distribution = 1-weight_distribution
+            v00 = all_verts[:,0,0]
+            v01 = all_verts[:,0,-1]
+            v10 = all_verts[:,-1,0]
+            v11 = all_verts[:,-1,-1]
+            face_weight = (weight_distribution[v00] + weight_distribution[v01] + weight_distribution[v10] + weight_distribution[v11])/4 * len(components)
+            face_weight = face_weight.clip(max=len(components)-1)
+            coll_materials = materials.astype('float')
+            coll_materials = face_weight + (materials - face_weight)*vertex_group_distribution_factor
+            coll_materials = materials.astype('int')
 
     random.seed(rand_seed)
     bool_correct = False
@@ -406,12 +499,21 @@ def tessellate_patch(props):
         com_modifiers = _com_modifiers
         bool_shapekeys = _bool_shapekeys
 
-        if bool_multi_components:
-            masked_verts = all_verts[materials == mat_id]
+        if component_mode != 'OBJECT':
+            if component_mode == 'COLLECTION':
+                mat_mask = coll_materials == mat_id
+            else:
+                mat_mask = materials == mat_id
+            if bool_material_id:
+                mat_mask = np.logical_and(mat_mask, materials == material_id)
+            masked_verts = all_verts[mat_mask]
+            masked_faces = np.logical_and(mask, mat_mask)
         elif bool_material_id:
             masked_verts = all_verts[materials == material_id]
+            masked_faces = np.logical_and(mask, materials == material_id)
         else:
             masked_verts = all_verts
+            masked_faces = mask
         n_patches = len(masked_verts)
         if n_patches == 0: continue
 
@@ -419,7 +521,7 @@ def tessellate_patch(props):
 
         # set Shape Keys to zero
         original_key_values = None
-        if bool_shapekeys or not com_modifiers:
+        if (bool_shapekeys or not com_modifiers) and _ob1.type == 'MESH':
             if _ob1.data.shape_keys:
                 original_key_values = []
                 for sk in _ob1.data.shape_keys.key_blocks:
@@ -616,7 +718,7 @@ def tessellate_patch(props):
             #n2 = [0]*len(mask)*3
             #before_subsurf.polygons.foreach_get('normal',n2)
             #n2 = np.array(n2).reshape(-1,1,3)[mask]#[:,None,:]
-            n2 = n2[mask][:,None,:]
+            n2 = n2[masked_faces][:,None,:]
             #n2 = np.mean(verts_norm, axis=(1,2))
             #n2 = np.expand_dims(n2, axis=1)
         else:
@@ -656,11 +758,28 @@ def tessellate_patch(props):
                 vx_nor = vx
                 vy_nor = vy
 
-            verts_norm = verts0_normal[masked_verts]
-            n00 = verts_norm[:, np_u, np_v].reshape((n_patches,-1,3))
-            n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,-1,3))
-            n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,-1,3))
-            n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,-1,3))
+            if normals_mode in ('SHAPEKEYS','OBJECT') and scale_mode == 'CONSTANT' and even_thickness:
+                verts_norm_pos = verts0_normal_pos[masked_verts]
+                verts_norm_neg = verts0_normal_neg[masked_verts]
+                nor_mask = (vz<0).reshape((-1))
+                n00 = verts_norm_pos[:, np_u, np_v].reshape((n_patches,-1,3))
+                n10 = verts_norm_pos[:, np_u1, np_v].reshape((n_patches,-1,3))
+                n01 = verts_norm_pos[:, np_u, np_v1].reshape((n_patches,-1,3))
+                n11 = verts_norm_pos[:, np_u1, np_v1].reshape((n_patches,-1,3))
+                n00_neg = verts_norm_neg[:, np_u, np_v].reshape((n_patches,-1,3))
+                n10_neg = verts_norm_neg[:, np_u1, np_v].reshape((n_patches,-1,3))
+                n01_neg = verts_norm_neg[:, np_u, np_v1].reshape((n_patches,-1,3))
+                n11_neg = verts_norm_neg[:, np_u1, np_v1].reshape((n_patches,-1,3))
+                n00[:,nor_mask] = n00_neg[:,nor_mask]
+                n10[:,nor_mask] = n10_neg[:,nor_mask]
+                n01[:,nor_mask] = n01_neg[:,nor_mask]
+                n11[:,nor_mask] = n11_neg[:,nor_mask]
+            else:
+                verts_norm = verts0_normal[masked_verts]
+                n00 = verts_norm[:, np_u, np_v].reshape((n_patches,-1,3))
+                n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,-1,3))
+                n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,-1,3))
+                n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,-1,3))
             n2 = np_lerp2(n00, n10, n01, n11, vx_nor, vy_nor, 'verts')
 
         # thickness variation
@@ -670,11 +789,11 @@ def tessellate_patch(props):
             #com_area = bb[0]*bb[1]
             if mode != 'BOUNDS' or com_area == 0: com_area = 1
             if normals_mode == 'FACES':
-                if levels == 0:
+                if levels == 0 and True:
                     areas = [0]*len(mask)
                     before_subsurf.polygons.foreach_get('area',areas)
-                    areas = np.sqrt(np.array(areas)/com_area)[mask]
-                    a2 = areas[:,np.newaxis,np.newaxis]
+                    areas = np.sqrt(np.array(areas)/com_area)[masked_faces]
+                    a2 = areas[:,None,None]
                 else:
                     areas = calc_verts_area_bmesh(me0)
                     verts_area = np.sqrt(areas*patch_faces/com_area)
@@ -817,25 +936,6 @@ class tissue_tessellate(Operator):
             description="Wait...",
             default=False
     )
-    '''
-    copy_settings : EnumProperty(
-            items=[(ob.name, ob.name, '') for ob in bpy.data.objects],
-            name="Copy Settings",
-            description="Copy settings from a previously tessellate dobject"
-    )
-    '''
-    '''
-    bool_lock : BoolProperty(
-            name="Lock",
-            description="Prevent automatic update on settings changes or if other objects have it in the hierarchy.",
-            default=False
-    )
-    bool_dependencies : BoolProperty(
-            name="Update Dependencies",
-            description="Automatically updates base and components as well, if results of other tessellations",
-            default=False
-    )
-    '''
     object_name : StringProperty(
             name="",
             description="Name of the generated object"
@@ -863,6 +963,15 @@ class tissue_tessellate(Operator):
             soft_max=1,
             description="Surface offset"
             )
+    component_mode : EnumProperty(
+        items=(
+                ('OBJECT', "Object", "Use the same component object for all the faces"),
+                ('COLLECTION', "Collection", "Use multiple components from Collection"),
+                ('MATERIALS', "Materials", "Use multiple components by materials name")
+                ),
+        default='OBJECT',
+        name="Component Mode"
+        )
     mode : EnumProperty(
             items=(
                 ('BOUNDS', "Bounds", "The component fits automatically the size of the target face"),
@@ -915,12 +1024,12 @@ class tissue_tessellate(Operator):
             )
     gen_modifiers : BoolProperty(
             name="Generator Modifiers",
-            default=False,
+            default=True,
             description="Apply Modifiers and Shape Keys to the base object"
             )
     com_modifiers : BoolProperty(
             name="Component Modifiers",
-            default=False,
+            default=True,
             description="Apply Modifiers and Shape Keys to the component object"
             )
     merge : BoolProperty(
@@ -946,6 +1055,13 @@ class tissue_tessellate(Operator):
             description="Randomize component rotation"
             )
     rand_seed : IntProperty(
+            name="Seed",
+            default=0,
+            soft_min=0,
+            soft_max=10,
+            description="Random seed"
+            )
+    coll_rand_seed : IntProperty(
             name="Seed",
             default=0,
             soft_min=0,
@@ -996,6 +1112,11 @@ class tissue_tessellate(Operator):
             description="Component object for the tessellation",
             default = ""
             )
+    component_coll : StringProperty(
+            name="",
+            description="Components collection for the tessellation",
+            default = ""
+            )
     target : StringProperty(
             name="",
             description="Target object for custom direction",
@@ -1044,11 +1165,6 @@ class tissue_tessellate(Operator):
                 ('OBJECT', 'Object', "According to a target object")),
             default='VERTS',
             name="Direction"
-            )
-    bool_multi_components : BoolProperty(
-            name="Multi Components",
-            default=False,
-            description="Combine different components according to materials name"
             )
     bounds_x : EnumProperty(
             items=(
@@ -1182,6 +1298,22 @@ class tissue_tessellate(Operator):
             description="Thickness factor to use for zero vertex group influence"
             )
 
+    vertex_group_distribution : StringProperty(
+            name="Distribution weight", default='',
+            description="Vertex Group used for gradient distribution"
+            )
+    invert_vertex_group_distribution : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+    vertex_group_distribution_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0,
+            max=1,
+            description="Randomness factor to use for zero vertex group influence"
+            )
+
     vertex_group_cap_owner : EnumProperty(
             items=(
                 ('BASE', 'Base', 'Use base vertex group'),
@@ -1252,7 +1384,7 @@ class tissue_tessellate(Operator):
     working_on = ""
 
     def draw(self, context):
-        allowed_obj = ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META')
+
         '''
         try:
             bool_working = self.working_on == self.object_name and \
@@ -1266,41 +1398,70 @@ class tissue_tessellate(Operator):
         ob0 = None
         ob1 = None
 
+        ob = context.object
         sel = context.selected_objects
-        if len(sel) == 1:
+        '''
+        if len(sel) == 1 and False:
             try:
-                ob0 = sel[0].tissue_tessellate.generator
-                ob1 = sel[0].tissue_tessellate.component
+                ob0 = ob.tissue_tessellate.generator
+                ob1 = ob.tissue_tessellate.component
                 self.generator = ob0.name
                 self.component = ob1.name
                 if self.working_on == '':
-                    load_parameters(self,sel[0])
-                    self.working_on = sel[0].name
+                    load_parameters(self,ob)
+                    self.working_on = ob.name
                 bool_working = True
                 bool_allowed = True
             except:
                 pass
-
+        '''
         if len(sel) == 2:
             bool_allowed = True
             for o in sel:
-                if o.type not in allowed_obj:
+                if o.type not in allowed_objects():
                     bool_allowed = False
 
-        if len(sel) != 2 and not bool_working:
-            layout = self.layout
-            layout.label(icon='INFO')
-            layout.label(text="Please, select two different objects")
-            layout.label(text="Select first the Component object, then select")
-            layout.label(text="the Base object.")
-        elif not bool_allowed and not bool_working:
-            layout = self.layout
-            layout.label(icon='INFO')
-            layout.label(text="Only Mesh, Curve, Surface or Text objects are allowed")
-        else:
-            if ob0 == ob1 == None:
-                ob0 = context.active_object
-                self.generator = ob0.name
+        if self.component_mode == 'OBJECT':
+            if len(sel) != 2 and not bool_working:
+                layout = self.layout
+                layout.label(icon='OBJECT_DATA', text='Single Object Component')
+                layout.label(icon='INFO', text="Please, select two different objects. Select first the")
+                layout.label(text="Component object, then select the Base object.")
+                return
+            elif not bool_allowed and not bool_working:
+                layout = self.layout
+                layout.label(icon='OBJECT_DATA', text='Single Object Component')
+                layout.label(icon='ERROR', text="Please, select Mesh, Curve, Surface, Meta or Text")
+                return
+        elif self.component_mode == 'COLLECTION':
+            no_components = True
+            for o in bpy.data.collections[self.component_coll].objects:
+                if o.type in ('MESH', 'CURVE', 'META', 'SURFACE', 'FONT') and o is not ob0:
+                    no_components = False
+                    break
+            if no_components:
+                layout = self.layout
+                layout.label(icon='OUTLINER_COLLECTION', text='Components from Active Collection')
+                layout.label(icon='INFO', text="The Active Collection does not containt any Mesh,")
+                layout.label(text="Curve, Surface, Meta or Text object.")
+                return
+        elif self.component_mode == 'MATERIALS':
+            no_components = True
+            for mat in ob.material_slots.keys():
+                if mat in bpy.data.objects.keys():
+                    if bpy.data.objects[mat].type in allowed_objects():
+                        no_components = False
+                        break
+            if no_components:
+                layout = self.layout
+                layout.label(icon='INFO', text='Components from Materials')
+                layout.label(text="Can't find any object according to the materials name.")
+                return
+
+        if ob0 == ob1 == None:
+            ob0 = context.object
+            self.generator = ob0.name
+            if self.component_mode == 'OBJECT':
                 for o in sel:
                     if o != ob0:
                         ob1 = o
@@ -1308,40 +1469,49 @@ class tissue_tessellate(Operator):
                         self.no_component = False
                         break
 
-            # new object name
-            if self.object_name == "":
-                if self.generator == "":
-                    self.object_name = "Tessellation"
-                else:
-                    #self.object_name = self.generator + "_Tessellation"
-                    self.object_name = "Tessellation"
+        # new object name
+        if self.object_name == "":
+            if self.generator == "":
+                self.object_name = "Tessellation"
+            else:
+                #self.object_name = self.generator + "_Tessellation"
+                self.object_name = "Tessellation"
 
-            layout = self.layout
-            # Base and Component
-            col = layout.column(align=True)
-            #col.prop(self, "copy_settings")
-            row = col.row(align=True)
-            row.label(text="BASE : " + self.generator)
-            row.label(text="COMPONENT : " + self.component)
+        layout = self.layout
+        # Base and Component
+        col = layout.column(align=True)
+        #col.prop(self, "copy_settings")
+        row = col.row(align=True)
+        row.label(text="Base : " + self.generator, icon='OBJECT_DATA')
+        if self.component_mode == 'OBJECT':
+            row.label(text="Component : " + self.component, icon='OBJECT_DATA')
+        elif self.component_mode == 'COLLECTION':
+            row.label(text="Collection : " + self.component_coll, icon='OUTLINER_COLLECTION')
+        elif self.component_mode == 'MATERIALS':
+            row.label(text="Multiple Components", icon='MATERIAL')
 
-            # Base Modifiers
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.prop(self, "gen_modifiers", text="Use Modifiers", icon='MODIFIER')
-            base = bpy.data.objects[self.generator]
-            try:
-                if not (base.modifiers or base.data.shape_keys):
-                    col2.enabled = False
-                    self.gen_modifiers = False
-            except:
+        # Base Modifiers
+        row = col.row(align=True)
+        col2 = row.column(align=True)
+        col2.prop(self, "gen_modifiers", text="Use Modifiers", icon='MODIFIER')
+        base = bpy.data.objects[self.generator]
+        '''
+        try:
+            if not (base.modifiers or base.data.shape_keys):
                 col2.enabled = False
                 self.gen_modifiers = False
+        except:
+            col2.enabled = False
+            self.gen_modifiers = False
+        '''
 
-            # Component Modifiers
-            row.separator()
-            col3 = row.column(align=True)
-            col3.prop(self, "com_modifiers", text="Use Modifiers", icon='MODIFIER')
+        # Component Modifiers
+        row.separator()
+        col3 = row.column(align=True)
+        col3.prop(self, "com_modifiers", text="Use Modifiers", icon='MODIFIER')
+        if self.component_mode == 'OBJECT':
             component = bpy.data.objects[self.component]
+            '''
             try:
                 if not (component.modifiers or component.data.shape_keys):
                     col3.enabled = False
@@ -1349,129 +1519,130 @@ class tissue_tessellate(Operator):
             except:
                 col3.enabled = False
                 self.com_modifiers = False
+            '''
+        col.separator()
+        # Fill and Rotation
+        row = col.row(align=True)
+        row.label(text="Fill Mode:")
+        row = col.row(align=True)
+        row.prop(
+            self, "fill_mode", icon='NONE', expand=True,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        row = col.row(align=True)
+        # merge settings
+        row.prop(self, "merge")
+        row.prop(self, "bool_smooth")
+
+        # frame settings
+        if self.fill_mode == 'FRAME':
             col.separator()
-            # Fill and Rotation
+            col.label(text="Frame Settings:")
             row = col.row(align=True)
-            row.label(text="Fill Mode:")
+            row.prop(self, "frame_mode", expand=True)
+            col.prop(self, "frame_thickness", text='Thickness', icon='NONE')
+            col.separator()
             row = col.row(align=True)
-            row.prop(
-                self, "fill_mode", icon='NONE', expand=True,
-                slider=True, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
+            row.prop(self, "fill_frame", icon='NONE')
+            show_frame_mat = self.component_mode == 'MATERIALS' or self.bool_material_id
+            col2 = row.column(align=True)
+            col2.prop(self, "fill_frame_mat", icon='NONE')
+            col2.enabled = self.fill_frame and show_frame_mat
             row = col.row(align=True)
-            # merge settings
-            row.prop(self, "merge")
-            row.prop(self, "bool_smooth")
+            row.prop(self, "frame_boundary", text='Boundary', icon='NONE')
+            col2 = row.column(align=True)
+            col2.prop(self, "frame_boundary_mat", icon='NONE')
+            col2.enabled = self.frame_boundary and show_frame_mat
 
-            # frame settings
-            if self.fill_mode == 'FRAME':
-                col.separator()
-                col.label(text="Frame Settings:")
+        if self.rotation_mode == 'UV':
+            uv_error = False
+            if ob0.type != 'MESH':
                 row = col.row(align=True)
-                row.prop(self, "frame_mode", expand=True)
-                col.prop(self, "frame_thickness", text='Thickness', icon='NONE')
-                col.separator()
-                row = col.row(align=True)
-                row.prop(self, "fill_frame", icon='NONE')
-                show_frame_mat = self.bool_multi_components or self.bool_material_id
-                col2 = row.column(align=True)
-                col2.prop(self, "fill_frame_mat", icon='NONE')
-                col2.enabled = self.fill_frame and show_frame_mat
-                row = col.row(align=True)
-                row.prop(self, "frame_boundary", text='Boundary', icon='NONE')
-                col2 = row.column(align=True)
-                col2.prop(self, "frame_boundary_mat", icon='NONE')
-                col2.enabled = self.frame_boundary and show_frame_mat
-
-            if self.rotation_mode == 'UV':
-                uv_error = False
-                if ob0.type != 'MESH':
+                row.label(
+                    text="UV rotation supported only for Mesh objects",
+                    icon='ERROR')
+                uv_error = True
+            else:
+                if len(ob0.data.uv_layers) == 0:
                     row = col.row(align=True)
-                    row.label(
-                        text="UV rotation supported only for Mesh objects",
-                        icon='ERROR')
+                    check_name = self.generator
+                    row.label(text="'" + check_name +
+                              "' doesn't have UV Maps", icon='ERROR')
                     uv_error = True
-                else:
-                    if len(ob0.data.uv_layers) == 0:
-                        row = col.row(align=True)
-                        check_name = self.generator
-                        row.label(text="'" + check_name +
-                                  "' doesn't have UV Maps", icon='ERROR')
-                        uv_error = True
-                if uv_error:
-                    row = col.row(align=True)
-                    row.label(text="Default rotation will be used instead",
-                              icon='INFO')
+            if uv_error:
+                row = col.row(align=True)
+                row.label(text="Default rotation will be used instead",
+                          icon='INFO')
 
-            # Component Z
-            col.separator()
-            col.label(text="Thickness:")
+        # Component Z
+        col.separator()
+        col.label(text="Thickness:")
+        row = col.row(align=True)
+        row.prop(
+            self, "scale_mode", text="Scale Mode", icon='NONE', expand=True,
+            slider=False, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        col.prop(
+            self, "zscale", text="Scale", icon='NONE', expand=False,
+            slider=True, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        if self.mode == 'BOUNDS':
             row = col.row(align=True)
             row.prop(
-                self, "scale_mode", text="Scale Mode", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-            col.prop(
-                self, "zscale", text="Scale", icon='NONE', expand=False,
+                self, "offset", text="Offset", icon='NONE', expand=False,
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
-            if self.mode == 'BOUNDS':
-                row = col.row(align=True)
-                row.prop(
-                    self, "offset", text="Offset", icon='NONE', expand=False,
-                    slider=True, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-                row.enabled = not self.use_origin_offset
-                '''
-                col.prop(self, 'use_origin_offset')
-
-                col.separator()
-                row = col.row(align=True)
-                row.prop_search(self, 'vertex_group_thickness',
-                    ob0, "vertex_groups", text='')
-                col2 = row.column(align=True)
-                row2 = col2.row(align=True)
-                row2.prop(self, "invert_vertex_group_thickness", text="",
-                    toggle=True, icon='ARROW_LEFTRIGHT')
-                row2.prop(self, "vertex_group_thickness_factor")
-                row2.enabled = self.vertex_group_thickness in ob0.vertex_groups.keys()
-                '''
+            row.enabled = not self.use_origin_offset
             '''
-            # Component XY
+            col.prop(self, 'use_origin_offset')
+
             col.separator()
             row = col.row(align=True)
-            row.label(text="Component Coordinates:")
+            row.prop_search(self, 'vertex_group_thickness',
+                ob0, "vertex_groups", text='')
+            col2 = row.column(align=True)
+            row2 = col2.row(align=True)
+            row2.prop(self, "invert_vertex_group_thickness", text="",
+                toggle=True, icon='ARROW_LEFTRIGHT')
+            row2.prop(self, "vertex_group_thickness_factor")
+            row2.enabled = self.vertex_group_thickness in ob0.vertex_groups.keys()
+            '''
+        '''
+        # Component XY
+        col.separator()
+        row = col.row(align=True)
+        row.label(text="Component Coordinates:")
+        row = col.row(align=True)
+        row.prop(
+            self, "mode", text="Component XY", icon='NONE', expand=True,
+            slider=False, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+
+        if self.mode != 'BOUNDS':
+            col.separator()
             row = col.row(align=True)
+            row.label(text="X:")
             row.prop(
-                self, "mode", text="Component XY", icon='NONE', expand=True,
+                self, "bounds_x", text="Bounds X", icon='NONE', expand=True,
                 slider=False, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
 
-            if self.mode != 'BOUNDS':
-                col.separator()
-                row = col.row(align=True)
-                row.label(text="X:")
-                row.prop(
-                    self, "bounds_x", text="Bounds X", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-
-                row = col.row(align=True)
-                row.label(text="Y:")
-                row.prop(
-                    self, "bounds_y", text="Bounds X", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-            '''
-            col.separator()
-            col.label(text="More settings in the Object Data Properties panel...", icon='PROPERTIES')
+            row = col.row(align=True)
+            row.label(text="Y:")
+            row.prop(
+                self, "bounds_y", text="Bounds X", icon='NONE', expand=True,
+                slider=False, toggle=False, icon_only=False, event=False,
+                full_event=False, emboss=True, index=-1)
+        '''
+        col.separator()
+        col.label(text="More settings in the Object Data Properties panel...", icon='PROPERTIES')
 
 
     def execute(self, context):
-        allowed_obj = ('MESH', 'CURVE', 'META', 'SURFACE', 'FONT')
         try:
             ob0 = bpy.data.objects[self.generator]
-            ob1 = bpy.data.objects[self.component]
+            if self.component_mode == 'OBJECT':
+                ob1 = bpy.data.objects[self.component]
         except:
             return {'CANCELLED'}
 
@@ -1486,13 +1657,13 @@ class tissue_tessellate(Operator):
                     self.object_name = test_name
                     break
                 count_name += 1
+        if self.component_mode == 'OBJECT':
+            if ob1.type not in allowed_objects():
+                message = "Component must be Mesh, Curve, Surface, Text or Meta object!"
+                self.report({'ERROR'}, message)
+                self.component = None
 
-        if ob1.type not in allowed_obj:
-            message = "Component must be Mesh, Curve, Surface, Text or Meta object!"
-            self.report({'ERROR'}, message)
-            self.component = None
-
-        if ob0.type not in allowed_obj:
+        if ob0.type not in allowed_objects():
             message = "Generator must be Mesh, Curve, Surface, Text or Meta object!"
             self.report({'ERROR'}, message)
             self.generator = ""
@@ -1518,9 +1689,11 @@ class tissue_tessellate(Operator):
                 new_ob = context.object
                 bool_update = True
             new_ob = store_parameters(self, new_ob)
+            new_ob.tissue.tissue_type = 'TESSELLATE'
             try: bpy.ops.object.tissue_update_tessellate()
             except RuntimeError as e:
                 bpy.data.objects.remove(new_ob)
+                remove_temp_objects()
                 self.report({'ERROR'}, str(e))
                 return {'CANCELLED'}
             if not bool_update:
@@ -1528,7 +1701,6 @@ class tissue_tessellate(Operator):
                 #self.working_on = self.object_name
                 new_ob.location = ob0.location
                 new_ob.matrix_world = ob0.matrix_world
-            new_ob.tissue.tissue_type = 'TESSELLATE'
             return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -1566,11 +1738,7 @@ class tissue_update_tessellate_deps(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            ob = context.object
-            tess_props = ob.tissue_tessellate
-            tessellated = tess_props.generator != None and tess_props.component != None
-            to_curve = ob.tissue_to_curve.object != None
-            return tessellated or to_curve
+            return context.object.tissue.tissue_type != 'NONE'
         except:
             return False
 
@@ -1634,8 +1802,8 @@ class tissue_update_tessellate(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            return context.object.tissue_tessellate.generator != None and \
-                context.object.tissue_tessellate.component != None
+            ob = context.object
+            return ob.tissue.tissue_type == 'TESSELLATE'
         except:
             return False
 
@@ -1678,7 +1846,7 @@ class tissue_update_tessellate(Operator):
             bool_combine = ob.tissue_tessellate.bool_combine
             normals_mode = ob.tissue_tessellate.normals_mode
             bool_advanced = ob.tissue_tessellate.bool_advanced
-            bool_multi_components = ob.tissue_tessellate.bool_multi_components
+            #bool_multi_components = ob.tissue_tessellate.bool_multi_components
             combine_mode = ob.tissue_tessellate.combine_mode
             bounds_x = ob.tissue_tessellate.bounds_x
             bounds_y = ob.tissue_tessellate.bounds_y
@@ -1701,6 +1869,9 @@ class tissue_update_tessellate(Operator):
             vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
             invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
             vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
+            vertex_group_distribution = ob.tissue_tessellate.vertex_group_distribution
+            invert_vertex_group_distribution = ob.tissue_tessellate.invert_vertex_group_distribution
+            vertex_group_distribution_factor = ob.tissue_tessellate.vertex_group_distribution_factor
             vertex_group_cap_owner = ob.tissue_tessellate.vertex_group_cap_owner
             vertex_group_cap = ob.tissue_tessellate.vertex_group_cap
             invert_vertex_group_cap = ob.tissue_tessellate.invert_vertex_group_cap
@@ -1712,9 +1883,13 @@ class tissue_update_tessellate(Operator):
             vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
             invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
             target = ob.tissue_tessellate.target
+            component_mode = ob.tissue_tessellate.component_mode
+            component_coll = ob.tissue_tessellate.component_coll
+            coll_rand_seed = ob.tissue_tessellate.coll_rand_seed
         try:
             generator.name
-            component.name
+            if component_mode == 'OBJECT':
+                component.name
         except:
             self.report({'ERROR'},
                         "Active object must be Tessellate before Update")
@@ -1754,15 +1929,32 @@ class tissue_update_tessellate(Operator):
         ob0_hide = ob0.hide_get()
         ob0_hidev = ob0.hide_viewport
         ob0_hider = ob0.hide_render
-        ob1_hide = ob1.hide_get()
-        ob1_hidev = ob1.hide_viewport
-        ob1_hider = ob1.hide_render
         ob0.hide_set(False)
         ob0.hide_viewport = False
         ob0.hide_render = False
-        ob1.hide_set(False)
-        ob1.hide_viewport = False
-        ob1.hide_render = False
+        if component_mode == 'OBJECT':
+            ob1_hide = ob1.hide_get()
+            ob1_hidev = ob1.hide_viewport
+            ob1_hider = ob1.hide_render
+            ob1.hide_set(False)
+            ob1.hide_viewport = False
+            ob1.hide_render = False
+
+        components = []
+        if component_mode == 'COLLECTION':
+            dict_components = {}
+            meta_object = True
+            for _ob1 in component_coll.objects:
+                if _ob1 == ob: continue
+                if _ob1.type in ('MESH', 'CURVE','SURFACE','FONT','META'):
+                    if _ob1.type == 'META':
+                        if meta_object: meta_object = False
+                        else: continue
+                    dict_components[_ob1.name] = _ob1
+            for k in sorted(dict_components):
+                components.append(dict_components[k])
+        elif component_mode == 'OBJECT':
+            components.append(ob1)
 
         if ob0.type == 'META':
             base_ob = convert_object_to_mesh(ob0, False, True)
@@ -1771,7 +1963,6 @@ class tissue_update_tessellate(Operator):
             base_ob.data = ob0.data#
             context.collection.objects.link(base_ob)
         base_ob.name = '_tissue_tmp_base'
-
 
         # In Blender 2.80 cache of copied objects is lost, must be re-baked
         bool_update_cloth = False
@@ -1789,7 +1980,7 @@ class tissue_update_tessellate(Operator):
         base_ob.modifiers.update()
 
         # clear vertex groups before creating new ones
-        ob.vertex_groups.clear()
+        if ob not in components: ob.vertex_groups.clear()
 
         if bool_selection:
             faces = base_ob.data.polygons
@@ -1801,7 +1992,7 @@ class tissue_update_tessellate(Operator):
                 context.view_layer.objects.active = ob
                 ob.select_set(True)
                 bpy.ops.object.mode_set(mode=starting_mode)
-                bpy.data.objects.remove(base_ob)
+                remove_temp_objects()
                 self.report({'ERROR'}, message)
                 return {'CANCELLED'}
 
@@ -1809,6 +2000,7 @@ class tissue_update_tessellate(Operator):
         ob_location = ob.location
         ob_matrix_world = ob.matrix_world
 
+        #if ob not in components:
         ob.data.clear_geometry()    # Faster with previous heavy geometries
 
         for iter in range(iterations):
@@ -1820,7 +2012,7 @@ class tissue_update_tessellate(Operator):
             same_iteration = []
             matched_materials = []
 
-            if bool_multi_components:
+            if component_mode == 'MATERIALS':
                 components = []
                 objects_keys = bpy.data.objects.keys()
                 for mat_slot in base_ob.material_slots:
@@ -1833,8 +2025,6 @@ class tissue_update_tessellate(Operator):
                             components.append(None)
                     else:
                         components.append(None)
-            else:
-                components = [ob1]
             tess_props['component'] = components
 
             # patch subdivisions for additional iterations
@@ -1853,8 +2043,8 @@ class tissue_update_tessellate(Operator):
                 base_ob.modifiers.remove(temp_mod)
 
             # if empty or error, continue
-            if type(same_iteration) != list:#is not bpy.types.Object and :
-                continue
+            #if type(same_iteration) != list:#is not bpy.types.Object and :
+            #    return {'CANCELLED'}
 
             for id, new_ob in enumerate(same_iteration):
                 # rename, make active and change transformations
@@ -1868,11 +2058,16 @@ class tissue_update_tessellate(Operator):
             base_ob.matrix_world = ob_matrix_world
             # join together multiple components iterations
             if type(same_iteration) == list:
+                if len(same_iteration) == 0:
+                    remove_temp_objects()
+                    tissue_time(None,"Can't Tessellate :-(",levels=0)
+                    return {'CANCELLED'}
                 if len(same_iteration) > 1:
                     #join_objects(context, same_iteration)
                     new_ob = join_objects(same_iteration)
 
-            if type(new_ob) in (int,str):
+            if type(same_iteration) in (int,str):
+                new_ob = same_iteration
                 if iter == 0:
                     try:
                         bpy.data.objects.remove(iter_objects[0])
@@ -1890,13 +2085,13 @@ class tissue_update_tessellate(Operator):
                     last_mesh = iter_objects[-1].data.copy()
                 bm.from_mesh(last_mesh)
                 bm.faces.ensure_lookup_table()
-                if bool_multi_components:
+                if component_mode == 'MATERIALS':
                     remove_materials = matched_materials
                 elif bool_material_id:
                     remove_materials = [material_id]
                 else: remove_materials = []
                 if bool_selection:
-                    if bool_multi_components or bool_material_id:
+                    if component_mode == 'MATERIALS' or bool_material_id:
                         remove_faces = [f for f in bm.faces if f.material_index in remove_materials and f.select]
                     else:
                         remove_faces = [f for f in bm.faces if f.select]
@@ -1940,7 +2135,7 @@ class tissue_update_tessellate(Operator):
             tissue_time(tt, "Combine tessellations", levels=1)
 
             if merge:
-                use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components)
+                use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and component_mode != 'OBJECT')
                 merged = merge_components(new_ob, ob.tissue_tessellate, use_bmesh)
                 if merged == 'bridge_error':
                     message = "Can't make the bridge!"
@@ -2003,7 +2198,7 @@ class tissue_update_tessellate(Operator):
 
         is_multiple = iterations > 1 or combine_mode != 'LAST'# or bool_multi_components
         if merge and is_multiple:
-            use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and bool_multi_components)
+            use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and component_mode != 'OBJECT')
             merge_components(new_ob, ob.tissue_tessellate, use_bmesh)
 
         if bool_smooth: bpy.ops.object.shade_smooth()
@@ -2022,9 +2217,10 @@ class tissue_update_tessellate(Operator):
         ob0.hide_viewport = ob0_hidev
         ob0.hide_render = ob0_hider
         # Restore Component visibility
-        ob1.hide_set(ob1_hide)
-        ob1.hide_viewport = ob1_hidev
-        ob1.hide_render = ob1_hider
+        if component_mode == 'OBJECT':
+            ob1.hide_set(ob1_hide)
+            ob1.hide_viewport = ob1_hidev
+            ob1.hide_render = ob1_hider
         # Restore Local visibility
         for space, local0, local1 in zip(local_spaces, local_ob0, local_ob1):
             ob0.local_view_set(space, local0)
@@ -2032,11 +2228,7 @@ class tissue_update_tessellate(Operator):
 
         bpy.data.objects.remove(new_ob)
 
-        # clean objects
-        for o in bpy.data.objects:
-            #if o.name not in context.view_layer.objects and "_tissue_tmp" in o.name:
-            if "_tissue_tmp" in o.name:
-                bpy.data.objects.remove(o)
+        remove_temp_objects()
 
         tissue_time(tt, "Closing tessellation", levels=1)
 
@@ -2062,8 +2254,14 @@ class TISSUE_PT_tessellate(Panel):
 
         col = layout.column(align=True)
         col.label(text="Generate:")
-        col.operator("object.tissue_tessellate", text='Tessellate')
-        col.operator("object.dual_mesh_tessellated", text='Dual Mesh')
+        row = col.row(align=True)
+        row.operator("object.tissue_tessellate", text='Tessellate', icon='OBJECT_DATA')
+        tss = row.operator("object.tissue_tessellate", text='', icon='OUTLINER_COLLECTION')
+        tss.component_mode = 'COLLECTION'
+        tss.component_coll = context.collection.name
+        row.operator("object.tissue_tessellate", text='', icon='MATERIAL').component_mode = 'MATERIALS'
+        #col.operator("object.tissue_tessellate_multi", text='Tessellate Multi')
+        col.operator("object.dual_mesh_tessellated", text='Dual Mesh', icon='SEQ_CHROMA_SCOPE')
         col.separator()
 
         #col.label(text="Curves:")
@@ -2082,7 +2280,7 @@ class TISSUE_PT_tessellate(Panel):
 
         col.separator()
         col.label(text="Other:")
-        col.operator("object.dual_mesh")
+        col.operator("object.dual_mesh", icon='SEQ_CHROMA_SCOPE')
         col.operator("object.polyhedra_wireframe", icon='MOD_WIREFRAME', text='Polyhedra Wireframe')
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
 
@@ -2114,20 +2312,16 @@ class TISSUE_PT_tessellate_object(Panel):
 
     @classmethod
     def poll(cls, context):
-        try: return context.object.type == 'MESH'
+        try:
+            return context.object.type == 'MESH'
         except: return False
 
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
         tissue_props = ob.tissue
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
 
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
+        bool_tessellated = tissue_props.tissue_type == 'TESSELLATE'
         layout = self.layout
         if not bool_tessellated:
             layout.label(text="The selected object is not a Tessellated object",
@@ -2150,32 +2344,24 @@ class TISSUE_PT_tessellate_object(Panel):
             col2 = row.column(align=True)
             col2.prop(tissue_props, "bool_run", text="",icon='TIME')
             col2.enabled = not tissue_props.bool_lock
-            layout.use_property_split = True
-            layout.use_property_decorate = False  # No animation.
+            #layout.use_property_split = True
+            #layout.use_property_decorate = False  # No animation.
             col = layout.column(align=True)
+            col.label(text='Base object:')
             row = col.row(align=True)
-            row.label(text='Base:')
             row.prop_search(props, "generator", context.scene, "objects")
             col2 = row.column(align=True)
-            col2.prop(props, "gen_modifiers", text='',icon='MODIFIER')
+            col2.prop(props, "gen_modifiers", text='Use Modifiers',icon='MODIFIER')
+            '''
             try:
                 if not (props.generator.modifiers or props.generator.data.shape_keys):
                     col2.enabled = False
             except:
                     col2.enabled = False
-            col.separator()
-            row = col.row(align=True)
-            row.label(text='Component:')
-            row.prop_search(props, "component", context.scene, "objects")
-            col2 = row.column(align=True)
-            col2.prop(props, "com_modifiers", text='',icon='MODIFIER')
-            try:
-                if not (props.component.modifiers or props.component.data.shape_keys):
-                    col2.enabled = False
-            except:
-                    col2.enabled = False
-            layout.use_property_split = False
+            '''
+            #col.separator()
 
+            layout.use_property_split = False
             # Fill
             col = layout.column(align=True)
             col.label(text="Fill Mode:")
@@ -2211,33 +2397,118 @@ class TISSUE_PT_tessellate_frame(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
-
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
-        if bool_tessellated:
-            col = layout.column(align=True)
-            row = col.row(align=True)
-            row.prop(props, "frame_mode", expand=True)
-            row = col.row(align=True)
-            row.prop(props, "frame_thickness", icon='NONE', expand=True)
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.prop(props, "frame_mode", expand=True)
+        row = col.row(align=True)
+        row.prop(props, "frame_thickness", icon='NONE', expand=True)
+        col.separator()
+        row = col.row(align=True)
+        row.prop(props, "fill_frame", icon='NONE')
+        show_frame_mat = props.component_mode == 'MATERIALS' or props.bool_material_id
+        col2 = row.column(align=True)
+        col2.prop(props, "fill_frame_mat", icon='NONE')
+        col2.enabled = props.fill_frame and show_frame_mat
+        row = col.row(align=True)
+        row.prop(props, "frame_boundary", text='Boundary', icon='NONE')
+        col2 = row.column(align=True)
+        col2.prop(props, "frame_boundary_mat", icon='NONE')
+        col2.enabled = props.frame_boundary and show_frame_mat
+
+
+class TISSUE_PT_tessellate_component(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_parent_id = "TISSUE_PT_tessellate_object"
+    bl_label = "Components"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            bool_tessellated = context.object.tissue.tissue_type == 'TESSELLATE'
+            return context.object.type == 'MESH' and bool_tessellated
+        except:
+            return False
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_tessellate
+
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(text='Component Mode:')
+        row = col.row(align=True)
+        row.prop(props, "component_mode", icon='NONE', expand=True,
+                 slider=True, toggle=False, icon_only=False, event=False,
+                 full_event=False, emboss=True, index=-1)
+
+        if props.component_mode == 'OBJECT':
             col.separator()
             row = col.row(align=True)
-            row.prop(props, "fill_frame", icon='NONE')
-            show_frame_mat = props.bool_multi_components or props.bool_material_id
+            row.prop_search(props, "component", context.scene, "objects")
             col2 = row.column(align=True)
-            col2.prop(props, "fill_frame_mat", icon='NONE')
-            col2.enabled = props.fill_frame and show_frame_mat
-            row = col.row(align=True)
-            row.prop(props, "frame_boundary", text='Boundary', icon='NONE')
-            col2 = row.column(align=True)
-            col2.prop(props, "frame_boundary_mat", icon='NONE')
-            col2.enabled = props.frame_boundary and show_frame_mat
+            col2.prop(props, "com_modifiers", text='Use Modifiers',icon='MODIFIER')
+            '''
+            try:
+                if not (props.component.modifiers or props.component.data.shape_keys):
+                    col2.enabled = False
+            except:
+                    col2.enabled = False
+            '''
+        elif props.component_mode == 'COLLECTION':
+            col.separator()
 
+            if props.component_coll in list(bpy.data.collections):
+                components = []
+                for o in props.component_coll.objects:
+                    if o.type in allowed_objects() and o is not ob:
+                        components.append(o.name)
+                n_comp = len(components)
+                if n_comp == 0:
+                    col.label(text="Can't find components in the Collection.", icon='ERROR')
+                else:
+                    text = "{} Component{}".format(n_comp,"s" if n_comp>1 else "")
+                    row = col.row(align=True)
+                    row.label(text=text, icon='OBJECT_DATA')
+                    row.prop(props, "com_modifiers", text='Use Modifiers',icon='MODIFIER')
+            else:
+                col.label(text="Please, chose one Collection.", icon='ERROR')
+
+            col.separator()
+            row = col.row(align=True)
+            row.prop_search(props,'component_coll',bpy.data,'collections')
+            col2 = row.column(align=True)
+            col2.prop(props, "coll_rand_seed")
+            col = layout.column(align=True)
+            row = col.row(align=True)
+            ob0 = props.generator
+            row.prop_search(props, 'vertex_group_distribution',
+                ob0, "vertex_groups", text='')
+            col2 = row.column(align=True)
+            row2 = col2.row(align=True)
+            row2.prop(props, "invert_vertex_group_distribution", text="",
+                toggle=True, icon='ARROW_LEFTRIGHT')
+            row2.prop(props, "vertex_group_distribution_factor")
+            row2.enabled = props.vertex_group_distribution in ob0.vertex_groups.keys()
+        else:
+            components = []
+            for mat in props.generator.material_slots.keys():
+                if mat in bpy.data.objects.keys():
+                    if bpy.data.objects[mat].type in allowed_objects():
+                        components.append(mat)
+            n_comp = len(components)
+            if n_comp == 0:
+                col.label(text="Can't find components from the materials.", icon='ERROR')
+            else:
+                col.separator()
+                text = "{} Component{}".format(n_comp,"s" if n_comp>1 else "")
+                row = col.row(align=True)
+                row.label(text=text, icon='OBJECT_DATA')
+                row.prop(props, "com_modifiers", text='Use Modifiers',icon='MODIFIER')
+        col.separator()
 
 class TISSUE_PT_tessellate_coordinates(Panel):
     bl_space_type = 'PROPERTIES'
@@ -2250,7 +2521,7 @@ class TISSUE_PT_tessellate_coordinates(Panel):
     @classmethod
     def poll(cls, context):
         try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
+            bool_tessellated = context.object.tissue.tissue_type == 'TESSELLATE'
             return context.object.type == 'MESH' and bool_tessellated
         except:
             return False
@@ -2258,35 +2529,28 @@ class TISSUE_PT_tessellate_coordinates(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
-
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
-        if bool_tessellated:
-            col = layout.column(align=True)
-            # component XY
+
+        col = layout.column(align=True)
+        # component XY
+        row = col.row(align=True)
+        row.prop(props, "mode", expand=True)
+
+        if props.mode != 'BOUNDS':
+            col.separator()
             row = col.row(align=True)
-            row.prop(props, "mode", expand=True)
+            row.label(text="X:")
+            row.prop(
+                props, "bounds_x", text="Bounds X", icon='NONE', expand=True,
+                slider=False, toggle=False, icon_only=False, event=False,
+                full_event=False, emboss=True, index=-1)
 
-            if props.mode != 'BOUNDS':
-                col.separator()
-                row = col.row(align=True)
-                row.label(text="X:")
-                row.prop(
-                    props, "bounds_x", text="Bounds X", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
-
-                row = col.row(align=True)
-                row.label(text="Y:")
-                row.prop(
-                    props, "bounds_y", text="Bounds X", icon='NONE', expand=True,
-                    slider=False, toggle=False, icon_only=False, event=False,
-                    full_event=False, emboss=True, index=-1)
+            row = col.row(align=True)
+            row.label(text="Y:")
+            row.prop(
+                props, "bounds_y", text="Bounds X", icon='NONE', expand=True,
+                slider=False, toggle=False, icon_only=False, event=False,
+                full_event=False, emboss=True, index=-1)
 
 
 class TISSUE_PT_tessellate_rotation(Panel):
@@ -2297,11 +2561,10 @@ class TISSUE_PT_tessellate_rotation(Panel):
     bl_label = "Rotation"
     bl_options = {'DEFAULT_CLOSED'}
 
-
     @classmethod
     def poll(cls, context):
         try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
+            bool_tessellated = context.object.tissue.tissue_type == 'TESSELLATE'
             return context.object.type == 'MESH' and bool_tessellated
         except:
             return False
@@ -2309,61 +2572,53 @@ class TISSUE_PT_tessellate_rotation(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
-
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
-        if bool_tessellated:
-            # rotation
-            layout.use_property_split = True
-            layout.use_property_decorate = False  # No animation.
-            col = layout.column(align=True)
-            col.prop(props, "rotation_mode", text='Rotation', icon='NONE', expand=False,
-                     slider=True, toggle=False, icon_only=False, event=False,
-                     full_event=False, emboss=True, index=-1)
-            if props.rotation_mode == 'WEIGHT':
-                col.separator()
-                row = col.row(align=True)
-                row.separator()
-                row.separator()
-                row.separator()
-                row.prop_search(props, 'vertex_group_rotation',
-                    ob0, "vertex_groups", text='Vertex Group')
-                col2 = row.column(align=True)
-                col2.prop(props, "invert_vertex_group_rotation", text="", toggle=True, icon='ARROW_LEFTRIGHT')
-                col2.enabled = props.vertex_group_rotation in ob0.vertex_groups.keys()
-                col.separator()
-                col.prop(props, "rotation_direction", expand=False,
-                          slider=True, toggle=False, icon_only=False, event=False,
-                          full_event=False, emboss=True, index=-1)
-            if props.rotation_mode == 'RANDOM':
-                col.prop(props, "rand_seed")
-                col.prop(props, "rand_step")
-            else:
-                col.prop(props, "rotation_shift")
+        # rotation
+        layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
+        col = layout.column(align=True)
+        col.prop(props, "rotation_mode", text='Rotation', icon='NONE', expand=False,
+                 slider=True, toggle=False, icon_only=False, event=False,
+                 full_event=False, emboss=True, index=-1)
+        if props.rotation_mode == 'WEIGHT':
+            col.separator()
+            row = col.row(align=True)
+            row.separator()
+            row.separator()
+            row.separator()
+            row.prop_search(props, 'vertex_group_rotation',
+                ob0, "vertex_groups", text='Vertex Group')
+            col2 = row.column(align=True)
+            col2.prop(props, "invert_vertex_group_rotation", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+            col2.enabled = props.vertex_group_rotation in ob0.vertex_groups.keys()
+            col.separator()
+            col.prop(props, "rotation_direction", expand=False,
+                      slider=True, toggle=False, icon_only=False, event=False,
+                      full_event=False, emboss=True, index=-1)
+        if props.rotation_mode == 'RANDOM':
+            col.prop(props, "rand_seed")
+            col.prop(props, "rand_step")
+        else:
+            col.prop(props, "rotation_shift")
 
-            if props.rotation_mode == 'UV':
-                uv_error = False
-                if props.generator.type != 'MESH':
+        if props.rotation_mode == 'UV':
+            uv_error = False
+            if props.generator.type != 'MESH':
+                row = col.row(align=True)
+                row.label(
+                    text="UV rotation supported only for Mesh objects",
+                    icon='ERROR')
+                uv_error = True
+            else:
+                if len(props.generator.data.uv_layers) == 0:
                     row = col.row(align=True)
-                    row.label(
-                        text="UV rotation supported only for Mesh objects",
-                        icon='ERROR')
+                    row.label(text="'" + props.generator.name +
+                              " doesn't have UV Maps", icon='ERROR')
                     uv_error = True
-                else:
-                    if len(props.generator.data.uv_layers) == 0:
-                        row = col.row(align=True)
-                        row.label(text="'" + props.generator.name +
-                                  " doesn't have UV Maps", icon='ERROR')
-                        uv_error = True
-                if uv_error:
-                    row = col.row(align=True)
-                    row.label(text="Default rotation will be used instead",
-                              icon='INFO')
+            if uv_error:
+                row = col.row(align=True)
+                row.label(text="Default rotation will be used instead",
+                          icon='INFO')
 
 class TISSUE_PT_tessellate_thickness(Panel):
     bl_space_type = 'PROPERTIES'
@@ -2375,50 +2630,41 @@ class TISSUE_PT_tessellate_thickness(Panel):
 
     @classmethod
     def poll(cls, context):
-        try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_tessellated
-        except:
-            return False
+        try: return context.object.tissue.tissue_type == 'TESSELLATE'
+        except: return False
 
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
 
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
         #layout.use_property_split = True
-        if bool_tessellated:
-            col = layout.column(align=True)
-            # component Z
+        col = layout.column(align=True)
+        # component Z
+        row = col.row(align=True)
+        row.prop(props, "scale_mode", expand=True)
+        col.prop(props, "zscale", text="Scale", icon='NONE', expand=False,
+                 slider=True, toggle=False, icon_only=False, event=False,
+                 full_event=False, emboss=True, index=-1)
+        if props.mode == 'BOUNDS':
             row = col.row(align=True)
-            row.prop(props, "scale_mode", expand=True)
-            col.prop(props, "zscale", text="Scale", icon='NONE', expand=False,
+            row.prop(props, "offset", text="Offset", icon='NONE', expand=False,
                      slider=True, toggle=False, icon_only=False, event=False,
                      full_event=False, emboss=True, index=-1)
-            if props.mode == 'BOUNDS':
-                row = col.row(align=True)
-                row.prop(props, "offset", text="Offset", icon='NONE', expand=False,
-                         slider=True, toggle=False, icon_only=False, event=False,
-                         full_event=False, emboss=True, index=-1)
-                row.enabled = not props.use_origin_offset
-                col.prop(props, 'use_origin_offset')
+            row.enabled = not props.use_origin_offset
+            col.prop(props, 'use_origin_offset')
 
-            col.separator()
-            row = col.row(align=True)
-            row.prop_search(props, 'vertex_group_thickness',
-                ob0, "vertex_groups", text='')
-            col2 = row.column(align=True)
-            row2 = col2.row(align=True)
-            row2.prop(props, "invert_vertex_group_thickness", text="",
-                toggle=True, icon='ARROW_LEFTRIGHT')
-            row2.prop(props, "vertex_group_thickness_factor")
-            row2.enabled = props.vertex_group_thickness in ob0.vertex_groups.keys()
+        col.separator()
+        row = col.row(align=True)
+        ob0 = props.generator
+        row.prop_search(props, 'vertex_group_thickness',
+            ob0, "vertex_groups", text='')
+        col2 = row.column(align=True)
+        row2 = col2.row(align=True)
+        row2.prop(props, "invert_vertex_group_thickness", text="",
+            toggle=True, icon='ARROW_LEFTRIGHT')
+        row2.prop(props, "vertex_group_thickness_factor")
+        row2.enabled = props.vertex_group_thickness in ob0.vertex_groups.keys()
 
 class TISSUE_PT_tessellate_direction(Panel):
     bl_space_type = 'PROPERTIES'
@@ -2431,49 +2677,40 @@ class TISSUE_PT_tessellate_direction(Panel):
     @classmethod
     def poll(cls, context):
         try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_tessellated
+            return context.object.tissue.tissue_type == 'TESSELLATE'
         except:
             return False
 
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
-
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
         #layout.use_property_split = True
-        if bool_tessellated:
-            col = layout.column(align=True)
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.prop(
+        props, "normals_mode", text="Direction", icon='NONE', expand=True,
+            slider=False, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
+        if props.normals_mode == 'OBJECT':
+            col.separator()
             row = col.row(align=True)
-            row.prop(
-            props, "normals_mode", text="Direction", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-            if props.normals_mode == 'OBJECT':
-                col.separator()
+            row.prop_search(props, "target", context.scene, "objects", text='Target')
+        if props.warning_message_thickness != '':
+            col.separator()
+            col.label(text=props.warning_message_thickness, icon='ERROR')
+        if props.normals_mode != 'FACES':
+            col.separator()
+            col.prop(props, "smooth_normals")
+            if props.smooth_normals:
                 row = col.row(align=True)
-                row.prop_search(props, "target", context.scene, "objects", text='Target')
-            if props.warning_message_thickness != '':
-                col.separator()
-                col.label(text=props.warning_message_thickness, icon='ERROR')
-            if props.normals_mode != 'FACES':
-                col.separator()
-                col.prop(props, "smooth_normals")
-                if props.smooth_normals:
-                    row = col.row(align=True)
-                    row.prop(props, "smooth_normals_iter")
-                    row.separator()
-                    row.prop_search(props, 'vertex_group_smooth_normals',
-                        ob0, "vertex_groups", text='')
-                    col2 = row.column(align=True)
-                    col2.prop(props, "invert_vertex_group_smooth_normals", text="", toggle=True, icon='ARROW_LEFTRIGHT')
-                    col2.enabled = props.vertex_group_smooth_normals in ob0.vertex_groups.keys()
+                row.prop(props, "smooth_normals_iter")
+                row.separator()
+                row.prop_search(props, 'vertex_group_smooth_normals',
+                    ob0, "vertex_groups", text='')
+                col2 = row.column(align=True)
+                col2.prop(props, "invert_vertex_group_smooth_normals", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+                col2.enabled = props.vertex_group_smooth_normals in ob0.vertex_groups.keys()
 
 
 
@@ -2488,8 +2725,7 @@ class TISSUE_PT_tessellate_options(Panel):
     @classmethod
     def poll(cls, context):
         try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_tessellated
+            return context.object.tissue.tissue_type == 'TESSELLATE'
         except:
             return False
 
@@ -2501,67 +2737,59 @@ class TISSUE_PT_tessellate_options(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
-
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
         layout.use_property_split = True
         layout.use_property_decorate = False  # No animation.
-        if bool_tessellated:
-            col = layout.column(align=True)
-            if props.merge:
-                col.prop(props, "merge_thres")
-                col.prop(props, "merge_open_edges_only")
-                col.prop(props, "bool_dissolve_seams")
-                col.prop(props, "close_mesh")
-                if props.close_mesh in ('BRIDGE', 'BRIDGE_CAP'):
-                    col.separator()
-                    if props.close_mesh == 'BRIDGE_CAP':
-                        if props.vertex_group_bridge_owner == 'BASE': ob_bridge = ob0
-                        else: ob_bridge = ob1
-                        row = col.row(align=True)
-                        row.prop_search(props, 'vertex_group_bridge',
-                            ob_bridge, "vertex_groups")
-                        row.prop(props, "invert_vertex_group_bridge", text="",
-                            toggle=True, icon='ARROW_LEFTRIGHT')
-                        row = col.row(align=True)
-                        row.prop(props, "vertex_group_bridge_owner", expand=True,
-                                slider=False, toggle=False, icon_only=False, event=False,
-                                full_event=False, emboss=True, index=-1)
-                        col2 = row.column(align=True)
-                        row2 = col2.row(align=True)
-                    col.prop(props, "bridge_edges_crease", text="Crease")
-                    col.prop(props, "bridge_material_offset", text='Material Offset')
-                    '''
-                    if props.close_mesh == 'BRIDGE' and False:
-                        col.separator()
-                        col.prop(props, "bridge_cuts")
-                        col.prop(props, "bridge_smoothness")
-                    '''
-                if props.close_mesh in ('CAP', 'BRIDGE_CAP'):
-                    #row = col.row(align=True)
-                    col.separator()
-                    if props.close_mesh == 'BRIDGE_CAP':
-                        if props.vertex_group_cap_owner == 'BASE': ob_cap = ob0
-                        else: ob_cap = ob1
-                        row = col.row(align=True)
-                        row.prop_search(props, 'vertex_group_cap',
-                            ob_cap, "vertex_groups")
-                        row.prop(props, "invert_vertex_group_cap", text="",
-                            toggle=True, icon='ARROW_LEFTRIGHT')
-                        row = col.row(align=True)
-                        row.prop(props, "vertex_group_cap_owner", expand=True,
+        col = layout.column(align=True)
+        if props.merge:
+            col.prop(props, "merge_thres")
+            col.prop(props, "merge_open_edges_only")
+            col.prop(props, "bool_dissolve_seams")
+            col.prop(props, "close_mesh")
+            if props.close_mesh in ('BRIDGE', 'BRIDGE_CAP'):
+                col.separator()
+                if props.close_mesh == 'BRIDGE_CAP':
+                    if props.vertex_group_bridge_owner == 'BASE': ob_bridge = ob0
+                    else: ob_bridge = ob1
+                    row = col.row(align=True)
+                    row.prop_search(props, 'vertex_group_bridge',
+                        ob_bridge, "vertex_groups")
+                    row.prop(props, "invert_vertex_group_bridge", text="",
+                        toggle=True, icon='ARROW_LEFTRIGHT')
+                    row = col.row(align=True)
+                    row.prop(props, "vertex_group_bridge_owner", expand=True,
                             slider=False, toggle=False, icon_only=False, event=False,
                             full_event=False, emboss=True, index=-1)
-                    col.prop(props, "open_edges_crease", text="Crease")
-                    col.prop(props, "cap_material_offset", text='Material Offset')
-                if props.warning_message_merge:
+                    col2 = row.column(align=True)
+                    row2 = col2.row(align=True)
+                col.prop(props, "bridge_edges_crease", text="Crease")
+                col.prop(props, "bridge_material_offset", text='Material Offset')
+                '''
+                if props.close_mesh == 'BRIDGE' and False:
                     col.separator()
-                    col.label(text=props.warning_message_merge, icon='ERROR')
+                    col.prop(props, "bridge_cuts")
+                    col.prop(props, "bridge_smoothness")
+                '''
+            if props.close_mesh in ('CAP', 'BRIDGE_CAP'):
+                #row = col.row(align=True)
+                col.separator()
+                if props.close_mesh == 'BRIDGE_CAP':
+                    if props.vertex_group_cap_owner == 'BASE': ob_cap = ob0
+                    else: ob_cap = ob1
+                    row = col.row(align=True)
+                    row.prop_search(props, 'vertex_group_cap',
+                        ob_cap, "vertex_groups")
+                    row.prop(props, "invert_vertex_group_cap", text="",
+                        toggle=True, icon='ARROW_LEFTRIGHT')
+                    row = col.row(align=True)
+                    row.prop(props, "vertex_group_cap_owner", expand=True,
+                        slider=False, toggle=False, icon_only=False, event=False,
+                        full_event=False, emboss=True, index=-1)
+                col.prop(props, "open_edges_crease", text="Crease")
+                col.prop(props, "cap_material_offset", text='Material Offset')
+            if props.warning_message_merge:
+                col.separator()
+                col.label(text=props.warning_message_merge, icon='ERROR')
 
 class TISSUE_PT_tessellate_morphing(Panel):
     bl_space_type = 'PROPERTIES'
@@ -2573,25 +2801,17 @@ class TISSUE_PT_tessellate_morphing(Panel):
 
     @classmethod
     def poll(cls, context):
-        try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_tessellated
-        except:
-            return False
+        try: return context.object.tissue.tissue_type == 'TESSELLATE'
+        except: return False
 
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
-
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
-        if bool_tessellated:
-            allow_shapekeys = not props.com_modifiers
+        allow_shapekeys = not props.com_modifiers
+
+        if tessellated(ob):
+            ob0 = props.generator
             for m in ob0.data.materials:
                 try:
                     o = bpy.data.objects[m.name]
@@ -2635,58 +2855,53 @@ class TISSUE_PT_tessellate_selective(Panel):
     @classmethod
     def poll(cls, context):
         try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_tessellated
+            return context.object.tissue.tissue_type == 'TESSELLATE'
         except:
             return False
 
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
 
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
-        if bool_tessellated:
-            allow_multi = False
-            allow_shapekeys = not props.com_modifiers
-            for m in ob0.data.materials:
+        #layout.use_property_split = True
+        #layout.use_property_decorate = False  # No animation.
+        allow_multi = False
+        allow_shapekeys = not props.com_modifiers
+        ob0 = props.generator
+        for m in ob0.data.materials:
+            try:
+                o = bpy.data.objects[m.name]
+                allow_multi = True
                 try:
-                    o = bpy.data.objects[m.name]
-                    allow_multi = True
-                    try:
-                        if o.data.shape_keys is None: continue
-                        elif len(o.data.shape_keys.key_blocks) < 2: continue
-                        else: allow_shapekeys = not props.com_modifiers
-                    except: pass
+                    if o.data.shape_keys is None: continue
+                    elif len(o.data.shape_keys.key_blocks) < 2: continue
+                    else: allow_shapekeys = not props.com_modifiers
                 except: pass
-            # LIMITED TESSELLATION
-            col = layout.column(align=True)
-            #col.label(text="Limited Tessellation:")
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.prop(props, "bool_selection", text="On selected Faces", icon='RESTRICT_SELECT_OFF')
-            row.separator()
-            if props.generator.type != 'MESH':
-                col2.enabled = False
-            col2 = row.column(align=True)
-            col2.prop(props, "bool_material_id", icon='MATERIAL_DATA', text="Material ID")
-            if props.bool_material_id and not props.bool_multi_components:
-                #col2 = row.column(align=True)
-                col2.prop(props, "material_id")
-            if props.bool_multi_components:
-                col2.enabled = False
+            except: pass
+        # LIMITED TESSELLATION
+        col = layout.column(align=True)
+        #col.label(text="Limited Tessellation:")
+        row = col.row(align=True)
+        col2 = row.column(align=True)
+        col2.prop(props, "bool_selection", text="On selected Faces", icon='RESTRICT_SELECT_OFF')
+        row.separator()
+        if props.generator.type != 'MESH':
+            col2.enabled = False
+        col2 = row.column(align=True)
+        col2.prop(props, "bool_material_id", icon='MATERIAL_DATA', text="Material ID")
+        #if props.bool_material_id and not props.component_mode == 'MATERIALS':
+            #col2 = row.column(align=True)
+        col2.prop(props, "material_id")
+        #if props.component_mode == 'MATERIALS':
+        #    col2.enabled = False
 
-            col.separator()
-            row = col.row(align=True)
-            col2 = row.column(align=True)
-            col2.prop(props, "bool_multi_components", icon='MOD_TINT')
-            if not allow_multi:
-                col2.enabled = False
+        #col.separator()
+        #row = col.row(align=True)
+        #col2 = row.column(align=True)
+        #col2.prop(props, "bool_multi_components", icon='MOD_TINT')
+        #if not allow_multi:
+        #    col2.enabled = False
 
 
 class TISSUE_PT_tessellate_iterations(Panel):
@@ -2700,42 +2915,33 @@ class TISSUE_PT_tessellate_iterations(Panel):
     @classmethod
     def poll(cls, context):
         try:
-            bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_tessellated
+            return context.object.tissue.tissue_type == 'TESSELLATE'
         except:
             return False
 
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
-        allowed_obj = ('MESH','CURVE','SURFACE','FONT', 'META')
-
-        try:
-            bool_tessellated = props.generator or props.component != None
-            ob0 = props.generator
-            ob1 = props.component
-        except: bool_tessellated = False
         layout = self.layout
         layout.use_property_split = True
         layout.use_property_decorate = False  # No animation.
-        if bool_tessellated:
-            col = layout.column(align=True)
-            row = col.row(align=True)
-            #row.label(text='', icon='FILE_REFRESH')
-            col.prop(props, 'iterations', text='Repeat')#, icon='FILE_REFRESH')
-            if props.iterations > 1 and props.fill_mode == 'PATCH':
-                col.separator()
-                #row = col.row(align=True)
-                col.prop(props, 'patch_subs')
-            layout.use_property_split = False
-            col = layout.column(align=True)
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        #row.label(text='', icon='FILE_REFRESH')
+        col.prop(props, 'iterations', text='Repeat')#, icon='FILE_REFRESH')
+        if props.iterations > 1 and props.fill_mode == 'PATCH':
+            col.separator()
             #row = col.row(align=True)
-            col.label(text='Combine Iterations:')
-            row = col.row(align=True)
-            row.prop(
-                props, "combine_mode", text="Combine:",icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
+            col.prop(props, 'patch_subs')
+        layout.use_property_split = False
+        col = layout.column(align=True)
+        #row = col.row(align=True)
+        col.label(text='Combine Iterations:')
+        row = col.row(align=True)
+        row.prop(
+            props, "combine_mode", text="Combine:",icon='NONE', expand=True,
+            slider=False, toggle=False, icon_only=False, event=False,
+            full_event=False, emboss=True, index=-1)
 
 class tissue_rotate_face_right(Operator):
     bl_idname = "mesh.tissue_rotate_face_right"

@@ -516,8 +516,8 @@ class tissue_convert_to_curve_update(Operator):
                             sharp_verts.append(edge.vertices[1])
                     todo_edges = _todo_edges
 
-                if props.bounds_selection == 'BOUNDS': todo_edges = [e for e in todo_edges if e.is_boundary]
-                elif props.bounds_selection == 'INNER': todo_edges = [e for e in todo_edges if not e.is_boundary]
+                if props.bounds_selection == 'BOUNDS': todo_edges = [e for e in todo_edges if len(e.link_faces)<2]
+                elif props.bounds_selection == 'INNER': todo_edges = [e for e in todo_edges if len(e.link_faces)>1]
 
                 if props.mode == 'EDGES':
                     ordered_points = [[e.verts[0].index, e.verts[1].index] for e in todo_edges]
@@ -693,7 +693,7 @@ class TISSUE_PT_convert_to_curve(Panel):
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
                 col.separator()
-                
+
         col.label(text='Spline Type:')
         row = col.row(align=True)
         row.prop(

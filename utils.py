@@ -60,14 +60,12 @@ def _np_broadcast(arrays):
     shapes = [arr.shape for arr in arrays]
     for i in range(len(shapes[0])):
         ish = [sh[i] for sh in shapes]
-        print(ish)
         max_len = max(ish)
         for j in range(len(arrays)):
             leng = ish[j]
             if leng == 1: arrays[j] = np.repeat(arrays[j], max_len, axis=i)
     for arr in arrays:
         arr = arr.flatten()
-        print(arr.shape)
     #vt = v0 + (v1 - v0) * t
     return arrays
 
@@ -1204,6 +1202,7 @@ def run_edge_loop_direction(edge,vert):
             edge = link_edges[0]
         elif n_edges < 4:
             link_faces = edge.link_faces
+            if len(link_faces) == 0: break
             edge = None
             for e in link_edges:
                 link_faces1 = e.link_faces

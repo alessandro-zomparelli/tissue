@@ -50,7 +50,10 @@ def anim_tessellate_active(self, context):
     if not (ob.tissue.bool_lock or props.bool_hold):
         try:
             props.generator.name
-            props.component.name
+            if props.component_mode == 'OBJECT':
+                props.component.name
+            elif props.component_mode == 'COLLECTION':
+                props.component_coll.name
             bpy.ops.object.tissue_update_tessellate()
         except: pass
 
@@ -214,6 +217,16 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Scale factor for the component thickness",
         update = anim_tessellate_active
         )
+    component_mode : EnumProperty(
+        items=(
+                ('OBJECT', "Object", "Use the same component object for all the faces"),
+                ('COLLECTION', "Collection", "Use multiple components from Collection"),
+                ('MATERIALS', "Materials", "Use multiple components by materials name")
+                ),
+        default='OBJECT',
+        name="Component Mode",
+        update = anim_tessellate_active
+        )
     scale_mode : EnumProperty(
         items=(
                 ('CONSTANT', "Constant", "Uniform thinkness"),
@@ -291,13 +304,13 @@ class tissue_tessellate_prop(PropertyGroup):
         )
     gen_modifiers : BoolProperty(
         name="Generator Modifiers",
-        default=False,
+        default=True,
         description="Apply Modifiers and Shape Keys to the base object",
         update = anim_tessellate_active
         )
     com_modifiers : BoolProperty(
         name="Component Modifiers",
-        default=False,
+        default=True,
         description="Apply Modifiers and Shape Keys to the component object",
         update = anim_tessellate_active
         )
@@ -334,6 +347,13 @@ class tissue_tessellate_prop(PropertyGroup):
         #default="",
         update = anim_tessellate_active
         )
+    component_coll : PointerProperty(
+        type=bpy.types.Collection,
+        name="",
+        description="Use objects inside the collection",
+        #default="",
+        update = anim_tessellate_active
+        )
     target : PointerProperty(
         type=bpy.types.Object,
         name="",
@@ -351,7 +371,15 @@ class tissue_tessellate_prop(PropertyGroup):
         name="Seed",
         default=0,
         soft_min=0,
-        soft_max=10,
+        soft_max=50,
+        description="Random seed",
+        update = anim_tessellate_active
+        )
+    coll_rand_seed : IntProperty(
+        name="Seed",
+        default=0,
+        soft_min=0,
+        soft_max=50,
         description="Random seed",
         update = anim_tessellate_active
         )
@@ -446,12 +474,14 @@ class tissue_tessellate_prop(PropertyGroup):
         name="Direction",
         update = anim_tessellate_active
         )
+    '''
     bool_multi_components : BoolProperty(
         name="Multi Components",
         default=False,
         description="Combine different components according to materials name",
         update = anim_tessellate_active
         )
+    '''
     error_message : StringProperty(
         name="Error Message",
         default=""
@@ -700,12 +730,35 @@ class tissue_tessellate_prop(PropertyGroup):
             update = anim_tessellate_active
             )
 
+    vertex_group_distribution : StringProperty(
+            name="Distribution weight", default='',
+            description="Vertex Group used for gradient distribution",
+            update = anim_tessellate_active
+            )
+    invert_vertex_group_distribution : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_tessellate_active
+            )
+    vertex_group_distribution_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0,
+            max=1,
+            description="Randomness factor to use for zero vertex group influence",
+            update = anim_tessellate_active
+            )
+
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
     #ob.tissue.bool_lock = operator.bool_lock
     #ob.tissue.bool_dependencies = operator.bool_dependencies
-    ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
-    ob.tissue_tessellate.component = bpy.data.objects[operator.component]
+    if operator.generator in bpy.data.objects.keys():
+        ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
+    if operator.component in bpy.data.objects.keys():
+        ob.tissue_tessellate.component = bpy.data.objects[operator.component]
+    if operator.component_coll in bpy.data.collections.keys():
+        ob.tissue_tessellate.component_coll = bpy.data.collections[operator.component_coll]
     if operator.target in bpy.data.objects.keys():
         ob.tissue_tessellate.target = bpy.data.objects[operator.target]
     ob.tissue_tessellate.zscale = operator.zscale
@@ -722,6 +775,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.scale_mode = operator.scale_mode
     ob.tissue_tessellate.bool_random = operator.bool_random
     ob.tissue_tessellate.rand_seed = operator.rand_seed
+    ob.tissue_tessellate.coll_rand_seed = operator.coll_rand_seed
     ob.tissue_tessellate.rand_step = operator.rand_step
     ob.tissue_tessellate.fill_mode = operator.fill_mode
     ob.tissue_tessellate.bool_vertex_group = operator.bool_vertex_group
@@ -736,7 +790,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_advanced = operator.bool_advanced
     ob.tissue_tessellate.normals_mode = operator.normals_mode
     ob.tissue_tessellate.bool_combine = operator.bool_combine
-    ob.tissue_tessellate.bool_multi_components = operator.bool_multi_components
+    #ob.tissue_tessellate.bool_multi_components = operator.bool_multi_components
     ob.tissue_tessellate.combine_mode = operator.combine_mode
     ob.tissue_tessellate.bounds_x = operator.bounds_x
     ob.tissue_tessellate.bounds_y = operator.bounds_y
@@ -756,6 +810,9 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.vertex_group_thickness = operator.vertex_group_thickness
     ob.tissue_tessellate.invert_vertex_group_thickness = operator.invert_vertex_group_thickness
     ob.tissue_tessellate.vertex_group_thickness_factor = operator.vertex_group_thickness_factor
+    ob.tissue_tessellate.vertex_group_distribution = operator.vertex_group_distribution
+    ob.tissue_tessellate.invert_vertex_group_distribution = operator.invert_vertex_group_distribution
+    ob.tissue_tessellate.vertex_group_distribution_factor = operator.vertex_group_distribution_factor
     ob.tissue_tessellate.vertex_group_cap_owner = operator.vertex_group_cap_owner
     ob.tissue_tessellate.vertex_group_cap = operator.vertex_group_cap
     ob.tissue_tessellate.invert_vertex_group_cap = operator.invert_vertex_group_cap
@@ -769,6 +826,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.smooth_normals_uv = operator.smooth_normals_uv
     ob.tissue_tessellate.vertex_group_smooth_normals = operator.vertex_group_smooth_normals
     ob.tissue_tessellate.invert_vertex_group_smooth_normals = operator.invert_vertex_group_smooth_normals
+    ob.tissue_tessellate.component_mode = operator.component_mode
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -777,6 +835,7 @@ def load_parameters(operator, ob):
     #operator.bool_dependencies = ob.tissue.bool_dependencies
     operator.generator = ob.tissue_tessellate.generator.name
     operator.component = ob.tissue_tessellate.component.name
+    operator.component_coll = ob.tissue_tessellate.component_coll.name
     operator.zscale = ob.tissue_tessellate.zscale
     operator.offset = ob.tissue_tessellate.offset
     operator.gen_modifiers = ob.tissue_tessellate.gen_modifiers
@@ -791,6 +850,7 @@ def load_parameters(operator, ob):
     operator.scale_mode = ob.tissue_tessellate.scale_mode
     operator.bool_random = ob.tissue_tessellate.bool_random
     operator.rand_seed = ob.tissue_tessellate.rand_seed
+    operator.coll_rand_seed = ob.tissue_tessellate.coll_rand_seed
     operator.rand_step = ob.tissue_tessellate.rand_step
     operator.fill_mode = ob.tissue_tessellate.fill_mode
     operator.bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
@@ -805,7 +865,7 @@ def load_parameters(operator, ob):
     operator.bool_advanced = ob.tissue_tessellate.bool_advanced
     operator.normals_mode = ob.tissue_tessellate.normals_mode
     operator.bool_combine = ob.tissue_tessellate.bool_combine
-    operator.bool_multi_components = ob.tissue_tessellate.bool_multi_components
+    #operator.bool_multi_components = ob.tissue_tessellate.bool_multi_components
     operator.combine_mode = ob.tissue_tessellate.combine_mode
     operator.bounds_x = ob.tissue_tessellate.bounds_x
     operator.bounds_y = ob.tissue_tessellate.bounds_y
@@ -825,6 +885,9 @@ def load_parameters(operator, ob):
     operator.vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
     operator.invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
     operator.vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
+    operator.vertex_group_distribution = ob.tissue_tessellate.vertex_group_distribution
+    operator.invert_vertex_group_distribution = ob.tissue_tessellate.invert_vertex_group_distribution
+    operator.vertex_group_distribution_factor = ob.tissue_tessellate.vertex_group_distribution_factor
     operator.vertex_group_cap_owner = ob.tissue_tessellate.vertex_group_cap_owner
     operator.vertex_group_cap = ob.tissue_tessellate.vertex_group_cap
     operator.invert_vertex_group_cap = ob.tissue_tessellate.invert_vertex_group_cap
@@ -838,6 +901,7 @@ def load_parameters(operator, ob):
     operator.smooth_normals_uv = ob.tissue_tessellate.smooth_normals_uv
     operator.vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
     operator.invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
+    operator.component_mode = ob.tissue_tessellate.component_mode
     return ob
 
 def props_to_dict(ob):
@@ -846,6 +910,7 @@ def props_to_dict(ob):
     tessellate_dict['self'] = ob
     tessellate_dict['generator'] = props.generator
     tessellate_dict['component'] = props.component
+    tessellate_dict['component_coll'] = props.component_coll
     tessellate_dict['offset'] = props.offset
     tessellate_dict['zscale'] = props.zscale
     tessellate_dict['gen_modifiers'] = props.gen_modifiers
@@ -856,6 +921,7 @@ def props_to_dict(ob):
     tessellate_dict['rotation_shift'] = props.rotation_shift
     tessellate_dict['rotation_direction'] = props.rotation_direction
     tessellate_dict['rand_seed'] = props.rand_seed
+    tessellate_dict['coll_rand_seed'] = props.coll_rand_seed
     tessellate_dict['rand_step'] = props.rand_step
     tessellate_dict['fill_mode'] = props.fill_mode
     tessellate_dict['bool_vertex_group'] = props.bool_vertex_group
@@ -877,6 +943,9 @@ def props_to_dict(ob):
     tessellate_dict['vertex_group_thickness'] = props.vertex_group_thickness
     tessellate_dict['invert_vertex_group_thickness'] = props.invert_vertex_group_thickness
     tessellate_dict['vertex_group_thickness_factor'] = props.vertex_group_thickness_factor
+    tessellate_dict['vertex_group_distribution'] = props.vertex_group_distribution
+    tessellate_dict['invert_vertex_group_distribution'] = props.invert_vertex_group_distribution
+    tessellate_dict['vertex_group_distribution_factor'] = props.vertex_group_distribution_factor
     tessellate_dict['vertex_group_cap_owner'] = props.vertex_group_cap_owner
     tessellate_dict['vertex_group_cap'] = props.vertex_group_cap
     tessellate_dict['invert_vertex_group_cap'] = props.invert_vertex_group_cap
@@ -890,5 +959,6 @@ def props_to_dict(ob):
     tessellate_dict['smooth_normals_uv'] = props.smooth_normals_uv
     tessellate_dict['vertex_group_smooth_normals'] = props.vertex_group_smooth_normals
     tessellate_dict['invert_vertex_group_smooth_normals'] = props.invert_vertex_group_smooth_normals
-    tessellate_dict['bool_multi_components'] = props.bool_multi_components
+    #tessellate_dict['bool_multi_components'] = props.bool_multi_components
+    tessellate_dict['component_mode'] = props.component_mode
     return tessellate_dict

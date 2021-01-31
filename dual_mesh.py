@@ -162,9 +162,9 @@ class dual_mesh(Operator):
             items=[
                 ('BEAUTY', 'Beauty', 'Arrange the new triangles evenly'),
                 ('CLIP', 'Clip',
-                 'Split the polygons with an ear clipping algorithm')],
-            name="Polygon Method",
-            description="Method for splitting the polygons into triangles",
+                 'Split the N-gon with an ear clipping algorithm')],
+            name="N-gon Method",
+            description="Method for splitting the N-gons into triangles",
             default="BEAUTY",
             options={'LIBRARY_EDITABLE'}
             )
