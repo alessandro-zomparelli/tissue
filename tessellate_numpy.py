@@ -310,7 +310,7 @@ class tissue_tessellate_prop(PropertyGroup):
             'Subsurf\n(or Multires) modifiers. Works only with 4 sides ' +
             'patches.\nAfter the last Subsurf (or Multires) only ' +
             'deformation\nmodifiers can be used'),
-            ('FRAME', 'Frame', 'Essellation along the edges of each face')),
+            ('FRAME', 'Frame', 'Tessellation along the edges of each face')),
         default='QUAD',
         name="Fill Mode",
         update = anim_tessellate_active
@@ -2676,7 +2676,7 @@ class tissue_tessellate(Operator):
                 'Subsurf\n(or Multires) modifiers. Works only with 4 sides ' +
                 'patches.\nAfter the last Subsurf (or Multires) only ' +
                 'deformation\nmodifiers can be used'),
-                ('FRAME', 'Frame', 'Essellation along the edges of each face')),
+                ('FRAME', 'Frame', 'Tessellation along the edges of each face')),
             default='QUAD',
             name="Fill Mode"
             )
@@ -3013,7 +3013,7 @@ class tissue_tessellate(Operator):
             default=0,
             min=-1,
             max=1,
-            description="0 means no anysotropy, -1 represent the U direction, while 1 represent the V direction"
+            description="0 means no anisotropy, -1 represent the U direction, while 1 represent the V direction"
             )
     vertex_group_smooth_normals : StringProperty(
             name="Smooth Normals weight", default='',
@@ -3366,7 +3366,7 @@ class tissue_update_tessellate_deps(Operator):
             ob1.name
         except:
             self.report({'ERROR'},
-                        "Active object must be Tessellate before Update")
+                        "Active object must be Tessellated before Update")
             return {'CANCELLED'}
         '''
         ### TO-DO: sorting according to dependencies
@@ -3496,7 +3496,7 @@ class tissue_update_tessellate(Operator):
             component.name
         except:
             self.report({'ERROR'},
-                        "Active object must be Tessellate before Update")
+                        "Active object must be Tessellated before Update")
             return {'CANCELLED'}
 
         # reset messages
