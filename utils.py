@@ -624,86 +624,6 @@ def tessellate_prepare_component(ob1, props):
             except: pass
         v.co = vert
 
-    if mode != 'BOUNDS':
-        ob1.active_shape_key_index = 0
-        #bmesh mode
-        bm = bmesh.new()
-        bm.from_mesh(me1)
-        # Bound X
-        if bounds_x != 'EXTEND':
-            planes_co = ((0,0,0),(1,1,1))
-            planes_no = ((-1,0,0),(1,0,0))
-            geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
-            for co, no in zip(planes_co, planes_no):
-                bisect = bmesh.ops.bisect_plane(bm, geom=geom, dist=0, plane_co = co, plane_no = no, use_snap_center=False, clear_outer=bounds_x=='CLIP', clear_inner=False)
-                geom = bisect['geom']
-                cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
-                cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
-                for e in cut_edges:
-                    e.seam = True
-            if bounds_x == 'CYCLIC':
-                bmesh.ops.split_edges(bm, edges=cut_edges, verts=cut_verts, use_verts=True)
-        # Bound Y
-        if bounds_y != 'EXTEND':
-            planes_co = ((0,0,0),(1,1,1))
-            planes_no = ((0,-1,0),(0,1,0))
-            geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
-            for co, no in zip(planes_co, planes_no):
-                bisect = bmesh.ops.bisect_plane(bm, geom=geom, dist=0, plane_co = co, plane_no = no, use_snap_center=False, clear_outer=bounds_y=='CLIP', clear_inner=False)
-                geom = bisect['geom']
-                cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
-                cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
-                for e in cut_edges:
-                    e.seam = True
-            if bounds_y == 'CYCLIC':
-                bmesh.ops.split_edges(bm, edges=cut_edges, verts=cut_verts, use_verts=True)
-        bm.to_mesh(me1)
-
-    # Bounds X, Y
-    if mode != 'BOUNDS':
-        if bounds_x == 'CYCLIC':
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).x > 1]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.x -= 1
-                if me1.shape_keys != None:
-                    ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.x -= 1
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).x < 0]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.x += 1
-                if me1.shape_keys != None:
-                    ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.x += 1
-        if bounds_y == 'CYCLIC':
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).y > 1]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.y -= 1
-                if me1.shape_keys != None:
-                    ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.y -= 1
-            move_verts = []
-            for f in [f for f in me1.polygons if (f.center).y < 0]:
-                for v in f.vertices:
-                    if v not in move_verts: move_verts.append(v)
-            for v in move_verts:
-                me1.vertices[v].co.y += 1
-                if me1.shape_keys != None:
-                    ob1.active_shape_key_index = 0
-                    for sk in me1.shape_keys.key_blocks:
-                        sk.data[v].co.y += 1
-
     # ShapeKeys
     if bool_shapekeys and ob1.data.shape_keys:
         for sk in ob1.data.shape_keys.key_blocks:
@@ -731,6 +651,53 @@ def tessellate_prepare_component(ob1, props):
                     sk_vert = sk_v.co
                     sk_vert[2] *= zscale
                 sk_v.co = sk_vert
+
+    if mode != 'BOUNDS':
+        ob1.active_shape_key_index = 0
+        bm = bmesh.new()
+        bm.from_mesh(me1)
+        # Bound X
+        if bounds_x != 'EXTEND':
+            count = 0
+            while True:
+                planes_co = ((0,0,0),(1,1,0),(0,0,0),(1,1,0))
+                planes_no = ((-1,0,0),(1,0,0),(0,-1,0),(0,1,0))
+                moved = 0
+                for co, norm in zip(planes_co, planes_no):
+                    geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+                    bisect = bmesh.ops.bisect_plane(bm, geom=geom, dist=0,
+                        plane_co=co, plane_no=norm, use_snap_center=False,
+                        clear_outer=bounds_x=='CLIP', clear_inner=False
+                        )
+                    geom = bisect['geom']
+                    cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
+                    cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
+                    for e in cut_edges:
+                        e.seam = True
+                    if bounds_x == 'CYCLIC':
+                        if norm == (-1,0,0):
+                            geom_verts = [v for v in bm.verts if v.co.x < 0]
+                        if norm == (1,0,0):
+                            geom_verts = [v for v in bm.verts if v.co.x > 1]
+                        if norm == (0,-1,0):
+                            geom_verts = [v for v in bm.verts if v.co.y < 0]
+                        if norm == (0,1,0):
+                            geom_verts = [v for v in bm.verts if v.co.y > 1]
+                        geom = bmesh.ops.region_extend(bm, geom=geom_verts,
+                            use_contract=False, use_faces=False, use_face_step=True
+                            )
+                        geom = bmesh.ops.split(bm, geom=geom['geom'], use_only_faces=False)
+                        norm = Vector(norm)
+                        move_verts = [g for g in geom['geom'] if type(g)==bmesh.types.BMVert]
+                        bmesh.ops.translate(bm, vec=-norm, verts=move_verts)
+                        for key in bm.verts.layers.shape.keys():
+                            sk = bm.verts.layers.shape.get(key)
+                            for v in move_verts:
+                                v[sk] -= norm
+                        moved += len(move_verts)
+                count += 1
+                if moved == 0 or count > 1000: break
+        bm.to_mesh(me1)
 
     com_area = bb[0]*bb[1]
     return ob1, com_area
