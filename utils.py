@@ -570,76 +570,6 @@ def tessellate_prepare_component(ob1, props):
     bool_shapekeys = props['bool_shapekeys']
 
     me1 = ob1.data
-    if mode != 'BOUNDS':
-        ob1.active_shape_key_index = 0
-        # Bound X
-        if bounds_x != 'EXTEND':
-            if mode == 'GLOBAL':
-                planes_co = ((0,0,0),(1,1,1))
-                plane_no = (1,0,0)
-            if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((1,0,0)))
-                plane_no = planes_co[0]-planes_co[1]
-            bpy.ops.object.mode_set(mode='EDIT')
-            for co in planes_co:
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
-                bpy.ops.mesh.mark_seam()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            _faces = ob1.data.polygons
-            if mode == 'GLOBAL':
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x > 1]:
-                    f.select = True
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).x < 0]:
-                    f.select = True
-            else:
-                for f in [f for f in _faces if f.center.x > 1]:
-                    f.select = True
-                for f in [f for f in _faces if f.center.x < 0]:
-                    f.select = True
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(type='FACE')
-            if bounds_x == 'CLIP':
-                bpy.ops.mesh.delete(type='FACE')
-                bpy.ops.object.mode_set(mode='OBJECT')
-            if bounds_x == 'CYCLIC':
-                bpy.ops.mesh.split()
-                bpy.ops.object.mode_set(mode='OBJECT')
-        # Bound Y
-        if bounds_y != 'EXTEND':
-            if mode == 'GLOBAL':
-                planes_co = ((0,0,0),(1,1,1))
-                plane_no = (0,1,0)
-            if mode == 'LOCAL':
-                planes_co = (ob1.matrix_world @ Vector((0,0,0)), ob1.matrix_world @ Vector((0,1,0)))
-                plane_no = planes_co[0]-planes_co[1]
-            bpy.ops.object.mode_set(mode='EDIT')
-            for co in planes_co:
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.mesh.bisect(plane_co=co, plane_no=plane_no)
-                bpy.ops.mesh.mark_seam()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            _faces = ob1.data.polygons
-            if mode == 'GLOBAL':
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y > 1]:
-                    f.select = True
-                for f in [f for f in _faces if (ob1.matrix_world @ f.center).y < 0]:
-                    f.select = True
-            else:
-                for f in [f for f in _faces if f.center.y > 1]:
-                    f.select = True
-                for f in [f for f in _faces if f.center.y < 0]:
-                    f.select = True
-
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(type='FACE')
-            if bounds_y == 'CLIP':
-                bpy.ops.mesh.delete(type='FACE')
-                bpy.ops.object.mode_set(mode='OBJECT')
-            if bounds_y == 'CYCLIC':
-                bpy.ops.mesh.split()
-                bpy.ops.object.mode_set(mode='OBJECT')
-            bpy.ops.object.mode_set(mode='OBJECT')
 
     # Component statistics
     n_verts = len(me1.vertices)
@@ -694,6 +624,41 @@ def tessellate_prepare_component(ob1, props):
             except: pass
         v.co = vert
 
+    if mode != 'BOUNDS':
+        ob1.active_shape_key_index = 0
+        #bmesh mode
+        bm = bmesh.new()
+        bm.from_mesh(me1)
+        # Bound X
+        if bounds_x != 'EXTEND':
+            planes_co = ((0,0,0),(1,1,1))
+            planes_no = ((-1,0,0),(1,0,0))
+            geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+            for co, no in zip(planes_co, planes_no):
+                bisect = bmesh.ops.bisect_plane(bm, geom=geom, dist=0, plane_co = co, plane_no = no, use_snap_center=False, clear_outer=bounds_x=='CLIP', clear_inner=False)
+                geom = bisect['geom']
+                cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
+                cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
+                for e in cut_edges:
+                    e.seam = True
+            if bounds_x == 'CYCLIC':
+                bmesh.ops.split_edges(bm, edges=cut_edges, verts=cut_verts, use_verts=True)
+        # Bound Y
+        if bounds_y != 'EXTEND':
+            planes_co = ((0,0,0),(1,1,1))
+            planes_no = ((0,-1,0),(0,1,0))
+            geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+            for co, no in zip(planes_co, planes_no):
+                bisect = bmesh.ops.bisect_plane(bm, geom=geom, dist=0, plane_co = co, plane_no = no, use_snap_center=False, clear_outer=bounds_y=='CLIP', clear_inner=False)
+                geom = bisect['geom']
+                cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
+                cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
+                for e in cut_edges:
+                    e.seam = True
+            if bounds_y == 'CYCLIC':
+                bmesh.ops.split_edges(bm, edges=cut_edges, verts=cut_verts, use_verts=True)
+        bm.to_mesh(me1)
+
     # Bounds X, Y
     if mode != 'BOUNDS':
         if bounds_x == 'CYCLIC':
@@ -703,22 +668,20 @@ def tessellate_prepare_component(ob1, props):
                     if v not in move_verts: move_verts.append(v)
             for v in move_verts:
                 me1.vertices[v].co.x -= 1
-                try:
-                    _ob1.active_shape_key_index = 0
+                if me1.shape_keys != None:
+                    ob1.active_shape_key_index = 0
                     for sk in me1.shape_keys.key_blocks:
                         sk.data[v].co.x -= 1
-                except: pass
             move_verts = []
             for f in [f for f in me1.polygons if (f.center).x < 0]:
                 for v in f.vertices:
                     if v not in move_verts: move_verts.append(v)
             for v in move_verts:
                 me1.vertices[v].co.x += 1
-                try:
-                    _ob1.active_shape_key_index = 0
+                if me1.shape_keys != None:
+                    ob1.active_shape_key_index = 0
                     for sk in me1.shape_keys.key_blocks:
                         sk.data[v].co.x += 1
-                except: pass
         if bounds_y == 'CYCLIC':
             move_verts = []
             for f in [f for f in me1.polygons if (f.center).y > 1]:
@@ -726,25 +689,23 @@ def tessellate_prepare_component(ob1, props):
                     if v not in move_verts: move_verts.append(v)
             for v in move_verts:
                 me1.vertices[v].co.y -= 1
-                try:
-                    _ob1.active_shape_key_index = 0
+                if me1.shape_keys != None:
+                    ob1.active_shape_key_index = 0
                     for sk in me1.shape_keys.key_blocks:
                         sk.data[v].co.y -= 1
-                except: pass
             move_verts = []
             for f in [f for f in me1.polygons if (f.center).y < 0]:
                 for v in f.vertices:
                     if v not in move_verts: move_verts.append(v)
             for v in move_verts:
                 me1.vertices[v].co.y += 1
-                try:
-                    _ob1.active_shape_key_index = 0
+                if me1.shape_keys != None:
+                    ob1.active_shape_key_index = 0
                     for sk in me1.shape_keys.key_blocks:
                         sk.data[v].co.y += 1
-                except: pass
 
     # ShapeKeys
-    if bool_shapekeys:
+    if bool_shapekeys and ob1.data.shape_keys:
         for sk in ob1.data.shape_keys.key_blocks:
             source = sk.data
             _sk_uv_quads = [0]*len(verts1)

@@ -43,6 +43,28 @@ from bpy.props import (
     StringProperty,
     PointerProperty
 )
+from . import config
+
+
+def update_dependencies(ob, objects):
+    type = ob.tissue.tissue_type
+    if type == 'NONE': return objects
+    if ob.tissue.bool_dependencies:
+        deps = get_deps(ob)
+        for o in deps:
+            if o.tissue.tissue_type == 'NONE' or o.tissue.bool_lock or o in objects:
+                continue
+            objects.append(o)
+            objects = update_dependencies(o, objects)
+    return objects
+
+def get_deps(ob):
+    type = ob.tissue.tissue_type
+    if type == 'TESSELLATE':
+        return [ob.tissue_tessellate.generator, ob.tissue_tessellate.component]
+    elif type == 'TO_CURVE':
+        return [ob.tissue_to_curve.object]
+    else: return []
 
 def anim_tessellate_active(self, context):
     ob = context.object
@@ -288,7 +310,7 @@ class tissue_tessellate_prop(PropertyGroup):
             'Subsurf\n(or Multires) modifiers. Works only with 4 sides ' +
             'patches.\nAfter the last Subsurf (or Multires) only ' +
             'deformation\nmodifiers can be used'),
-            ('FRAME', 'Frame', 'Essellation along the edges of each face')),
+            ('FRAME', 'Frame', 'Tessellation along the edges of each face')),
         default='QUAD',
         name="Fill Mode",
         update = anim_tessellate_active
@@ -474,14 +496,6 @@ class tissue_tessellate_prop(PropertyGroup):
         name="Direction",
         update = anim_tessellate_active
         )
-    '''
-    bool_multi_components : BoolProperty(
-        name="Multi Components",
-        default=False,
-        description="Combine different components according to materials name",
-        update = anim_tessellate_active
-        )
-    '''
     error_message : StringProperty(
         name="Error Message",
         default=""
@@ -716,7 +730,7 @@ class tissue_tessellate_prop(PropertyGroup):
             default=0,
             min=-1,
             max=1,
-            description="0 means no anysotropy, -1 represent the U direction, while 1 represent the V direction",
+            description="0 means no anisotropy, -1 represent the U direction, while 1 represent the V direction",
             update = anim_tessellate_active
             )
     vertex_group_smooth_normals : StringProperty(
@@ -751,8 +765,6 @@ class tissue_tessellate_prop(PropertyGroup):
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
-    #ob.tissue.bool_lock = operator.bool_lock
-    #ob.tissue.bool_dependencies = operator.bool_dependencies
     if operator.generator in bpy.data.objects.keys():
         ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
     if operator.component in bpy.data.objects.keys():
@@ -790,7 +802,6 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_advanced = operator.bool_advanced
     ob.tissue_tessellate.normals_mode = operator.normals_mode
     ob.tissue_tessellate.bool_combine = operator.bool_combine
-    #ob.tissue_tessellate.bool_multi_components = operator.bool_multi_components
     ob.tissue_tessellate.combine_mode = operator.combine_mode
     ob.tissue_tessellate.bounds_x = operator.bounds_x
     ob.tissue_tessellate.bounds_y = operator.bounds_y
@@ -831,8 +842,6 @@ def store_parameters(operator, ob):
     return ob
 
 def load_parameters(operator, ob):
-    #operator.bool_lock = ob.tissue.bool_lock
-    #operator.bool_dependencies = ob.tissue.bool_dependencies
     operator.generator = ob.tissue_tessellate.generator.name
     operator.component = ob.tissue_tessellate.component.name
     operator.component_coll = ob.tissue_tessellate.component_coll.name
@@ -865,7 +874,6 @@ def load_parameters(operator, ob):
     operator.bool_advanced = ob.tissue_tessellate.bool_advanced
     operator.normals_mode = ob.tissue_tessellate.normals_mode
     operator.bool_combine = ob.tissue_tessellate.bool_combine
-    #operator.bool_multi_components = ob.tissue_tessellate.bool_multi_components
     operator.combine_mode = ob.tissue_tessellate.combine_mode
     operator.bounds_x = ob.tissue_tessellate.bounds_x
     operator.bounds_y = ob.tissue_tessellate.bounds_y
@@ -959,6 +967,5 @@ def props_to_dict(ob):
     tessellate_dict['smooth_normals_uv'] = props.smooth_normals_uv
     tessellate_dict['vertex_group_smooth_normals'] = props.vertex_group_smooth_normals
     tessellate_dict['invert_vertex_group_smooth_normals'] = props.invert_vertex_group_smooth_normals
-    #tessellate_dict['bool_multi_components'] = props.bool_multi_components
     tessellate_dict['component_mode'] = props.component_mode
     return tessellate_dict

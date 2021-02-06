@@ -216,40 +216,43 @@ def tessellate_patch(props):
                     original_normals = get_normals_numpy(me0)
                     verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
                 else:
-                    dist = 6*3
-                    sample_pts = verts0_co + verts0_normal*dist
+                    # Rescale normalized vectors according to the angle with the normals
+                    original_normals = get_normals_numpy(me0)
+                    #verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
                     kd = mathutils.kdtree.KDTree(len(verts0_co))
                     for i, v in enumerate(verts0_co):
                         kd.insert(v, i)
                     kd.balance()
-                    # Find the closest point to the sample point
-                    closest_dist = []
-                    for find in sample_pts:
-                         closest_dist.append(kd.find(find)[2]) # co, index, dist
-                    closest_dist = np.array(closest_dist)[:,None]
-                    verts0_normal_pos = verts0_normal*dist/closest_dist
-                    # Compute negative normals module
-                    dist = 4*3
+                    normal_iterations = 5
+                    step_dist = 10 # 4*3 and 10*3
                     mult = 1
-                    for i in range(5):
-                        dist1 = dist*mult
-                        sample_pts = verts0_co - verts0_normal*dist1
-                        # Find the closest point to the sample point
-                        closest_dist = []
-                        #closest_nor = []
-                        for find in sample_pts:
-                             closest_dist.append(kd.find(find)[2]) # co, index, dist
-                             #closest_nor.append(kd.find(find)[1]) # co, index, dist
-                        closest_dist = np.array(closest_dist)[:,None]
-                        #original_normals = get_normals_numpy(me0)
-                        #closest_nor = original_normals[np.array(closest_nor)]
-                        #verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
-                        mult = dist1/closest_dist
-                    verts0_normal_neg = verts0_normal*mult#dist/closest_dist
+                    sign = [-1,1]
+                    for sgn in sign:
+                        for i in range(normal_iterations):
+                            test_dist = step_dist * mult
+                            test_pts = verts0_co + verts0_normal * test_dist * sgn
+                            # Find the closest point to the sample point
+                            closest_dist = []
+                            closest_co = []
+                            closest_nor = []
+                            closest_index = []
+                            for find in test_pts:
+                                co, index, dist = kd.find(find)
+                                closest_co.append(co) # co, index, dist
+                                #closest_dist.append(dist) # co, index, dist
+                                closest_index.append(index) # co, index, dist
+                            closest_co = np.array(closest_co)#[:,3,None]
+                            #closest_dist = np.array(closest_dist)[:,None]
+                            closest_index = np.array(closest_index)
+                            closest_nor = original_normals[closest_index]
+                            closest_vec = test_pts - closest_co
+                            projected_vectors = np.multiply(closest_vec, closest_nor).sum(1)[:,None]
+                            closest_dist = np.linalg.norm(projected_vectors, axis=1)[:,None]
+                            mult = test_dist / closest_dist
+                        if sgn == 1: verts0_normal_pos = verts0_normal * mult
+                        if sgn == -1: verts0_normal_neg = verts0_normal * mult
 
-
-
-    elif normals_mode in ('VERTS','FACES'):
+    if normals_mode in ('VERTS','FACES'):
         verts0_normal = get_normals_numpy(me0)
 
     _me0 = _ob0.data
@@ -529,6 +532,7 @@ def tessellate_patch(props):
                     sk.value = 0
             else:
                 bool_shapekeys = False
+        else: bool_shapekeys = False
 
         if not com_modifiers and not bool_shapekeys:
             mod_visibility = []
@@ -715,12 +719,7 @@ def tessellate_patch(props):
 
         if normals_mode == 'FACES':
             n2 = get_attribute_numpy(before_subsurf.polygons,'normal',3)
-            #n2 = [0]*len(mask)*3
-            #before_subsurf.polygons.foreach_get('normal',n2)
-            #n2 = np.array(n2).reshape(-1,1,3)[mask]#[:,None,:]
             n2 = n2[masked_faces][:,None,:]
-            #n2 = np.mean(verts_norm, axis=(1,2))
-            #n2 = np.expand_dims(n2, axis=1)
         else:
             if normals_mode == 'CUSTOM':
                 me0.calc_normals_split()
@@ -1010,7 +1009,7 @@ class tissue_tessellate(Operator):
                 'Subsurf\n(or Multires) modifiers. Works only with 4 sides ' +
                 'patches.\nAfter the last Subsurf (or Multires) only ' +
                 'deformation\nmodifiers can be used'),
-                ('FRAME', 'Frame', 'Essellation along the edges of each face')),
+                ('FRAME', 'Frame', 'Tessellation along the edges of each face')),
             default='QUAD',
             name="Fill Mode"
             )
@@ -1706,25 +1705,6 @@ class tissue_tessellate(Operator):
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
-def update_dependencies(ob, objects):
-    type = ob.tissue.tissue_type
-    if type == 'NONE': return objects
-    if ob.tissue.bool_dependencies:
-        deps = get_deps(ob)
-        for o in deps:
-            if o.tissue.tissue_type == 'NONE' or o.tissue.bool_lock or o in objects:
-                continue
-            objects.append(o)
-            objects = update_dependencies(o, objects)
-    return objects
-
-def get_deps(ob):
-    type = ob.tissue.tissue_type
-    if type == 'TESSELLATE':
-        return [ob.tissue_tessellate.generator, ob.tissue_tessellate.component]
-    elif type == 'TO_CURVE':
-        return [ob.tissue_to_curve.object]
-    else: return []
 
 class tissue_update_tessellate_deps(Operator):
     bl_idname = "object.tissue_update_tessellate_deps"
@@ -1759,7 +1739,7 @@ class tissue_update_tessellate_deps(Operator):
             ob1.name
         except:
             self.report({'ERROR'},
-                        "Active object must be Tessellate before Update")
+                        "Active object must be Tessellated before Update")
             return {'CANCELLED'}
         '''
         ### TO-DO: sorting according to dependencies
@@ -1892,7 +1872,7 @@ class tissue_update_tessellate(Operator):
                 component.name
         except:
             self.report({'ERROR'},
-                        "Active object must be Tessellate before Update")
+                        "Active object must be Tessellated before Update")
             return {'CANCELLED'}
 
         # reset messages
@@ -2005,7 +1985,6 @@ class tissue_update_tessellate(Operator):
 
         for iter in range(iterations):
             tess_props['generator'] = base_ob
-            print(base_ob.modifiers)
 
             if iter > 0 and len(iter_objects) == 0: break
             if iter > 0 and normals_mode in ('SHAPEKEYS','OBJECT'):
@@ -2518,7 +2497,7 @@ class TISSUE_PT_tessellate_coordinates(Panel):
     bl_region_type = 'WINDOW'
     bl_context = "data"
     bl_parent_id = "TISSUE_PT_tessellate_object"
-    bl_label = "Component Coordinates"
+    bl_label = "Components Coordinates"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
@@ -2674,7 +2653,7 @@ class TISSUE_PT_tessellate_direction(Panel):
     bl_region_type = 'WINDOW'
     bl_context = "data"
     bl_parent_id = "TISSUE_PT_tessellate_object"
-    bl_label = "Direction"
+    bl_label = "Thickness Direction"
     bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
