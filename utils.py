@@ -569,6 +569,8 @@ def tessellate_prepare_component(ob1, props):
     use_origin_offset = props['use_origin_offset']
     bool_shapekeys = props['bool_shapekeys']
 
+    thres = 0.005
+
     me1 = ob1.data
 
     # Component statistics
@@ -652,52 +654,84 @@ def tessellate_prepare_component(ob1, props):
                     sk_vert[2] *= zscale
                 sk_v.co = sk_vert
 
-    if mode != 'BOUNDS':
+    if mode != 'BOUNDS' and (bounds_x != 'EXTEND' or bounds_y != 'EXTEND'):
         ob1.active_shape_key_index = 0
         bm = bmesh.new()
         bm.from_mesh(me1)
         # Bound X
+        planes_co = [] #((0,0,0),(1,1,0),(0,0,0),(1,1,0))
+        planes_no = [] #((-1,0,0),(1,0,0),(0,-1,0),(0,1,0))
+        bounds = []
         if bounds_x != 'EXTEND':
+            planes_co += [(0,0,0), (1,0,0)]
+            planes_no += [(-1,0,0), (1,0,0)]
+            bounds += [bounds_x, bounds_x]
+        if bounds_y != 'EXTEND':
+            planes_co += [(0,0,0), (0,1,0)]
+            planes_no += [(0,-1,0), (0,1,0)]
+            bounds += [bounds_y, bounds_y]
+        for co, norm, bound in zip(planes_co, planes_no, bounds):
             count = 0
+            #for e in bm.edges: e.seam = True
             while True:
-                planes_co = ((0,0,0),(1,1,0),(0,0,0),(1,1,0))
-                planes_no = ((-1,0,0),(1,0,0),(0,-1,0),(0,1,0))
                 moved = 0
-                for co, norm in zip(planes_co, planes_no):
-                    geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
-                    bisect = bmesh.ops.bisect_plane(bm, geom=geom, dist=0,
-                        plane_co=co, plane_no=norm, use_snap_center=False,
-                        clear_outer=bounds_x=='CLIP', clear_inner=False
-                        )
-                    geom = bisect['geom']
-                    cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
-                    cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
-                    for e in cut_edges:
-                        e.seam = True
-                    if bounds_x == 'CYCLIC':
-                        if norm == (-1,0,0):
-                            geom_verts = [v for v in bm.verts if v.co.x < 0]
-                        if norm == (1,0,0):
-                            geom_verts = [v for v in bm.verts if v.co.x > 1]
-                        if norm == (0,-1,0):
-                            geom_verts = [v for v in bm.verts if v.co.y < 0]
-                        if norm == (0,1,0):
-                            geom_verts = [v for v in bm.verts if v.co.y > 1]
+                original_edges = list(bm.edges)
+                geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+                bisect = bmesh.ops.bisect_plane(bm, geom=geom, dist=0,
+                    plane_co=co, plane_no=norm, use_snap_center=False,
+                    clear_outer=bound=='CLIP', clear_inner=False
+                    )
+                geom = bisect['geom']
+                cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
+                cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
+
+                for e in cut_edges:
+                    seam = True
+                    # Prevent glitches
+                    for e1 in original_edges:
+                        match_00 = (e.verts[0].co-e1.verts[0].co).length < thres
+                        match_11 = (e.verts[1].co-e1.verts[1].co).length < thres
+                        match_01 = (e.verts[0].co-e1.verts[1].co).length < thres
+                        match_10 = (e.verts[1].co-e1.verts[0].co).length < thres
+                        if (match_00 and match_11) or (match_01 and match_10):
+                            seam = False
+                            break
+                    e.seam = seam
+
+                if bound == 'CYCLIC':
+                    geom_verts = []
+                    if norm == (-1,0,0):
+                        geom_verts = [v for v in bm.verts if v.co.x < 0]
+                    if norm == (1,0,0):
+                        geom_verts = [v for v in bm.verts if v.co.x > 1]
+                    if norm == (0,-1,0):
+                        geom_verts = [v for v in bm.verts if v.co.y < 0]
+                    if norm == (0,1,0):
+                        geom_verts = [v for v in bm.verts if v.co.y > 1]
+                    print(count)
+                    print("geom  verts")
+                    print(geom_verts)
+                    if len(geom_verts) > 0:
                         geom = bmesh.ops.region_extend(bm, geom=geom_verts,
                             use_contract=False, use_faces=False, use_face_step=True
                             )
                         geom = bmesh.ops.split(bm, geom=geom['geom'], use_only_faces=False)
-                        norm = Vector(norm)
+                        vec = Vector(norm)
                         move_verts = [g for g in geom['geom'] if type(g)==bmesh.types.BMVert]
-                        bmesh.ops.translate(bm, vec=-norm, verts=move_verts)
+                        print("move verts")
+                        print(move_verts)
+                        print("total verts")
+                        print(list(bm.verts))
+                        bmesh.ops.translate(bm, vec=-vec, verts=move_verts)
                         for key in bm.verts.layers.shape.keys():
                             sk = bm.verts.layers.shape.get(key)
                             for v in move_verts:
-                                v[sk] -= norm
+                                v[sk] -= vec
                         moved += len(move_verts)
                 count += 1
                 if moved == 0 or count > 1000: break
-        bm.to_mesh(me1)
+    #for e in bm.edges: e.seam = not e.seam
+    bm.to_mesh(me1)
 
     com_area = bb[0]*bb[1]
     return ob1, com_area
