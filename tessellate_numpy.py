@@ -3474,6 +3474,7 @@ def merge_components(ob, props, use_bmesh):
                     closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
                     for f in closed['faces']: f.material_index += props.bridge_material_offset
                 except:
+                    bm.to_mesh(ob.data)
                     return 'bridge_error'
             elif props.close_mesh == 'CAP':
                 for e in boundary_edges:

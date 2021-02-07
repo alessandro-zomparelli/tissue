@@ -659,8 +659,8 @@ def tessellate_prepare_component(ob1, props):
         bm = bmesh.new()
         bm.from_mesh(me1)
         # Bound X
-        planes_co = [] #((0,0,0),(1,1,0),(0,0,0),(1,1,0))
-        planes_no = [] #((-1,0,0),(1,0,0),(0,-1,0),(0,1,0))
+        planes_co = []
+        planes_no = []
         bounds = []
         if bounds_x != 'EXTEND':
             planes_co += [(0,0,0), (1,0,0)]
@@ -672,7 +672,6 @@ def tessellate_prepare_component(ob1, props):
             bounds += [bounds_y, bounds_y]
         for co, norm, bound in zip(planes_co, planes_no, bounds):
             count = 0
-            #for e in bm.edges: e.seam = True
             while True:
                 moved = 0
                 original_edges = list(bm.edges)
@@ -708,9 +707,6 @@ def tessellate_prepare_component(ob1, props):
                         geom_verts = [v for v in bm.verts if v.co.y < 0]
                     if norm == (0,1,0):
                         geom_verts = [v for v in bm.verts if v.co.y > 1]
-                    print(count)
-                    print("geom  verts")
-                    print(geom_verts)
                     if len(geom_verts) > 0:
                         geom = bmesh.ops.region_extend(bm, geom=geom_verts,
                             use_contract=False, use_faces=False, use_face_step=True
@@ -718,10 +714,6 @@ def tessellate_prepare_component(ob1, props):
                         geom = bmesh.ops.split(bm, geom=geom['geom'], use_only_faces=False)
                         vec = Vector(norm)
                         move_verts = [g for g in geom['geom'] if type(g)==bmesh.types.BMVert]
-                        print("move verts")
-                        print(move_verts)
-                        print("total verts")
-                        print(list(bm.verts))
                         bmesh.ops.translate(bm, vec=-vec, verts=move_verts)
                         for key in bm.verts.layers.shape.keys():
                             sk = bm.verts.layers.shape.get(key)
@@ -730,8 +722,7 @@ def tessellate_prepare_component(ob1, props):
                         moved += len(move_verts)
                 count += 1
                 if moved == 0 or count > 1000: break
-    #for e in bm.edges: e.seam = not e.seam
-    bm.to_mesh(me1)
+        bm.to_mesh(me1)
 
     com_area = bb[0]*bb[1]
     return ob1, com_area
