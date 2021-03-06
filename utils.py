@@ -395,7 +395,9 @@ def get_mesh_before_subs(ob):
     for m in ob.modifiers:
         hide_mods.append(m)
         mods_visibility.append(m.show_viewport)
-        if m.type in ('SUBSURF','MULTIRES'): subs = m.levels
+        if m.type in ('SUBSURF','MULTIRES'):
+            hide_mods = [m]
+            subs = m.levels
         elif m.type in not_allowed:
             subs = 0
             hide_mods = []
@@ -1070,7 +1072,7 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             bpy.context.view_layer.objects.active = ob_curve
         return ob_curve
 
-def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
+def update_curve_from_pydata(curve, points, normals, radii, indexes, merge_distance=1, pattern=[1,0], depth=0.1, offset=0):
     curve.splines.clear()
     use_rad = True
     for ic, c in enumerate(indexes):
@@ -1079,6 +1081,7 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
 
         # cleanup
         pts = np.array([points[i] for i in c if i != None])
+        nor = np.array([normals[i] for i in c if i != None])
         try:
             rad = np.array([radii[i] for i in c if i != None])
         except:
@@ -1095,17 +1098,25 @@ def update_curve_from_pydata(curve, points, radii, indexes, merge_distance=1):
                 if count > merge_distance: count = 0
                 else: mask[i] = False
             pts = pts[mask]
+            nor = nor[mask]
             if use_rad: rad = rad[mask]
         #if skip_open and not bool_cyclic: continue
-        s = curve.splines.new('POLY')
         n_pts = len(pts)
+        series = np.arange(n_pts)
+        patt1 = series + (series-series%pattern[1])/pattern[1]*pattern[0]+pattern[0]
+        patt1 = patt1[patt1<n_pts].astype('int')
+        patt0 = series + (series-series%pattern[0])/pattern[0]*pattern[1]
+        patt0 = patt0[patt0<n_pts].astype('int')
+        nor[patt0] *= 0.5*depth*(1 + offset)
+        nor[patt1] *= 0.5*depth*(-1 + offset)
+        if pattern[0]*pattern[1] != 0: pts += nor
+        s = curve.splines.new('POLY')
         s.points.add(n_pts-1)
         w = np.ones(n_pts).reshape((n_pts,1))
         co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
         s.points.foreach_set('co',co)
         if use_rad: s.points.foreach_set('radius',rad)
         s.use_cyclic_u = bool_cyclic
-
 
 def loops_from_bmesh(edges):
     """
