@@ -136,6 +136,7 @@ def tessellate_patch(props):
     #bool_multi_components = props['bool_multi_components']
     component_mode = props['component_mode']
     coll_rand_seed = props['coll_rand_seed']
+    consistent_wedges = props['consistent_wedges']
 
     # reset messages
     ob.tissue_tessellate.warning_message_thickness = ''
@@ -182,7 +183,9 @@ def tessellate_patch(props):
     if fill_mode == 'PATCH':
         ob0 = convert_object_to_mesh(_ob0)
     else:
-        if fill_mode == 'FAN': ob0 = convert_to_fan(_ob0, gen_modifiers)
+        if fill_mode == 'FAN':
+            id_layer = component_mode == 'COLLECTION' and consistent_wedges
+            ob0 = convert_to_fan(_ob0, gen_modifiers, add_id_layer=id_layer)
         elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, props, gen_modifiers)
         elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, gen_modifiers)
         elif fill_mode == 'QUAD': ob0 = reduce_to_quads(_ob0, gen_modifiers)
@@ -358,7 +361,18 @@ def tessellate_patch(props):
 
     if component_mode == 'COLLECTION':
         np.random.seed(coll_rand_seed)
-        coll_materials = np.random.randint(len(components),size=n_patches)
+        if fill_mode == 'FAN' and consistent_wedges:
+            bm0 = bmesh.new()
+            bm0.from_mesh(me0)
+            bm0.faces.ensure_lookup_table()
+            lay_id = bm0.faces.layers.int["id"]
+            faces_id = np.array([f[lay_id] for f in bm0.faces])
+            bm0.clear()
+            n_original_faces = faces_id[-1]+1
+            coll_materials = np.random.randint(len(components),size=n_original_faces)
+            coll_materials = coll_materials[faces_id]
+        else:
+            coll_materials = np.random.randint(len(components),size=n_patches)
         gradient_distribution = []
         if bool_weight_distribution:
             if invert_vertex_group_distribution:
@@ -368,6 +382,10 @@ def tessellate_patch(props):
             v10 = all_verts[:,-1,0]
             v11 = all_verts[:,-1,-1]
             face_weight = (weight_distribution[v00] + weight_distribution[v01] + weight_distribution[v10] + weight_distribution[v11])/4 * len(components)
+            if fill_mode == 'FAN' and consistent_wedges:
+                for i in range(n_original_faces):
+                    face_mask = faces_id == i
+                    face_weight[face_mask] = np.average(face_weight[face_mask])
             face_weight = face_weight.clip(max=len(components)-1)
             coll_materials = coll_materials.astype('float')
             coll_materials = face_weight + (coll_materials - face_weight)*vertex_group_distribution_factor
@@ -2405,7 +2423,7 @@ class TISSUE_PT_tessellate_component(Panel):
     bl_context = "data"
     bl_parent_id = "TISSUE_PT_tessellate_object"
     bl_label = "Components"
-    bl_options = {'DEFAULT_CLOSED'}
+    #bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
     def poll(cls, context):
@@ -2475,6 +2493,7 @@ class TISSUE_PT_tessellate_component(Panel):
                 toggle=True, icon='ARROW_LEFTRIGHT')
             row2.prop(props, "vertex_group_distribution_factor")
             row2.enabled = props.vertex_group_distribution in ob0.vertex_groups.keys()
+            if props.fill_mode == 'FAN': col.prop(props, "consistent_wedges")
         else:
             components = []
             for mat in props.generator.material_slots.keys():
@@ -3325,10 +3344,14 @@ def reduce_to_quads(ob, use_modifiers):
     bm.free()
     return new_ob
 
-def convert_to_fan(ob, use_modifiers):
+def convert_to_fan(ob, use_modifiers, add_id_layer=False):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)
+    if add_id_layer:
+        bm.faces.ensure_lookup_table()
+        lay = bm.faces.layers.int.new("id")
+        for i,f in enumerate(bm.faces): f[lay] = i
     bmesh.ops.poke(bm, faces=bm.faces)#, quad_method, ngon_method)
     bm.to_mesh(new_ob.data)
     new_ob.data.update()

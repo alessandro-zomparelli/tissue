@@ -3791,22 +3791,38 @@ class tissue_weight_streamlines(Operator):
         ob = bpy.data.objects[self.object_name]
         ob.select_set(False)
 
-        dg = context.evaluated_depsgraph_get()
-        ob = ob.evaluated_get(dg)
+
+        seeds = []
+
+        if bpy.context.mode == 'EDIT_MESH':
+            self.use_selected = True
+            bpy.ops.object.mode_set(mode='OBJECT')
+            #ob = bpy.context.object
+            #me = simple_to_mesh(ob)
+        ob = convert_object_to_mesh(ob, apply_modifiers=self.use_modifiers)
+        #dg = context.evaluated_depsgraph_get()
+        #ob = ob.evaluated_get(dg)
         me = ob.data
+
+        if self.use_selected:
+            # generate new bmesh
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            print(len(me.vertices))
+            #for v in me.vertices:
+            #    if v.select: seeds.append(v.index)
+            for v in bm.verts:
+                if v.select: seeds.append(v.index)
+            bm.free()
         n_verts = len(me.vertices)
         n_edges = len(me.edges)
         n_faces = len(me.polygons)
-
-        # generate new bmesh
-        #bm = bmesh.new()
-        #bm.from_mesh(me)
 
         # store weight values
         try:
             weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_streamlines], n_verts)
         except:
-            bm.free()
+            bpy.data.objects.remove(ob)
             self.report({'ERROR'}, "Please select a Vertex Group for streamlines")
             return {'CANCELLED'}
 
@@ -3829,15 +3845,6 @@ class tissue_weight_streamlines(Operator):
         except:
             pass#bevel_weight = np.ones((n_verts))
 
-        seeds = []
-
-        if bpy.context.mode == 'EDIT_MESH':
-            self.use_selected = True
-            bpy.ops.object.mode_set(mode='OBJECT')
-            ob = bpy.context.object
-            me = simple_to_mesh(ob)
-            for v in me.vertices:
-                if v.select: seeds.append(v.index)
 
         if not seeds:
             np.random.seed(self.rand_seed)
@@ -3860,7 +3867,8 @@ class tissue_weight_streamlines(Operator):
             # store neighbors
             for p in me.polygons:
                 face_verts = [v for v in p.vertices]
-                for i in range(len(face_verts)):
+                n_face_verts = len(face_verts)
+                for i in range(n_face_verts):
                     fv = face_verts.copy()
                     neigh[fv.pop(i)] += fv
 
@@ -3941,6 +3949,7 @@ class tissue_weight_streamlines(Operator):
         crv = nurbs_from_vertices(curves, co, bevel_weight, ob.name + '_Streamlines', True, self.interpolation)
         crv.data.bevel_depth = bevel_depth
         crv.matrix_world = ob.matrix_world
+        bpy.data.objects.remove(ob)
 
         print("Streamlines Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}
