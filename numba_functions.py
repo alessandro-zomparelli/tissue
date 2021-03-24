@@ -58,6 +58,22 @@ if bool_numba:
             numba_set_ab(a,b,brush)
         return a,b
 
+    @njit(parallel=False)
+    def integrate_field(n_edges, id0, id1, values, edge_flow, mult, time_steps):
+        #n_edges = len(edge_flow)
+        for i in range(time_steps):
+            values0 = values
+            for j in range(n_edges):
+                v0 = id0[j]
+                v1 = id1[j]
+                values[v0] -= values0[v1] * edge_flow[j] * 0.001#mult[v1]
+                values[v1] += values0[v0] * edge_flow[j] * 0.001#mult[v0]
+            for j in range(n_edges):
+                v0 = id0[j]
+                v1 = id1[j]
+                values[v0] = max(values[v0],0)
+                values[v1] = max(values[v1],0)
+        return values
 
     @njit(parallel=True)
     def numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps, grad):
