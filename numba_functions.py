@@ -144,9 +144,9 @@ if bool_numba:
         for i in prange(len(id0)):
             v0 = id0[i]
             v1 = id1[i]
-            lap_a[v0] += (a[v1] - a[v0])*grad[i]
-            lap_a[v1] += (a[v0] - a[v1])*grad[i]
-            lap_b[v0] += (b[v1] - b[v0])*grad[i]
+            lap_a[v0] += (a[v1] - a[v0])
+            lap_a[v1] += (a[v0] - a[v1])
+            lap_b[v0] -= (b[v1] - b[v0])*grad[i]
             lap_b[v1] += (b[v0] - b[v1])*grad[i]
         #return lap_a, lap_b
 
