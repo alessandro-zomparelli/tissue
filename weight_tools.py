@@ -42,7 +42,7 @@ from mathutils import Vector
 from numpy import *
 try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic
 except: pass
-from .numba_functions import integrate_field
+#from .numba_functions import integrate_field
 #from .numba_functions import numba_reaction_diffusion
 try: import numexpr as ne
 except: pass
