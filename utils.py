@@ -566,6 +566,7 @@ def tessellate_prepare_component(ob1, props):
     bounds_x = props['bounds_x']
     bounds_y = props['bounds_y']
     scale_mode = props['scale_mode']
+    normals_mode = props['normals_mode']
     zscale = props['zscale']
     offset = props['offset']
     use_origin_offset = props['use_origin_offset']
@@ -607,7 +608,7 @@ def tessellate_prepare_component(ob1, props):
             if use_origin_offset: vert[2] = v.co[2]
             vert[0] = vert[0] / bb[0] if bb[0] != 0 else 0.5
             vert[1] = vert[1] / bb[1] if bb[1] != 0 else 0.5
-            if scale_mode == 'CONSTANT':
+            if scale_mode == 'CONSTANT' or normals_mode in ('OBJECT', 'SHAPEKEYS'):
                 if not use_origin_offset:
                     vert[2] = vert[2] / bb[2] if bb[2] != 0 else 0
                     vert[2] = vert[2] - 0.5 + offset * 0.5
@@ -640,7 +641,7 @@ def tessellate_prepare_component(ob1, props):
                     if use_origin_offset: sk_vert[2] = sk_v.co[2]
                     sk_vert[0] = (sk_vert[0] / bb[0] if bb[0] != 0 else 0.5)
                     sk_vert[1] = (sk_vert[1] / bb[1] if bb[1] != 0 else 0.5)
-                    if scale_mode == 'CONSTANT':
+                    if scale_mode == 'CONSTANT' or normals_mode in ('OBJECT', 'SHAPEKEYS'):
                         if not use_origin_offset:
                             sk_vert[2] = (sk_vert[2] / bb[2] if bb[2] != 0 else sk_vert[2])
                             sk_vert[2] = sk_vert[2] - 0.5 + offset * 0.5

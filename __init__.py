@@ -103,6 +103,7 @@ classes = (
     weight_tools.face_area_to_vertex_groups,
     weight_tools.vertex_colors_to_vertex_groups,
     weight_tools.vertex_group_to_vertex_colors,
+    weight_tools.vertex_group_to_uv,
     weight_tools.TISSUE_PT_weight,
     weight_tools.TISSUE_PT_color,
     weight_tools.weight_contour_curves,

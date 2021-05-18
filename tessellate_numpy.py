@@ -128,6 +128,7 @@ def tessellate_patch(props):
     invert_vertex_group_rotation = props['invert_vertex_group_rotation']
     rotation_direction = props['rotation_direction']
     target = props['target']
+    even_thickness = props['even_thickness']
     smooth_normals = props['smooth_normals']
     smooth_normals_iter = props['smooth_normals_iter']
     smooth_normals_uv = props['smooth_normals_uv']
@@ -137,6 +138,8 @@ def tessellate_patch(props):
     component_mode = props['component_mode']
     coll_rand_seed = props['coll_rand_seed']
     consistent_wedges = props['consistent_wedges']
+    vertex_group_scale_normals = props['vertex_group_scale_normals']
+    invert_vertex_group_scale_normals = props['invert_vertex_group_scale_normals']
 
     # reset messages
     ob.tissue_tessellate.warning_message_thickness = ''
@@ -212,12 +215,12 @@ def tessellate_patch(props):
             between the two surfaces, in Constant mode the thickness is uniform.
             '''
             if scale_mode == 'CONSTANT':
-                even_thickness = True
                 # Normalize vectors
                 verts0_normal /= np.linalg.norm(verts0_normal, axis=1).reshape((-1,1))
                 if not even_thickness:
-                    original_normals = get_normals_numpy(me0)
-                    verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
+                    pass
+                    #original_normals = get_normals_numpy(me0)
+                    #verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
                 else:
                     # Rescale normalized vectors according to the angle with the normals
                     original_normals = get_normals_numpy(me0)
@@ -226,8 +229,8 @@ def tessellate_patch(props):
                     for i, v in enumerate(verts0_co):
                         kd.insert(v, i)
                     kd.balance()
-                    normal_iterations = 5
-                    step_dist = 10 # 4*3 and 10*3
+                    normal_iterations = 20
+                    step_dist = 1 # 4*3 and 10*3
                     mult = 1
                     sign = [-1,1]
                     for sgn in sign:
@@ -331,8 +334,9 @@ def tessellate_patch(props):
     bool_weight_distribution = vertex_group_distribution in ob0.vertex_groups.keys()
     bool_weight_cap = vertex_group_cap_owner == 'BASE' and vertex_group_cap in ob0.vertex_groups.keys()
     bool_weight_bridge = vertex_group_bridge_owner == 'BASE' and vertex_group_bridge in ob0.vertex_groups.keys()
+    bool_weight_normals = vertex_group_scale_normals in ob0.vertex_groups.keys()
 
-    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge or bool_weight_smooth_normals or bool_weight_distribution
+    read_vertex_groups = bool_vertex_group or rotation_mode == 'WEIGHT' or bool_weight_thickness or bool_weight_cap or bool_weight_bridge or bool_weight_smooth_normals or bool_weight_distribution or bool_weight_normals
     weight = weight_thickness = weight_rotation = None
     if read_vertex_groups:
         if bool_vertex_group:
@@ -348,6 +352,9 @@ def tessellate_patch(props):
             if bool_weight_distribution:
                 vg_id = ob0.vertex_groups[vertex_group_distribution].index
                 weight_distribution =  weight[vg_id]
+            if bool_weight_normals:
+                vg_id = ob0.vertex_groups[vertex_group_scale_normals].index
+                weight_normals =  weight[vg_id]
         else:
             if rotation_mode == 'WEIGHT':
                 vg = ob0.vertex_groups[vertex_group_rotation]
@@ -358,6 +365,9 @@ def tessellate_patch(props):
             if bool_weight_distribution:
                 vg = ob0.vertex_groups[vertex_group_distribution]
                 weight_distribution = get_weight_numpy(vg, n_verts0)
+            if bool_weight_normals:
+                vg = ob0.vertex_groups[vertex_group_scale_normals]
+                weight_normals = get_weight_numpy(vg, n_verts0)
 
     if component_mode == 'COLLECTION':
         np.random.seed(coll_rand_seed)
@@ -420,6 +430,27 @@ def tessellate_patch(props):
             verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
 
         tt = tissue_time(tt, "Smooth Normals", levels=2)
+
+    if normals_mode in ('FACES', 'VERTS'):
+        normals_x = props['normals_x']
+        normals_y = props['normals_y']
+        normals_z = props['normals_z']
+        if bool_weight_normals:
+            if invert_vertex_group_scale_normals:
+                weight_normals = 1-weight_normals
+            w_normals_x = 1 - weight_normals * (1 - normals_x)
+            w_normals_y = 1 - weight_normals * (1 - normals_y)
+            w_normals_z = 1 - weight_normals * (1 - normals_z)
+        else:
+            w_normals_x = normals_x
+            w_normals_y = normals_y
+            w_normals_z = normals_z
+        if normals_x < 1: verts0_normal[:,0] *= w_normals_x
+        if normals_y < 1: verts0_normal[:,1] *= w_normals_y
+        if normals_z < 1: verts0_normal[:,2] *= w_normals_z
+        div_value = np.linalg.norm(verts0_normal, axis=1).reshape((-1,1))
+        div_value[div_value == 0] = 0.00001
+        verts0_normal /= div_value
 
     ### ROTATE PATCHES ###
 
@@ -861,7 +892,7 @@ def tessellate_patch(props):
             # NOTE: weight thickness is based on the base position of the
             #       vertices, not on the coordinates of the shape keys
 
-            if scale_mode == 'ADAPTIVE':
+            if scale_mode == 'ADAPTIVE':# and normals_mode not in ('OBJECT', 'SHAPEKEYS'): ### not sure
                 if normals_mode == 'FACES':
                     a2 = mean_area
                 else:
@@ -1139,6 +1170,11 @@ class tissue_tessellate(Operator):
             description="Target object for custom direction",
             default = ""
             )
+    even_thickness : BoolProperty(
+            name="Even Thickness",
+            default=False,
+            description="Iterative sampling method for determine the correct length of the vectors (Experimental)"
+            )
     bool_material_id : BoolProperty(
             name="Tessellation on Material ID",
             default=False,
@@ -1371,7 +1407,26 @@ class tissue_tessellate(Operator):
             name="Invert", default=False,
             description="Invert the vertex group influence"
             )
-
+    normals_x : FloatProperty(
+            name="X", default=1, min=0, max=1,
+            description="Scale X component of the normals"
+            )
+    normals_y : FloatProperty(
+            name="Y", default=1, min=0, max=1,
+            description="Scale Y component of the normals"
+            )
+    normals_z : FloatProperty(
+            name="Z", default=1, min=0, max=1,
+            description="Scale Z component of the normals"
+            )
+    vertex_group_scale_normals : StringProperty(
+            name="Scale normals weight", default='',
+            description="Vertex Group used for editing the normals directions"
+            )
+    invert_vertex_group_scale_normals : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
     smooth_normals : BoolProperty(
             name="Smooth Normals", default=False,
             description="Smooth normals of the surface in order to reduce intersections"
@@ -1885,6 +1940,7 @@ class tissue_update_tessellate(Operator):
             vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
             invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
             target = ob.tissue_tessellate.target
+            even_thickness = ob.tissue_tessellate.even_thickness
             component_mode = ob.tissue_tessellate.component_mode
             component_coll = ob.tissue_tessellate.component_coll
             coll_rand_seed = ob.tissue_tessellate.coll_rand_seed
@@ -2690,6 +2746,7 @@ class TISSUE_PT_tessellate_direction(Panel):
         ob = context.object
         props = ob.tissue_tessellate
         layout = self.layout
+        ob0 = props.generator
         #layout.use_property_split = True
         col = layout.column(align=True)
         row = col.row(align=True)
@@ -2716,6 +2773,25 @@ class TISSUE_PT_tessellate_direction(Panel):
                 col2 = row.column(align=True)
                 col2.prop(props, "invert_vertex_group_smooth_normals", text="", toggle=True, icon='ARROW_LEFTRIGHT')
                 col2.enabled = props.vertex_group_smooth_normals in ob0.vertex_groups.keys()
+        if props.normals_mode == 'VERTS':
+            col.separator()
+            row = col.row(align=True)
+            row.prop(props, "normals_x")
+            row.prop(props, "normals_y")
+            row.prop(props, "normals_z")
+            row = col.row(align=True)
+            row.prop_search(props, 'vertex_group_scale_normals',
+                ob0, "vertex_groups", text='')
+            col2 = row.column(align=True)
+            col2.prop(props, "invert_vertex_group_scale_normals", text="", toggle=True, icon='ARROW_LEFTRIGHT')
+            col2.enabled = props.vertex_group_scale_normals in ob0.vertex_groups.keys()
+        if props.normals_mode in ('OBJECT', 'SHAPEKEYS'):
+            col.separator()
+            col.prop(props, "even_thickness")
+
+
+
+
 
 
 

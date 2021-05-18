@@ -39,6 +39,7 @@ import math, timeit, time
 from math import pi
 from statistics import mean, stdev
 from mathutils import Vector
+from mathutils.kdtree import KDTree
 from numpy import *
 try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic
 except: pass
@@ -1504,6 +1505,9 @@ class weight_contour_mask(Operator):
     @classmethod
     def poll(cls, context):
         return len(context.object.vertex_groups) > 0
+        
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=350)
 
     def execute(self, context):
         start_time = timeit.default_timer()
@@ -2581,6 +2585,93 @@ class vertex_group_to_vertex_colors(Operator):
         context.object.data.vertex_colors[colors_id].active_render = True
         return {'FINISHED'}
 
+class vertex_group_to_uv(Operator):
+    bl_idname = "object.vertex_group_to_uv"
+    bl_label = "Vertex Group"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = ("Combine two Vertex Groups as UV Map Layer.")
+
+    vertex_group_u : StringProperty(
+        name="U", default='',
+        description="Vertex Group used for the U coordinate")
+    vertex_group_v : StringProperty(
+        name="V", default='',
+        description="Vertex Group used for the V coordinate")
+    normalize_weight : BoolProperty(
+        name="Normalize Weight", default=True,
+        description="Normalize weight values")
+    invert_u : BoolProperty(
+        name="Invert U", default=False, description="Invert U")
+    invert_v : BoolProperty(
+        name="Invert V", default=False, description="Invert V")
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=250)
+
+    def draw(self, context):
+        ob = context.object
+        layout = self.layout
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.prop_search(self, 'vertex_group_u', ob, "vertex_groups", text='')
+        row.separator()
+        row.prop_search(self, 'vertex_group_v', ob, "vertex_groups", text='')
+        row = col.row(align=True)
+        row.prop(self, "invert_u")
+        row.separator()
+        row.prop(self, "invert_v")
+        row = col.row(align=True)
+        row.prop(self, "normalize_weight")
+
+    def execute(self, context):
+        ob = context.active_object
+        me = ob.data
+        n_verts = len(me.vertices)
+        vg_keys = ob.vertex_groups.keys()
+        bool_u = self.vertex_group_u in vg_keys
+        bool_v = self.vertex_group_v in vg_keys
+        if bool_u or bool_v:
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            dvert_lay = bm.verts.layers.deform.active
+            if bool_u:
+                u_index = ob.vertex_groups[self.vertex_group_u].index
+                u = bmesh_get_weight_numpy(u_index, dvert_lay, bm.verts)
+                if self.invert_u:
+                    u = 1-u
+                if self.normalize_weight:
+                    u = np.interp(u, (u.min(), u.max()), (0, 1))
+            else:
+                u = np.zeros(n_verts)
+            if bool_v:
+                v_index = ob.vertex_groups[self.vertex_group_v].index
+                v = bmesh_get_weight_numpy(v_index, dvert_lay, bm.verts)
+                if self.invert_v:
+                    v = 1-v
+                if self.normalize_weight:
+                    v = np.interp(v, (v.min(), v.max()), (0, 1))
+            else:
+                v = np.zeros(n_verts)
+        else:
+            u = v = np.zeros(n_verts)
+
+        uv_layer = me.uv_layers.new(name='Weight_to_UV')
+        loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
+        n_data = np.sum(loops_size)
+        v_id = np.ones(n_data)
+        me.polygons.foreach_get('vertices',v_id)
+        v_id = v_id.astype(int)
+        split_u = u[v_id,None]
+        split_v = v[v_id,None]
+        uv = np.concatenate((split_u,split_v),axis=1).flatten()
+        uv_layer.data.foreach_set('uv',uv)
+        me.uv_layers.update()
+        return {'FINISHED'}
+
 class curvature_to_vertex_groups(Operator):
     bl_idname = "object.curvature_to_vertex_groups"
     bl_label = "Curvature"
@@ -2797,12 +2888,36 @@ class tissue_weight_distance(Operator):
     bl_description = ("Create a weight map according to the distance from the "
                     "selected vertices along the mesh surface")
 
+    mode : EnumProperty(
+        items=(('GEOD', "Geodesic Distance", ""),
+            ('EUCL', "Euclidean Distance", ""),
+            ('TOPO', "Topology Distance", "")),
+        default='GEOD', name="Distance Method")
+
+    normalize : BoolProperty(
+        name="Normalize", default=True,
+        description="Automatically remap the distance values from 0 to 1")
+
+    min_value : FloatProperty(
+        name="Min", default=0, min=0,
+        soft_max=100, description="Minimum Distance")
+
+    max_value : FloatProperty(
+        name="Max", default=10, min=0,
+        soft_max=100, description="Max Distance")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=250)
+
     def fill_neighbors(self,verts,weight):
         neigh = {}
         for v0 in verts:
             for f in v0.link_faces:
                 for v1 in f.verts:
-                    dist = weight[v0.index] + (v0.co-v1.co).length
+                    if self.mode == 'GEOD':
+                        dist = weight[v0.index] + (v0.co-v1.co).length
+                    elif self.mode == 'TOPO':
+                        dist = weight[v0.index] + 1.0
                     w1 = weight[v1.index]
                     if w1 == None or w1 > dist:
                         weight[v1.index] = dist
@@ -2817,39 +2932,56 @@ class tissue_weight_distance(Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
 
         me = ob.data
-        bm = bmesh.new()
-        bm.from_mesh(me)
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
 
         # store weight values
-        weight = [None]*len(bm.verts)
+        weight = [None]*len(me.vertices)
 
-        selected = [v for v in bm.verts if v.select]
-        if len(selected) == 0:
-            bpy.ops.object.mode_set(mode=old_mode)
-            message = "Please, select one or more vertices"
-            self.report({'ERROR'}, message)
-            return {'CANCELLED'}
-        for v in selected: weight[v.index] = 0
-        weight = self.fill_neighbors(selected, weight)
+        if self.mode != 'EUCL':
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            selected = [v for v in bm.verts if v.select]
+            if len(selected) == 0:
+                bpy.ops.object.mode_set(mode=old_mode)
+                message = "Please, select one or more vertices"
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
+            for v in selected: weight[v.index] = 0
+            weight = self.fill_neighbors(selected, weight)
+            bm.free()
+        else:
+            selected = [v for v in me.vertices if v.select]
+            kd = KDTree(len(selected))
+            for i, v in enumerate(selected):
+                kd.insert(v.co, i)
+            kd.balance()
+            for i,v in enumerate(me.vertices):
+                co, index, dist = kd.find(v.co)
+                weight[i] = dist
+
 
         for i in range(len(weight)):
             if weight[i] == None: weight[i] = 0
         weight = np.array(weight)
         max_dist = np.max(weight)
-        if max_dist > 0:
-            weight /= max_dist
+        if self.normalize:
+            if max_dist > 0:
+                weight /= max_dist
+        else:
+            delta_value = self.max_value - self.min_value
+            if delta_value == 0: delta_value = 0.0000001
+            weight = (weight-self.min_value)/delta_value
 
-        vg = ob.vertex_groups.new(name='Distance: {:.4f}'.format(max_dist))
+        if self.mode == 'TOPO':
+            vg = ob.vertex_groups.new(name='Distance: {:d}'.format(int(max_dist)))
+        else:
+            vg = ob.vertex_groups.new(name='Distance: {:.4f}'.format(max_dist))
         for i, w in enumerate(weight):
             vg.add([i], w, 'REPLACE')
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-        bm.free()
         return {'FINISHED'}
-
-
 
 class TISSUE_PT_color(Panel):
     bl_label = "Tissue Tools"
@@ -2898,8 +3030,6 @@ class TISSUE_PT_weight(Panel):
 
         col.label(text="Weight Edit:")
         col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
-        col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL",
-            text="Convert to Colors")
         col.operator("object.random_weight", icon="RNDCURVE")
         col.separator()
         col.label(text="Deformation Analysis:")
@@ -2919,11 +3049,16 @@ class TISSUE_PT_weight(Panel):
         col.operator("object.start_reaction_diffusion",
                     icon="EXPERIMENTAL",
                     text="Reaction-Diffusion")
-
         col.separator()
         col.label(text="Materials:")
         col.operator("object.random_materials", icon='COLOR')
         col.operator("object.weight_to_materials", icon='GROUP_VERTEX')
+        col.separator()
+        col.label(text="Weight Convert:")
+        col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL",
+            text="Convert to Colors")
+        col.operator("object.vertex_group_to_uv", icon="UV",
+            text="Convert to UV")
 
         #col.prop(context.object, "reaction_diffusion_run", icon="PLAY", text="Run Simulation")
         ####col.prop(context.object, "reaction_diffusion_run")
