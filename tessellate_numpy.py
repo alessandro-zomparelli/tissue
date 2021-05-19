@@ -883,10 +883,28 @@ def tessellate_patch(props):
             if normals_mode == 'FACES':
                 n2 = n2[None,:,:,:]
             else:
-                n00 = verts_norm[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,3))
-                n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,3))
-                n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,3))
-                n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,3))
+
+                if normals_mode in ('SHAPEKEYS','OBJECT') and scale_mode == 'CONSTANT' and even_thickness:
+                    verts_norm_pos = verts0_normal_pos[masked_verts]
+                    verts_norm_neg = verts0_normal_neg[masked_verts]
+                    nor_mask = (vz<0).reshape((-1))
+                    n00 = verts_norm_pos[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                    n10 = verts_norm_pos[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                    n01 = verts_norm_pos[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,3))
+                    n11 = verts_norm_pos[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,3))
+                    n00_neg = verts_norm_neg[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                    n10_neg = verts_norm_neg[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                    n01_neg = verts_norm_neg[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,3))
+                    n11_neg = verts_norm_neg[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,3))
+                    n00[:,:,nor_mask] = n00_neg[:,:,nor_mask]
+                    n10[:,:,nor_mask] = n10_neg[:,:,nor_mask]
+                    n01[:,:,nor_mask] = n01_neg[:,:,nor_mask]
+                    n11[:,:,nor_mask] = n11_neg[:,:,nor_mask]
+                else:
+                    n00 = verts_norm[:, np_u, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                    n10 = verts_norm[:, np_u1, np_v].reshape((n_patches,n_sk,n_verts1,3))
+                    n01 = verts_norm[:, np_u, np_v1].reshape((n_patches,n_sk,n_verts1,3))
+                    n11 = verts_norm[:, np_u1, np_v1].reshape((n_patches,n_sk,n_verts1,3))
                 n2 = np_lerp2(n00,n10,n01,n11,vx,vy,'shapekeys')
 
             # NOTE: weight thickness is based on the base position of the
@@ -3448,7 +3466,7 @@ def convert_to_triangles(ob, use_modifiers):
 
 def merge_components(ob, props, use_bmesh):
 
-    if not use_bmesh:
+    if not use_bmesh and False:
         skip = True
         ob.active_shape_key_index = 1
         if ob.data.shape_keys != None:
