@@ -2077,7 +2077,7 @@ class tissue_update_tessellate(Operator):
         ob_matrix_world = ob.matrix_world
 
         #if ob not in components:
-        ob.data.clear_geometry()    # Faster with previous heavy geometries
+        ob.data.clear_geometry()    # Faster with heavy geometries (from previous tessellations)
 
         for iter in range(iterations):
             tess_props['generator'] = base_ob
@@ -2259,7 +2259,10 @@ class tissue_update_tessellate(Operator):
         old_data = ob.data
         old_data.name = '_tissue_tmp_old_data'
         #ob.data = bpy.data.meshes.new_from_object(new_ob)#
-        ob.data = new_ob.data
+        for o in bpy.data.objects:
+            if o.data == old_data:
+                o.data = new_ob.data
+        #ob.data = new_ob.data
         ob.data.name = data_name
         bpy.data.meshes.remove(old_data)
 
