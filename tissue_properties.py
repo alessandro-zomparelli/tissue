@@ -389,6 +389,14 @@ class tissue_tessellate_prop(PropertyGroup):
         description="Iterative sampling method for determine the correct length of the vectors (Experimental)",
         update = anim_tessellate_active
         )
+    even_thickness_iter : IntProperty(
+        name="Even Thickness Iterations",
+        default=3,
+        min = 1,
+        soft_max = 20,
+        description="More iterations produces more accurate results but make the tessellation slower",
+        update = anim_tessellate_active
+        )
     bool_random : BoolProperty(
         name="Randomize",
         default=False,
@@ -810,6 +818,7 @@ def store_parameters(operator, ob):
     if operator.target in bpy.data.objects.keys():
         ob.tissue_tessellate.target = bpy.data.objects[operator.target]
     ob.tissue_tessellate.even_thickness = operator.even_thickness
+    ob.tissue_tessellate.even_thickness_iter = operator.even_thickness_iter
     ob.tissue_tessellate.zscale = operator.zscale
     ob.tissue_tessellate.offset = operator.offset
     ob.tissue_tessellate.gen_modifiers = operator.gen_modifiers
@@ -992,6 +1001,7 @@ def props_to_dict(ob):
     tessellate_dict['use_origin_offset'] = props.use_origin_offset
     tessellate_dict['target'] = props.target
     tessellate_dict['even_thickness'] = props.even_thickness
+    tessellate_dict['even_thickness_iter'] = props.even_thickness_iter
     tessellate_dict['frame_thickness'] = props.frame_thickness
     tessellate_dict['frame_mode'] = props.frame_mode
     tessellate_dict['frame_boundary'] = props.frame_boundary
@@ -1025,3 +1035,10 @@ def props_to_dict(ob):
     tessellate_dict["vertex_group_scale_normals"] = props.vertex_group_scale_normals
     tessellate_dict["invert_vertex_group_scale_normals"] = props.invert_vertex_group_scale_normals
     return tessellate_dict
+
+def copy_tessellate_props(source_ob, target_ob):
+    source_props = source_ob.tissue_tessellate
+    target_props = target_ob.tissue_tessellate
+    for key in source_props.keys():
+        target_props[key] = source_props[key]
+    return

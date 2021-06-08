@@ -41,7 +41,7 @@ from statistics import mean, stdev
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 from numpy import *
-try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic
+try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic, integrate_field
 except: pass
 #from .numba_functions import integrate_field
 #from .numba_functions import numba_reaction_diffusion
@@ -1505,7 +1505,7 @@ class weight_contour_mask(Operator):
     @classmethod
     def poll(cls, context):
         return len(context.object.vertex_groups) > 0
-        
+
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=350)
 

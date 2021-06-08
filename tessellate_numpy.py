@@ -129,6 +129,7 @@ def tessellate_patch(props):
     rotation_direction = props['rotation_direction']
     target = props['target']
     even_thickness = props['even_thickness']
+    even_thickness_iter = props['even_thickness_iter']
     smooth_normals = props['smooth_normals']
     smooth_normals_iter = props['smooth_normals_iter']
     smooth_normals_uv = props['smooth_normals_uv']
@@ -222,20 +223,34 @@ def tessellate_patch(props):
                     #original_normals = get_normals_numpy(me0)
                     #verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
                 else:
+                    # Evaluate maximum components thickness
+                    first_component = True
+                    for com in components:
+                        if com:
+                            com = convert_object_to_mesh(com, com_modifiers, False)
+                            com, com_area = tessellate_prepare_component(com, props)
+                            com_verts = get_vertices_numpy(com.data)
+                            bpy.data.objects.remove(com)
+                            if first_component:
+                                all_com_verts = com_verts
+                                first_component = False
+                            else:
+                                all_com_verts = np.concatenate((all_com_verts, com_verts), axis=0)
+                    pos_step_dist = abs(np.max(all_com_verts[:,2]))
+                    neg_step_dist = abs(np.min(all_com_verts[:,2]))
+
                     # Rescale normalized vectors according to the angle with the normals
                     original_normals = get_normals_numpy(me0)
-                    #verts0_normal /= np.multiply(verts0_normal, original_normals).sum(1)[:,None]
                     kd = mathutils.kdtree.KDTree(len(verts0_co))
                     for i, v in enumerate(verts0_co):
                         kd.insert(v, i)
                     kd.balance()
-                    normal_iterations = 20
-                    step_dist = 1 # 4*3 and 10*3
+                    step_dist = [neg_step_dist, pos_step_dist]
                     mult = 1
                     sign = [-1,1]
-                    for sgn in sign:
-                        for i in range(normal_iterations):
-                            test_dist = step_dist * mult
+                    for sgn, stp in zip(sign, step_dist):
+                        for i in range(even_thickness_iter):
+                            test_dist = stp * mult
                             test_pts = verts0_co + verts0_normal * test_dist * sgn
                             # Find the closest point to the sample point
                             closest_dist = []
@@ -245,16 +260,14 @@ def tessellate_patch(props):
                             for find in test_pts:
                                 co, index, dist = kd.find(find)
                                 closest_co.append(co) # co, index, dist
-                                #closest_dist.append(dist) # co, index, dist
                                 closest_index.append(index) # co, index, dist
                             closest_co = np.array(closest_co)#[:,3,None]
-                            #closest_dist = np.array(closest_dist)[:,None]
                             closest_index = np.array(closest_index)
                             closest_nor = original_normals[closest_index]
                             closest_vec = test_pts - closest_co
                             projected_vectors = np.multiply(closest_vec, closest_nor).sum(1)[:,None]
                             closest_dist = np.linalg.norm(projected_vectors, axis=1)[:,None]
-                            mult = test_dist / closest_dist
+                            mult = mult*0.2 + test_dist/closest_dist*0.8 # Reduces bouncing effect
                         if sgn == 1: verts0_normal_pos = verts0_normal * mult
                         if sgn == -1: verts0_normal_neg = verts0_normal * mult
 
@@ -559,7 +572,7 @@ def tessellate_patch(props):
             if bool_material_id:
                 mat_mask = np.logical_and(mat_mask, materials == material_id)
             masked_verts = all_verts[mat_mask]
-            masked_faces = np.logical_and(mask, mat_mask)
+            masked_faces = mat_mask
         elif bool_material_id:
             masked_verts = all_verts[materials == material_id]
             masked_faces = np.logical_and(mask, materials == material_id)
@@ -1193,6 +1206,13 @@ class tissue_tessellate(Operator):
             default=False,
             description="Iterative sampling method for determine the correct length of the vectors (Experimental)"
             )
+    even_thickness_iter : IntProperty(
+            name="Even Thickness Iterations",
+            default=3,
+            min = 1,
+            soft_max = 20,
+            description="More iterations produces more accurate results but make the tessellation slower"
+            )
     bool_material_id : BoolProperty(
             name="Tessellation on Material ID",
             default=False,
@@ -1494,21 +1514,7 @@ class tissue_tessellate(Operator):
 
         ob = context.object
         sel = context.selected_objects
-        '''
-        if len(sel) == 1 and False:
-            try:
-                ob0 = ob.tissue_tessellate.generator
-                ob1 = ob.tissue_tessellate.component
-                self.generator = ob0.name
-                self.component = ob1.name
-                if self.working_on == '':
-                    load_parameters(self,ob)
-                    self.working_on = ob.name
-                bool_working = True
-                bool_allowed = True
-            except:
-                pass
-        '''
+
         if len(sel) == 2:
             bool_allowed = True
             for o in sel:
@@ -1589,15 +1595,6 @@ class tissue_tessellate(Operator):
         col2 = row.column(align=True)
         col2.prop(self, "gen_modifiers", text="Use Modifiers", icon='MODIFIER')
         base = bpy.data.objects[self.generator]
-        '''
-        try:
-            if not (base.modifiers or base.data.shape_keys):
-                col2.enabled = False
-                self.gen_modifiers = False
-        except:
-            col2.enabled = False
-            self.gen_modifiers = False
-        '''
 
         # Component Modifiers
         row.separator()
@@ -1605,15 +1602,6 @@ class tissue_tessellate(Operator):
         col3.prop(self, "com_modifiers", text="Use Modifiers", icon='MODIFIER')
         if self.component_mode == 'OBJECT':
             component = bpy.data.objects[self.component]
-            '''
-            try:
-                if not (component.modifiers or component.data.shape_keys):
-                    col3.enabled = False
-                    self.com_modifiers = False
-            except:
-                col3.enabled = False
-                self.com_modifiers = False
-            '''
         col.separator()
         # Fill and Rotation
         row = col.row(align=True)
@@ -1687,47 +1675,6 @@ class tissue_tessellate(Operator):
                 slider=True, toggle=False, icon_only=False, event=False,
                 full_event=False, emboss=True, index=-1)
             row.enabled = not self.use_origin_offset
-            '''
-            col.prop(self, 'use_origin_offset')
-
-            col.separator()
-            row = col.row(align=True)
-            row.prop_search(self, 'vertex_group_thickness',
-                ob0, "vertex_groups", text='')
-            col2 = row.column(align=True)
-            row2 = col2.row(align=True)
-            row2.prop(self, "invert_vertex_group_thickness", text="",
-                toggle=True, icon='ARROW_LEFTRIGHT')
-            row2.prop(self, "vertex_group_thickness_factor")
-            row2.enabled = self.vertex_group_thickness in ob0.vertex_groups.keys()
-            '''
-        '''
-        # Component XY
-        col.separator()
-        row = col.row(align=True)
-        row.label(text="Component Coordinates:")
-        row = col.row(align=True)
-        row.prop(
-            self, "mode", text="Component XY", icon='NONE', expand=True,
-            slider=False, toggle=False, icon_only=False, event=False,
-            full_event=False, emboss=True, index=-1)
-
-        if self.mode != 'BOUNDS':
-            col.separator()
-            row = col.row(align=True)
-            row.label(text="X:")
-            row.prop(
-                self, "bounds_x", text="Bounds X", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-
-            row = col.row(align=True)
-            row.label(text="Y:")
-            row.prop(
-                self, "bounds_y", text="Bounds X", icon='NONE', expand=True,
-                slider=False, toggle=False, icon_only=False, event=False,
-                full_event=False, emboss=True, index=-1)
-        '''
         col.separator()
         col.label(text="More settings in the Object Data Properties panel...", icon='PROPERTIES')
 
@@ -1762,40 +1709,43 @@ class tissue_tessellate(Operator):
             self.report({'ERROR'}, message)
             self.generator = ""
 
-        if True:#self.component not in ("",None) and self.generator not in ("",None):
-            if bpy.ops.object.select_all.poll():
-                bpy.ops.object.select_all(action='TOGGLE')
-            bpy.ops.object.mode_set(mode='OBJECT')
+        if bpy.ops.object.select_all.poll():
+            bpy.ops.object.select_all(action='TOGGLE')
+        bpy.ops.object.mode_set(mode='OBJECT')
 
-            #data0 = ob0.to_mesh(False)
-            #data0 = ob0.data.copy()
-            bool_update = False
-            if context.object == ob0:
-                auto_layer_collection()
-                #new_ob = bpy.data.objects.new(self.object_name, data0)
-                new_ob = convert_object_to_mesh(ob0,False,False)
-                new_ob.data.name = self.object_name
-                #bpy.context.collection.objects.link(new_ob)
-                #bpy.context.view_layer.objects.active = new_ob
-                new_ob.name = self.object_name
-                #new_ob.select_set(True)
-            else:
-                new_ob = context.object
-                bool_update = True
-            new_ob = store_parameters(self, new_ob)
-            new_ob.tissue.tissue_type = 'TESSELLATE'
-            try: bpy.ops.object.tissue_update_tessellate()
-            except RuntimeError as e:
-                bpy.data.objects.remove(new_ob)
-                remove_temp_objects()
-                self.report({'ERROR'}, str(e))
-                return {'CANCELLED'}
-            if not bool_update:
-                self.object_name = new_ob.name
-                #self.working_on = self.object_name
-                new_ob.location = ob0.location
-                new_ob.matrix_world = ob0.matrix_world
-            return {'FINISHED'}
+        bool_update = False
+        if context.object == ob0:
+            auto_layer_collection()
+            new_ob = convert_object_to_mesh(ob0,False,False)
+            new_ob.data.name = self.object_name
+            new_ob.name = self.object_name
+        else:
+            new_ob = context.object
+            bool_update = True
+        new_ob = store_parameters(self, new_ob)
+        new_ob.tissue.tissue_type = 'TESSELLATE'
+        try: bpy.ops.object.tissue_update_tessellate()
+        except RuntimeError as e:
+            bpy.data.objects.remove(new_ob)
+            remove_temp_objects()
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+        if not bool_update:
+            self.object_name = new_ob.name
+            #self.working_on = self.object_name
+            new_ob.location = ob0.location
+            new_ob.matrix_world = ob0.matrix_world
+
+        # Assign collection of the base object
+        old_coll = new_ob.users_collection
+        if old_coll != ob0.users_collection:
+            for c in old_coll:
+                c.objects.unlink(new_ob)
+            for c in ob0.users_collection:
+                c.objects.link(new_ob)
+        context.view_layer.objects.active = new_ob
+
+        return {'FINISHED'}
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
@@ -1826,17 +1776,7 @@ class tissue_update_tessellate_deps(Operator):
 
         active_ob = context.object
         selected_objects = context.selected_objects
-        '''
-        ob0 = ob.tissue_tessellate.generator
-        ob1 = ob.tissue_tessellate.component
-        try:
-            ob0.name
-            ob1.name
-        except:
-            self.report({'ERROR'},
-                        "Active object must be Tessellated before Update")
-            return {'CANCELLED'}
-        '''
+
         ### TO-DO: sorting according to dependencies
         update_objects = [o for o in selected_objects if o.tissue.tissue_type != 'NONE']
         for ob in selected_objects:
@@ -1959,6 +1899,7 @@ class tissue_update_tessellate(Operator):
             invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
             target = ob.tissue_tessellate.target
             even_thickness = ob.tissue_tessellate.even_thickness
+            even_thickness_iter = ob.tissue_tessellate.even_thickness_iter
             component_mode = ob.tissue_tessellate.component_mode
             component_coll = ob.tissue_tessellate.component_coll
             coll_rand_seed = ob.tissue_tessellate.coll_rand_seed
@@ -2036,7 +1977,7 @@ class tissue_update_tessellate(Operator):
             base_ob = convert_object_to_mesh(ob0, False, True)
         else:
             base_ob = ob0.copy()
-            base_ob.data = ob0.data#
+            base_ob.data = ob0.data
             context.collection.objects.link(base_ob)
         base_ob.name = '_tissue_tmp_base'
 
@@ -2213,6 +2154,7 @@ class tissue_update_tessellate(Operator):
             tissue_time(tt, "Combine tessellations", levels=1)
 
             if merge:
+                new_ob.active_shape_key_index = 0
                 use_bmesh = not (bool_shapekeys and fill_mode == 'PATCH' and component_mode != 'OBJECT')
                 merged = merge_components(new_ob, ob.tissue_tessellate, use_bmesh)
                 if merged == 'bridge_error':
@@ -2259,9 +2201,13 @@ class tissue_update_tessellate(Operator):
         old_data = ob.data
         old_data.name = '_tissue_tmp_old_data'
         #ob.data = bpy.data.meshes.new_from_object(new_ob)#
-        for o in bpy.data.objects:
-            if o.data == old_data:
-                o.data = new_ob.data
+        linked_objects = [o for o in bpy.data.objects if o.data == old_data]
+
+        for o in linked_objects:
+            o.data = new_ob.data
+            if len(linked_objects) > 1:
+                copy_tessellate_props(ob, o)
+
         #ob.data = new_ob.data
         ob.data.name = data_name
         bpy.data.meshes.remove(old_data)
@@ -2808,13 +2754,9 @@ class TISSUE_PT_tessellate_direction(Panel):
             col2.enabled = props.vertex_group_scale_normals in ob0.vertex_groups.keys()
         if props.normals_mode in ('OBJECT', 'SHAPEKEYS'):
             col.separator()
-            col.prop(props, "even_thickness")
-
-
-
-
-
-
+            row = col.row(align=True)
+            row.prop(props, "even_thickness")
+            if props.even_thickness: row.prop(props, "even_thickness_iter")
 
 class TISSUE_PT_tessellate_options(Panel):
     bl_space_type = 'PROPERTIES'
