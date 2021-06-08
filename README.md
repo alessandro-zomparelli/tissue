@@ -5,9 +5,9 @@ http://www.co-de-it.com/wordpress/code/blender-tissue
 
 Tissue is already shipped with both Blender. However I recommend to update the default version downloading manually the most recent one, for more updated features and more stability.
 
-### Blender 2.91
+### Blender 2.93
 
-Tissue v0.3.48 for Blender 2.91 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-48
+Tissue v0.3.50 for Blender 2.93 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-50
 
 Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b290-dev
 
@@ -22,7 +22,7 @@ Development branch (most updated version): https://github.com/alessandro-zompare
 
 1. Start Blender. Open User Preferences, the addons tab
 2. Search for Tissue add-on and remove existing version
-3. Click "install from file" and point Blender at the downloaded zip ("Install..." for Blender 2.91)
+3. Click "install from file" and point Blender at the downloaded zip ("Install..." for Blender 2.93)
 4. Activate Tissue add-on from user preferences
 5. Save user preferences if you want to have it on at startup. (This could be not necessary for Blender 2.80 if "Auto-Save Preferences" id on)
 
@@ -41,7 +41,7 @@ If you like my work and you want to help me, please consider to support me on **
 
 [![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
 
-A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory*, *Scott Shorter*, *Garrett Post*, *Kairomon*, *Art Evans*, *Justin Davis*, *John Wise*, *Avi Bryant*, *Ahmed Saber*, *SlimeSound Production*.
+A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory*, *Scott Shorter*, *Garrett Post*, *Kairomon*, *Art Evans*, *Justin Davis*, *John Wise*, *Avi Bryant*, *Ahmed Saber*, *SlimeSound Production*, *Steffen Meier*.
 
 Many thanks,
 
