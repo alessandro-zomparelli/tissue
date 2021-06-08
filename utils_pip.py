@@ -26,9 +26,10 @@
 # ----------------------------------------------------------
 import bpy
 import subprocess
+import sys
 
 
-PYPATH = bpy.app.binary_path_python
+PYPATH = sys.executable #bpy.app.binary_path_python
 
 
 class Pip:

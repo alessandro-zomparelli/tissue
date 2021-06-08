@@ -39,9 +39,11 @@ import math, timeit, time
 from math import pi
 from statistics import mean, stdev
 from mathutils import Vector
+from mathutils.kdtree import KDTree
 from numpy import *
-try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic
+try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic, integrate_field
 except: pass
+#from .numba_functions import integrate_field
 #from .numba_functions import numba_reaction_diffusion
 try: import numexpr as ne
 except: pass
@@ -224,6 +226,39 @@ class reaction_diffusion_prop(PropertyGroup):
         name="Cache directory", default="", subtype='FILE_PATH',
         description = 'Directory that contains Reaction-Diffusion cache files'
         )
+
+    update_weight_a : BoolProperty(
+        name="Update Vertex Group A", default=True,
+        description="Tranfer Cache to the Vertex Groups named A")
+
+    update_weight_b : BoolProperty(
+        name="Update Vertex Group B", default=True,
+        description="Tranfer Cache to the Vertex Groups named B")
+
+    update_colors_a : BoolProperty(
+        name="Update Vertex Color A", default=False,
+        description="Tranfer Cache to the Vertex Color named A")
+
+    update_colors_b : BoolProperty(
+        name="Update Vertex Color B", default=False,
+        description="Tranfer Cache to the Vertex Color named B")
+
+    update_colors : BoolProperty(
+        name="Update Vertex Color AB", default=False,
+        description="Tranfer Cache to the Vertex Color named AB")
+
+    update_uv : BoolProperty(
+        name="Update UV", default=False,
+        description="Tranfer Cache to the UV Map Layer named AB")
+
+    normalize : BoolProperty(
+        name="Normalize values", default=False,
+        description="Normalize values from 0 to 1")
+
+    fast_bake : BoolProperty(
+        name="Fast Bake", default=True,
+        description="Do not update modifiers or vertex groups while baking. Much faster!")
+
 
 from numpy import *
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
@@ -1471,6 +1506,9 @@ class weight_contour_mask(Operator):
     def poll(cls, context):
         return len(context.object.vertex_groups) > 0
 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=350)
+
     def execute(self, context):
         start_time = timeit.default_timer()
         try:
@@ -2478,6 +2516,7 @@ class vertex_group_to_vertex_colors(Operator):
 
     def execute(self, context):
         obj = context.active_object
+        me = obj.data
         group_id = obj.vertex_groups.active_index
         if (group_id == -1):
             return {'FINISHED'}
@@ -2497,48 +2536,140 @@ class vertex_group_to_vertex_colors(Operator):
 
         v_colors = obj.data.vertex_colors.active.data
 
-        mult = 1
-        if(self.invert): mult = -1
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        dvert_lay = bm.verts.layers.deform.active
+        weight = bmesh_get_weight_numpy(group_id,dvert_lay,bm.verts)
+        if self.invert: weight = 1-weight
+        loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
+        n_colors = np.sum(loops_size)
+        verts = np.ones(n_colors)
+        me.polygons.foreach_get('vertices',verts)
+        splitted_weight = weight[verts.astype(int)][:,None]
+        r = np.zeros(splitted_weight.shape)
+        g = np.zeros(splitted_weight.shape)
+        b = np.zeros(splitted_weight.shape)
+        a = np.ones(splitted_weight.shape)
+        if(self.channel == 'FALSE_COLORS'):
+            mult = 0.6+0.4*splitted_weight
+            mask = splitted_weight < 0.25
+            g[mask] = splitted_weight[mask]*4
+            b[mask] = np.ones(splitted_weight.shape)[mask]
 
-        i = 0
-        for f in obj.data.polygons:
-            for v in f.vertices:
-                gr = obj.data.vertices[v].groups
+            mask = np.where(np.logical_and(splitted_weight>=0.25, splitted_weight<0.5))
+            g[mask] = np.ones(splitted_weight.shape)[mask]
+            b[mask] = (1-(splitted_weight[mask]-0.25)*4)
 
-                if(self.channel == 'FALSE_COLORS'): v_colors[i].color = (0,0,0.5,1)
-                else: v_colors[i].color = (0,0,0,1)
+            mask = np.where(np.logical_and(splitted_weight>=0.5, splitted_weight<0.75))
+            r[mask] = (splitted_weight[mask]-0.5)*4
+            g[mask] = np.ones(splitted_weight.shape)[mask]
 
-                for g in gr:
-                    if g.group == group_id:
-                        w = g.weight
-                        if(self.channel == 'FALSE_COLORS'):
-                            mult = 0.6+0.4*w
-                            if w < 0.25:
-                                v_colors[i].color = (0, w*4*mult, 1*mult,1)
-                            elif w < 0.5:
-                                v_colors[i].color = (0, 1*mult, (1-(w-0.25)*4)*mult,1)
-                            elif w < 0.75:
-                                v_colors[i].color = ((w-0.5)*4*mult,1*mult,0,1)
-                            else:
-                                v_colors[i].color = (1*mult,(1-(w-0.75)*4)*mult,0,1)
-                        elif(self.channel == 'VALUE'):
-                            v_colors[i].color = (
-                                self.invert + mult * w,
-                                self.invert + mult * w,
-                                self.invert + mult * w,
-                                1)
-                        elif(self.channel == 'RED'):
-                            v_colors[i].color = (
-                                self.invert + mult * w,0,0,1)
-                        elif(self.channel == 'GREEN'):
-                            v_colors[i].color = (
-                                0, self.invert + mult * w,0,1)
-                        elif(self.channel == 'BLUE'):
-                            v_colors[i].color = (
-                                0,0, self.invert + mult * w,1)
-                i+=1
+            mask = 0.75 <= splitted_weight
+            r[mask] = np.ones(splitted_weight.shape)[mask]
+            g[mask] = (1-(splitted_weight[mask]-0.75)*4)
+        elif(self.channel == 'VALUE'):
+            r = splitted_weight
+            g = splitted_weight
+            b = splitted_weight
+        elif(self.channel == 'RED'):
+            r = splitted_weight
+        elif(self.channel == 'GREEN'):
+            g = splitted_weight
+        elif(self.channel == 'BLUE'):
+            b = splitted_weight
+
+        colors = np.concatenate((r,g,b,a),axis=1).flatten()
+        v_colors.foreach_set('color',colors)
+
         bpy.ops.paint.vertex_paint_toggle()
         context.object.data.vertex_colors[colors_id].active_render = True
+        return {'FINISHED'}
+
+class vertex_group_to_uv(Operator):
+    bl_idname = "object.vertex_group_to_uv"
+    bl_label = "Vertex Group"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = ("Combine two Vertex Groups as UV Map Layer.")
+
+    vertex_group_u : StringProperty(
+        name="U", default='',
+        description="Vertex Group used for the U coordinate")
+    vertex_group_v : StringProperty(
+        name="V", default='',
+        description="Vertex Group used for the V coordinate")
+    normalize_weight : BoolProperty(
+        name="Normalize Weight", default=True,
+        description="Normalize weight values")
+    invert_u : BoolProperty(
+        name="Invert U", default=False, description="Invert U")
+    invert_v : BoolProperty(
+        name="Invert V", default=False, description="Invert V")
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.object.vertex_groups) > 0
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=250)
+
+    def draw(self, context):
+        ob = context.object
+        layout = self.layout
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.prop_search(self, 'vertex_group_u', ob, "vertex_groups", text='')
+        row.separator()
+        row.prop_search(self, 'vertex_group_v', ob, "vertex_groups", text='')
+        row = col.row(align=True)
+        row.prop(self, "invert_u")
+        row.separator()
+        row.prop(self, "invert_v")
+        row = col.row(align=True)
+        row.prop(self, "normalize_weight")
+
+    def execute(self, context):
+        ob = context.active_object
+        me = ob.data
+        n_verts = len(me.vertices)
+        vg_keys = ob.vertex_groups.keys()
+        bool_u = self.vertex_group_u in vg_keys
+        bool_v = self.vertex_group_v in vg_keys
+        if bool_u or bool_v:
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            dvert_lay = bm.verts.layers.deform.active
+            if bool_u:
+                u_index = ob.vertex_groups[self.vertex_group_u].index
+                u = bmesh_get_weight_numpy(u_index, dvert_lay, bm.verts)
+                if self.invert_u:
+                    u = 1-u
+                if self.normalize_weight:
+                    u = np.interp(u, (u.min(), u.max()), (0, 1))
+            else:
+                u = np.zeros(n_verts)
+            if bool_v:
+                v_index = ob.vertex_groups[self.vertex_group_v].index
+                v = bmesh_get_weight_numpy(v_index, dvert_lay, bm.verts)
+                if self.invert_v:
+                    v = 1-v
+                if self.normalize_weight:
+                    v = np.interp(v, (v.min(), v.max()), (0, 1))
+            else:
+                v = np.zeros(n_verts)
+        else:
+            u = v = np.zeros(n_verts)
+
+        uv_layer = me.uv_layers.new(name='Weight_to_UV')
+        loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
+        n_data = np.sum(loops_size)
+        v_id = np.ones(n_data)
+        me.polygons.foreach_get('vertices',v_id)
+        v_id = v_id.astype(int)
+        split_u = u[v_id,None]
+        split_v = v[v_id,None]
+        uv = np.concatenate((split_u,split_v),axis=1).flatten()
+        uv_layer.data.foreach_set('uv',uv)
+        me.uv_layers.update()
         return {'FINISHED'}
 
 class curvature_to_vertex_groups(Operator):
@@ -2757,12 +2888,36 @@ class tissue_weight_distance(Operator):
     bl_description = ("Create a weight map according to the distance from the "
                     "selected vertices along the mesh surface")
 
+    mode : EnumProperty(
+        items=(('GEOD', "Geodesic Distance", ""),
+            ('EUCL', "Euclidean Distance", ""),
+            ('TOPO', "Topology Distance", "")),
+        default='GEOD', name="Distance Method")
+
+    normalize : BoolProperty(
+        name="Normalize", default=True,
+        description="Automatically remap the distance values from 0 to 1")
+
+    min_value : FloatProperty(
+        name="Min", default=0, min=0,
+        soft_max=100, description="Minimum Distance")
+
+    max_value : FloatProperty(
+        name="Max", default=10, min=0,
+        soft_max=100, description="Max Distance")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=250)
+
     def fill_neighbors(self,verts,weight):
         neigh = {}
         for v0 in verts:
             for f in v0.link_faces:
                 for v1 in f.verts:
-                    dist = weight[v0.index] + (v0.co-v1.co).length
+                    if self.mode == 'GEOD':
+                        dist = weight[v0.index] + (v0.co-v1.co).length
+                    elif self.mode == 'TOPO':
+                        dist = weight[v0.index] + 1.0
                     w1 = weight[v1.index]
                     if w1 == None or w1 > dist:
                         weight[v1.index] = dist
@@ -2777,39 +2932,56 @@ class tissue_weight_distance(Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
 
         me = ob.data
-        bm = bmesh.new()
-        bm.from_mesh(me)
-        bm.verts.ensure_lookup_table()
-        bm.edges.ensure_lookup_table()
-        bm.faces.ensure_lookup_table()
 
         # store weight values
-        weight = [None]*len(bm.verts)
+        weight = [None]*len(me.vertices)
 
-        selected = [v for v in bm.verts if v.select]
-        if len(selected) == 0:
-            bpy.ops.object.mode_set(mode=old_mode)
-            message = "Please, select one or more vertices"
-            self.report({'ERROR'}, message)
-            return {'CANCELLED'}
-        for v in selected: weight[v.index] = 0
-        weight = self.fill_neighbors(selected, weight)
+        if self.mode != 'EUCL':
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            bm.verts.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            selected = [v for v in bm.verts if v.select]
+            if len(selected) == 0:
+                bpy.ops.object.mode_set(mode=old_mode)
+                message = "Please, select one or more vertices"
+                self.report({'ERROR'}, message)
+                return {'CANCELLED'}
+            for v in selected: weight[v.index] = 0
+            weight = self.fill_neighbors(selected, weight)
+            bm.free()
+        else:
+            selected = [v for v in me.vertices if v.select]
+            kd = KDTree(len(selected))
+            for i, v in enumerate(selected):
+                kd.insert(v.co, i)
+            kd.balance()
+            for i,v in enumerate(me.vertices):
+                co, index, dist = kd.find(v.co)
+                weight[i] = dist
+
 
         for i in range(len(weight)):
             if weight[i] == None: weight[i] = 0
         weight = np.array(weight)
         max_dist = np.max(weight)
-        if max_dist > 0:
-            weight /= max_dist
+        if self.normalize:
+            if max_dist > 0:
+                weight /= max_dist
+        else:
+            delta_value = self.max_value - self.min_value
+            if delta_value == 0: delta_value = 0.0000001
+            weight = (weight-self.min_value)/delta_value
 
-        vg = ob.vertex_groups.new(name='Distance: {:.4f}'.format(max_dist))
+        if self.mode == 'TOPO':
+            vg = ob.vertex_groups.new(name='Distance: {:d}'.format(int(max_dist)))
+        else:
+            vg = ob.vertex_groups.new(name='Distance: {:.4f}'.format(max_dist))
         for i, w in enumerate(weight):
             vg.add([i], w, 'REPLACE')
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-        bm.free()
         return {'FINISHED'}
-
-
 
 class TISSUE_PT_color(Panel):
     bl_label = "Tissue Tools"
@@ -2858,8 +3030,6 @@ class TISSUE_PT_weight(Panel):
 
         col.label(text="Weight Edit:")
         col.operator("object.harmonic_weight", icon="IPO_ELASTIC")
-        col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL",
-            text="Convert to Colors")
         col.operator("object.random_weight", icon="RNDCURVE")
         col.separator()
         col.label(text="Deformation Analysis:")
@@ -2879,11 +3049,16 @@ class TISSUE_PT_weight(Panel):
         col.operator("object.start_reaction_diffusion",
                     icon="EXPERIMENTAL",
                     text="Reaction-Diffusion")
-
         col.separator()
         col.label(text="Materials:")
         col.operator("object.random_materials", icon='COLOR')
         col.operator("object.weight_to_materials", icon='GROUP_VERTEX')
+        col.separator()
+        col.label(text="Weight Convert:")
+        col.operator("object.vertex_group_to_vertex_colors", icon="GROUP_VCOL",
+            text="Convert to Colors")
+        col.operator("object.vertex_group_to_uv", icon="UV",
+            text="Convert to UV")
 
         #col.prop(context.object, "reaction_diffusion_run", icon="PLAY", text="Run Simulation")
         ####col.prop(context.object, "reaction_diffusion_run")
@@ -3017,9 +3192,18 @@ class bake_reaction_diffusion(Operator):
     def execute(self, context):
         ob = context.object
         props = ob.reaction_diffusion_settings
-        for i in range(props.cache_frame_start, props.cache_frame_end):
-            context.scene.frame_current = i
-            reaction_diffusion_def(ob, bake=True)
+        if props.fast_bake:
+            bool_run = props.run
+            props.run = False
+            context.scene.frame_current = props.cache_frame_start
+            fast_bake_def(ob, frame_start=props.cache_frame_start, frame_end=props.cache_frame_end)
+            #create_fast_bake_def(ob, frame_start=props.cache_frame_start, frame_end=props.cache_frame_end)
+            context.scene.frame_current = props.cache_frame_end
+            props.run = bool_run
+        else:
+            for i in range(props.cache_frame_start, props.cache_frame_end):
+                context.scene.frame_current = i
+                reaction_diffusion_def(ob, bake=True)
         props.bool_cache = True
 
         return {'FINISHED'}
@@ -3057,6 +3241,7 @@ def reaction_diffusion_scene(scene, bake=False):
             reaction_diffusion_def(ob)
 
 def reaction_diffusion_def(ob, bake=False):
+
     scene = bpy.context.scene
     start = time.time()
     if type(ob) == bpy.types.Scene: return None
@@ -3077,36 +3262,37 @@ def reaction_diffusion_def(ob, bake=False):
         else:
             folder = Path(props.cache_dir)
 
-    if props.bool_mod:
-        # hide deforming modifiers
-        mod_visibility = []
-        for m in ob.modifiers:
-            mod_visibility.append(m.show_viewport)
-            if not mod_preserve_shape(m): m.show_viewport = False
-
-        # evaluated mesh
-        dg = bpy.context.evaluated_depsgraph_get()
-        ob_eval = ob.evaluated_get(dg)
-        me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-
-        # set original visibility
-        for v, m in zip(mod_visibility, ob.modifiers):
-            m.show_viewport = v
-        ob.modifiers.update()
-    else:
-        me = ob.data
-    bm = bmesh.new()   # create an empty BMesh
-    bm.from_mesh(me)   # fill it in from a Mesh
-    dvert_lay = bm.verts.layers.deform.active
+    me = ob.data
     n_edges = len(me.edges)
     n_verts = len(me.vertices)
     a = np.zeros(n_verts)
     b = np.zeros(n_verts)
-    group_index_a = ob.vertex_groups["A"].index
-    group_index_b = ob.vertex_groups["B"].index
+
     print("{:6d} Reaction-Diffusion: {}".format(scene.frame_current, ob.name))
 
     if not props.bool_cache:
+
+        if props.bool_mod:
+            # hide deforming modifiers
+            mod_visibility = []
+            for m in ob.modifiers:
+                mod_visibility.append(m.show_viewport)
+                if not mod_preserve_shape(m): m.show_viewport = False
+
+            # evaluated mesh
+            dg = bpy.context.evaluated_depsgraph_get()
+            ob_eval = ob.evaluated_get(dg)
+            me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
+
+            # set original visibility
+            for v, m in zip(mod_visibility, ob.modifiers):
+                m.show_viewport = v
+            ob.modifiers.update()
+
+        bm = bmesh.new()   # create an empty BMesh
+        bm.from_mesh(me)   # fill it in from a Mesh
+        dvert_lay = bm.verts.layers.deform.active
+
         dt = props.dt
         time_steps = props.time_steps
         f = props.f
@@ -3129,47 +3315,61 @@ def reaction_diffusion_def(ob, bake=False):
         if props.vertex_group_brush != '': brush = np.zeros(n_verts)
         else: brush = 0
 
+        group_index_a = ob.vertex_groups["A"].index
+        group_index_b = ob.vertex_groups["B"].index
         a = bmesh_get_weight_numpy(group_index_a, dvert_lay, bm.verts)
         b = bmesh_get_weight_numpy(group_index_b, dvert_lay, bm.verts)
 
         if props.vertex_group_diff_a != '':
             group_index = ob.vertex_groups[props.vertex_group_diff_a].index
             diff_a = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-            vg_bounds = (1,0) if props.invert_vertex_group_diff_a else (0,1)
-            diff_a = np.interp(diff_a, vg_bounds, (props.min_diff_a, props.max_diff_a))
+            if props.invert_vertex_group_diff_a:
+                vg_bounds = (props.min_diff_a, props.max_diff_a)
+            else:
+                vg_bounds = (props.max_diff_a, props.min_diff_a)
+            diff_a = np.interp(diff_a, (0,1), vg_bounds)
 
         if props.vertex_group_diff_b != '':
             group_index = ob.vertex_groups[props.vertex_group_diff_b].index
             diff_b = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-            vg_bounds = (1,0) if props.invert_vertex_group_diff_b else (0,1)
-            diff_b = np.interp(diff_b, vg_bounds, (props.min_diff_b, props.max_diff_b))
+            if props.invert_vertex_group_diff_b:
+                vg_bounds = (props.max_diff_b, props.min_diff_b)
+            else:
+                vg_bounds = (props.min_diff_b, props.max_diff_b)
+            diff_b = np.interp(diff_b, (0,1), vg_bounds)
 
         if props.vertex_group_scale != '':
             group_index = ob.vertex_groups[props.vertex_group_scale].index
             scale = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-            vg_bounds = (1,0) if props.invert_vertex_group_scale else (0,1)
-            scale = np.interp(scale, vg_bounds, (props.min_scale, props.max_scale))
+            if props.invert_vertex_group_scale:
+                vg_bounds = (props.max_scale, props.min_scale)
+            else:
+                vg_bounds = (props.min_scale, props.max_scale)
+            scale = np.interp(scale, (0,1), vg_bounds)
 
         if props.vertex_group_f != '':
             group_index = ob.vertex_groups[props.vertex_group_f].index
             f = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-            vg_bounds = (1,0) if props.invert_vertex_group_f else (0,1)
-            f = np.interp(f, vg_bounds, (props.min_f, props.max_f))
+            if props.invert_vertex_group_f:
+                vg_bounds = (props.max_f, props.min_f)
+            else:
+                vg_bounds = (props.min_f, props.max_f)
+            f = np.interp(f, (0,1), vg_bounds, )
 
         if props.vertex_group_k != '':
             group_index = ob.vertex_groups[props.vertex_group_k].index
             k = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-            vg_bounds = (1,0) if props.invert_vertex_group_k else (0,1)
-            k = np.interp(k, vg_bounds, (props.min_k, props.max_k))
+            if props.invert_vertex_group_k:
+                vg_bounds = (props.max_k, props.min_k)
+            else:
+                vg_bounds = (props.min_k, props.max_k)
+            k = np.interp(k, (0,1), vg_bounds)
 
         if props.vertex_group_brush != '':
             group_index = ob.vertex_groups[props.vertex_group_brush].index
             brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
             brush *= brush_mult
 
-        if False:
-            group_index = ob.vertex_groups['gradient'].index
-            gradient = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
 
         #timeElapsed = time.time() - start
         #print('RD - Read Vertex Groups:',timeElapsed)
@@ -3180,19 +3380,36 @@ def reaction_diffusion_def(ob, bake=False):
 
         edge_verts = [0]*n_edges*2
         me.edges.foreach_get("vertices", edge_verts)
+        edge_verts = np.array(edge_verts)
 
-        gradient = get_uv_edge_vectors(me)
-        uv_dir = Vector((0.5,0.5,0))
-        #gradient = [abs(g.dot(uv_dir)) for g in gradient]
-        gradient = [max(0,g.dot(uv_dir)) for g in gradient]
+        if 'gradient' in ob.vertex_groups.keys() and False:
+            group_index = ob.vertex_groups['gradient'].index
+            gradient = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+
+            arr = (np.arange(n_edges)*2).astype(int)
+            id0 = edge_verts[arr]
+            id1 = edge_verts[arr+1]
+
+            #gradient = np.abs(gradient[id0] - gradient[id1])
+            gradient = gradient[id1] - gradient[id0]
+            gradient /= np.max(gradient)
+            sign = np.sign(gradient)
+            sign[sign==0] = 1
+            gradient = (0.05*abs(gradient) + 0.95)*sign
+            #gradient *= (1-abs(gradient)
+            #gradient = 0.2*(1-gradient) + 0.95
+
+        #gradient = get_uv_edge_vectors(me)
+        #uv_dir = Vector((0.5,0.5,0)).normalized()
+        #gradient = np.array([abs(g.dot(uv_dir.normalized())) for g in gradient])
+        #gradient = (gradient + 0.5)/2
+        #gradient = np.array([max(0,g.dot(uv_dir.normalized())) for g in gradient])
 
         timeElapsed = time.time() - start
         print('       Preparation Time:',timeElapsed)
         start = time.time()
 
-
         try:
-            edge_verts = np.array(edge_verts)
             _f = f if type(f) is np.ndarray else np.array((f,))
             _k = k if type(k) is np.ndarray else np.array((k,))
             _diff_a = diff_a if type(diff_a) is np.ndarray else np.array((diff_a,))
@@ -3201,10 +3418,8 @@ def reaction_diffusion_def(ob, bake=False):
 
             #a, b = numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps, gradient)
             a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
-
         except:
             print('Not using Numba! The simulation could be slow.')
-            edge_verts = np.array(edge_verts)
             arr = np.arange(n_edges)*2
             id0 = edge_verts[arr]     # first vertex indices for each edge
             id1 = edge_verts[arr+1]   # second vertex indices for each edge
@@ -3231,7 +3446,6 @@ def reaction_diffusion_def(ob, bake=False):
 
         timeElapsed = time.time() - start
         print('       Simulation Time:',timeElapsed)
-        start = time.time()
 
     if bake:
         if not(os.path.exists(folder)):
@@ -3246,7 +3460,327 @@ def reaction_diffusion_def(ob, bake=False):
             a = np.fromfile(file_name)
             file_name = folder / "b_{:04d}".format(scene.frame_current)
             b = np.fromfile(file_name)
-        except: return
+        except:
+            print('       Cannot read cache.')
+            return
+
+    if props.update_weight_a or props.update_weight_b:
+        start = time.time()
+        if props.update_weight_a:
+            if 'A' in ob.vertex_groups.keys():
+                vg_a = ob.vertex_groups['A']
+            else:
+                vg_a = ob.vertex_groups.new(name='A')
+        else:
+            vg_a = None
+        if props.update_weight_b:
+            if 'B' in ob.vertex_groups.keys():
+                vg_b = ob.vertex_groups['B']
+            else:
+                vg_b = ob.vertex_groups.new(name='B')
+        else:
+            vg_b = None
+        if vg_a == vg_b == None:
+            pass
+        else:
+            if ob.mode == 'WEIGHT_PAINT':# or props.bool_cache:
+                # slower, but prevent crashes
+                for i in range(n_verts):
+                    if vg_a: vg_a.add([i], a[i], 'REPLACE')
+                    if vg_b: vg_b.add([i], b[i], 'REPLACE')
+            else:
+                if props.bool_mod or props.bool_cache:
+                    #bm.free()               # release old bmesh
+                    bm = bmesh.new()        # create an empty BMesh
+                    bm.from_mesh(ob.data)   # fill it in from a Mesh
+                    dvert_lay = bm.verts.layers.deform.active
+                # faster, but can cause crashes while painting weight
+                if vg_a: index_a = vg_a.index
+                if vg_b: index_b = vg_b.index
+                for i, v in enumerate(bm.verts):
+                    dvert = v[dvert_lay]
+                    if vg_a: dvert[index_a] = a[i]
+                    if vg_b: dvert[index_b] = b[i]
+                bm.to_mesh(ob.data)
+                bm.free()
+        print('       Writing Vertex Groups Time:',time.time() - start)
+    if props.normalize:
+        min_a = np.min(a)
+        max_a = np.max(a)
+        min_b = np.min(b)
+        max_b = np.max(b)
+        a = (a - min_a)/(max_a - min_a)
+        b = (b - min_b)/(max_b - min_b)
+    split_a = None
+    split_b = None
+    splitted = False
+    if props.update_colors:#_a or props.update_colors_b:
+        start = time.time()
+        loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
+        n_colors = np.sum(loops_size)
+        v_id = np.ones(n_colors)
+        me.polygons.foreach_get('vertices',v_id)
+        v_id = v_id.astype(int)
+        #v_id = np.array([v for p in ob.data.polygons for v in p.vertices])
+        '''
+        if props.update_colors_b:
+            if 'B' in ob.data.vertex_colors.keys():
+                vc = ob.data.vertex_colors['B']
+            else:
+                vc = ob.data.vertex_colors.new(name='B')
+            c_val = b[v_id]
+            c_val = np.repeat(c_val, 4, axis=0)
+            vc.data.foreach_set('color',c_val)
+
+        if props.update_colors_a:
+            if 'A' in ob.data.vertex_colors.keys():
+                vc = ob.data.vertex_colors['A']
+            else:
+                vc = ob.data.vertex_colors.new(name='A')
+            c_val = a[v_id]
+            c_val = np.repeat(c_val, 4, axis=0)
+            vc.data.foreach_set('color',c_val)
+        '''
+        split_a = a[v_id,None]
+        split_b = b[v_id,None]
+        splitted = True
+        ones = np.ones((n_colors,1))
+        #rgba = np.concatenate((split_a,split_b,-split_b+split_a,ones),axis=1).flatten()
+        rgba = np.concatenate((split_a,split_b,ones,ones),axis=1).flatten()
+        if 'AB' in ob.data.vertex_colors.keys():
+            vc = ob.data.vertex_colors['AB']
+        else:
+            vc = ob.data.vertex_colors.new(name='AB')
+        vc.data.foreach_set('color',rgba)
+        ob.data.vertex_colors.update()
+
+        print('       Writing Vertex Colors Time:',time.time() - start)
+    if props.update_uv:
+        start = time.time()
+        if 'AB' in me.uv_layers.keys():
+            uv_layer = me.uv_layers['AB']
+        else:
+            uv_layer = me.uv_layers.new(name='AB')
+        if not splitted:
+            loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
+            n_data = np.sum(loops_size)
+            v_id = np.ones(n_data)
+            me.polygons.foreach_get('vertices',v_id)
+            v_id = v_id.astype(int)
+            split_a = a[v_id,None]
+            split_b = b[v_id,None]
+        uv = np.concatenate((split_a,split_b),axis=1).flatten()
+        uv_layer.data.foreach_set('uv',uv)
+        me.uv_layers.update()
+        print('       Writing UV Map Time:',time.time() - start)
+
+    for ps in ob.particle_systems:
+        if ps.vertex_group_density == 'B' or ps.vertex_group_density == 'A':
+            ps.invert_vertex_group_density = not ps.invert_vertex_group_density
+            ps.invert_vertex_group_density = not ps.invert_vertex_group_density
+
+    if props.bool_mod and not props.bool_cache: bpy.data.meshes.remove(me)
+
+def fast_bake_def(ob, frame_start=1, frame_end=250):
+    scene = bpy.context.scene
+    start = time.time()
+    if type(ob) == bpy.types.Scene: return None
+    props = ob.reaction_diffusion_settings
+
+    # Define cache folder
+    if props.cache_dir == '':
+        letters = string.ascii_letters
+        random_name = ''.join(rnd.choice(letters) for i in range(6))
+        if bpy.context.blend_data.filepath == '':
+            folder = Path(bpy.context.preferences.filepaths.temporary_directory)
+            folder = folder / 'reaction_diffusion_cache' / random_name
+        else:
+            folder = '//' + Path(bpy.context.blend_data.filepath).stem
+            folder = Path(bpy.path.abspath(folder)) / 'reaction_diffusion_cache' / random_name
+        folder.mkdir(parents=True, exist_ok=True)
+        props.cache_dir = str(folder)
+    else:
+        folder = Path(props.cache_dir)
+
+    if props.bool_mod:
+        # hide deforming modifiers
+        mod_visibility = []
+        for m in ob.modifiers:
+            mod_visibility.append(m.show_viewport)
+            if not mod_preserve_shape(m): m.show_viewport = False
+
+        # evaluated mesh
+        dg = bpy.context.evaluated_depsgraph_get()
+        ob_eval = ob.evaluated_get(dg)
+        me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
+
+        # set original visibility
+        for v, m in zip(mod_visibility, ob.modifiers):
+            m.show_viewport = v
+        ob.modifiers.update()
+    else:
+        me = ob.data
+
+    bm = bmesh.new()   # create an empty BMesh
+    bm.from_mesh(me)   # fill it in from a Mesh
+    dvert_lay = bm.verts.layers.deform.active
+    n_edges = len(me.edges)
+    n_verts = len(me.vertices)
+    a = np.zeros(n_verts)
+    b = np.zeros(n_verts)
+    group_index_a = ob.vertex_groups["A"].index
+    group_index_b = ob.vertex_groups["B"].index
+
+    dt = props.dt
+    time_steps = props.time_steps
+    f = props.f
+    k = props.k
+    diff_a = props.diff_a
+    diff_b = props.diff_b
+    scale = props.diff_mult
+
+    brush_mult = props.brush_mult
+
+    # store weight values
+    if 'dB' in ob.vertex_groups: db = np.zeros(n_verts)
+    if 'grad' in ob.vertex_groups: grad = np.zeros(n_verts)
+
+    if props.vertex_group_diff_a != '': diff_a = np.zeros(n_verts)
+    if props.vertex_group_diff_b != '': diff_b = np.zeros(n_verts)
+    if props.vertex_group_scale != '': scale = np.zeros(n_verts)
+    if props.vertex_group_f != '': f = np.zeros(n_verts)
+    if props.vertex_group_k != '': k = np.zeros(n_verts)
+    if props.vertex_group_brush != '': brush = np.zeros(n_verts)
+    else: brush = 0
+
+    a = bmesh_get_weight_numpy(group_index_a, dvert_lay, bm.verts)
+    b = bmesh_get_weight_numpy(group_index_b, dvert_lay, bm.verts)
+
+    if props.vertex_group_diff_a != '':
+        group_index = ob.vertex_groups[props.vertex_group_diff_a].index
+        diff_a = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        if props.invert_vertex_group_diff_a:
+            vg_bounds = (props.min_diff_a, props.max_diff_a)
+        else:
+            vg_bounds = (props.max_diff_a, props.min_diff_a)
+        diff_a = np.interp(diff_a, (0,1), vg_bounds)
+
+    if props.vertex_group_diff_b != '':
+        group_index = ob.vertex_groups[props.vertex_group_diff_b].index
+        diff_b = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        if props.invert_vertex_group_diff_b:
+            vg_bounds = (props.max_diff_b, props.min_diff_b)
+        else:
+            vg_bounds = (props.min_diff_b, props.max_diff_b)
+        diff_b = np.interp(diff_b, (0,1), vg_bounds)
+
+    if props.vertex_group_scale != '':
+        group_index = ob.vertex_groups[props.vertex_group_scale].index
+        scale = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        if props.invert_vertex_group_scale:
+            vg_bounds = (props.max_scale, props.min_scale)
+        else:
+            vg_bounds = (props.min_scale, props.max_scale)
+        scale = np.interp(scale, (0,1), vg_bounds)
+
+    if props.vertex_group_f != '':
+        group_index = ob.vertex_groups[props.vertex_group_f].index
+        f = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        if props.invert_vertex_group_f:
+            vg_bounds = (props.max_f, props.min_f)
+        else:
+            vg_bounds = (props.min_f, props.max_f)
+        f = np.interp(f, (0,1), vg_bounds, )
+
+    if props.vertex_group_k != '':
+        group_index = ob.vertex_groups[props.vertex_group_k].index
+        k = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        if props.invert_vertex_group_k:
+            vg_bounds = (props.max_k, props.min_k)
+        else:
+            vg_bounds = (props.min_k, props.max_k)
+        k = np.interp(k, (0,1), vg_bounds)
+
+    if props.vertex_group_brush != '':
+        group_index = ob.vertex_groups[props.vertex_group_brush].index
+        brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        brush *= brush_mult
+
+    diff_a *= scale
+    diff_b *= scale
+
+    edge_verts = [0]*n_edges*2
+    me.edges.foreach_get("vertices", edge_verts)
+
+    gradient = get_uv_edge_vectors(me)
+    uv_dir = Vector((0.5,0.5,0))
+    #gradient = [abs(g.dot(uv_dir)) for g in gradient]
+    gradient = [max(0,g.dot(uv_dir)) for g in gradient]
+
+    timeElapsed = time.time() - start
+    print('       Preparation Time:',timeElapsed)
+    start = time.time()
+
+    try:
+        edge_verts = np.array(edge_verts)
+        _f = f if type(f) is np.ndarray else np.array((f,))
+        _k = k if type(k) is np.ndarray else np.array((k,))
+        _diff_a = diff_a if type(diff_a) is np.ndarray else np.array((diff_a,))
+        _diff_b = diff_b if type(diff_b) is np.ndarray else np.array((diff_b,))
+        _brush = brush if type(brush) is np.ndarray else np.array((brush,))
+
+        run_rd = False
+        for j in range(props.cache_frame_start, props.cache_frame_end+1):
+            start2 = time.time()
+            print("{:6d} Reaction-Diffusion: {}".format(j, ob.name))
+            if run_rd:
+                b += _brush
+                a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
+            else:
+                run_rd = True
+
+            if not(os.path.exists(folder)):
+                os.mkdir(folder)
+            file_name = folder / "a_{:04d}".format(j)
+            a.tofile(file_name)
+            file_name = folder / "b_{:04d}".format(j)
+            b.tofile(file_name)
+
+            timeElapsed = time.time() - start2
+            print('       Simulation Time:',timeElapsed)
+
+    except:
+        print('Not using Numba! The simulation could be slow.')
+        edge_verts = np.array(edge_verts)
+        arr = np.arange(n_edges)*2
+        id0 = edge_verts[arr]     # first vertex indices for each edge
+        id1 = edge_verts[arr+1]   # second vertex indices for each edge
+        for j in range(props.cache_frame_start, props.cache_frame_end):
+            for i in range(time_steps):
+                b += brush
+                lap_a = np.zeros(n_verts)
+                lap_b = np.zeros(n_verts)
+                lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
+                lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
+
+                np.add.at(lap_a, id0, lap_a0)
+                np.add.at(lap_b, id0, lap_b0)
+                np.add.at(lap_a, id1, -lap_a0)
+                np.add.at(lap_b, id1, -lap_b0)
+
+                ab2 = a*b**2
+                a += eval("(diff_a*lap_a - ab2 + f*(1-a))*dt")
+                b += eval("(diff_b*lap_b + ab2 - (k+f)*b)*dt")
+
+                a = nan_to_num(a)
+                b = nan_to_num(b)
+
+            if not(os.path.exists(folder)):
+                os.mkdir(folder)
+            file_name = folder / "a_{:04d}".format(j)
+            a.tofile(file_name)
+            file_name = folder / "b_{:04d}".format(j)
+            b.tofile(file_name)
 
     if ob.mode == 'WEIGHT_PAINT':
         # slower, but prevent crashes
@@ -3268,6 +3802,7 @@ def reaction_diffusion_def(ob, bake=False):
             dvert[group_index_b] = b[i]
         bm.to_mesh(ob.data)
 
+    # Update Vertex Colors
     if 'A' in ob.data.vertex_colors or 'B' in ob.data.vertex_colors:
         v_id = np.array([v for p in ob.data.polygons for v in p.vertices])
 
@@ -3292,6 +3827,171 @@ def reaction_diffusion_def(ob, bake=False):
     bm.free()
     timeElapsed = time.time() - start
     print('       Closing Time:',timeElapsed)
+
+def create_fast_bake_def(ob, frame_start=1, frame_end=250):
+    scene = bpy.context.scene
+    start = time.time()
+    if type(ob) == bpy.types.Scene: return None
+    props = ob.reaction_diffusion_settings
+
+    dt = props.dt
+    time_steps = props.time_steps
+    scale = props.diff_mult
+
+    if props.cache_dir == '':
+        letters = string.ascii_letters
+        random_name = ''.join(rnd.choice(letters) for i in range(6))
+        if bpy.context.blend_data.filepath == '':
+            folder = Path(bpy.context.preferences.filepaths.temporary_directory)
+            folder = folder / 'reaction_diffusion_cache' / random_name
+        else:
+            folder = '//' + Path(bpy.context.blend_data.filepath).stem
+            folder = Path(bpy.path.abspath(folder)) / 'reaction_diffusion_cache' / random_name
+        folder.mkdir(parents=True, exist_ok=True)
+        props.cache_dir = str(folder)
+    else:
+        folder = Path(props.cache_dir)
+
+    if props.bool_mod:
+        # hide deforming modifiers
+        mod_visibility = []
+        for m in ob.modifiers:
+            mod_visibility.append(m.show_viewport)
+            if not mod_preserve_shape(m): m.show_viewport = False
+
+        # evaluated mesh
+        dg = bpy.context.evaluated_depsgraph_get()
+        ob_eval = ob.evaluated_get(dg)
+        me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
+
+        # set original visibility
+        for v, m in zip(mod_visibility, ob.modifiers):
+            m.show_viewport = v
+        ob.modifiers.update()
+    else:
+        me = ob.data
+
+    bm = bmesh.new()   # create an empty BMesh
+    bm.from_mesh(me)   # fill it in from a Mesh
+    verts = get_vertices_numpy(me)
+    dvert_lay = bm.verts.layers.deform.active
+    n_edges = len(me.edges)
+    n_verts = len(me.vertices)
+    group_index_x = ob.vertex_groups["x"].index
+    group_index_y = ob.vertex_groups["y"].index
+    group_index_module = ob.vertex_groups["module"].index
+    group_index_values = ob.vertex_groups["values"].index
+
+    if not props.bool_cache:
+        time_steps = props.time_steps
+
+        # store weight values
+        if 'dB' in ob.vertex_groups: db = np.zeros(n_verts)
+        if 'grad' in ob.vertex_groups: grad = np.zeros(n_verts)
+        vec_x = np.zeros(n_verts)
+        vec_y = np.zeros(n_verts)
+        vec_module = np.zeros(n_verts)
+        values = np.zeros(n_verts)
+
+        vec_x = bmesh_get_weight_numpy(group_index_x, dvert_lay, bm.verts)
+        vec_y = bmesh_get_weight_numpy(group_index_y, dvert_lay, bm.verts)
+        vec_module = bmesh_get_weight_numpy(group_index_module, dvert_lay, bm.verts)
+        values = bmesh_get_weight_numpy(group_index_values, dvert_lay, bm.verts)
+        field = np.concatenate((vec_x[:,None],vec_y[:,None],vec_y[:,None]*0),axis=1)
+        field = field*2-1
+        field[:,2] = 0
+        edge_verts = get_edges_numpy(me)
+
+        id0 = edge_verts[:,0]
+        id1 = edge_verts[:,1]
+        vert0 = verts[id0]
+        vert1 = verts[id1]
+        vec = vert1-vert0
+        edge_field = (field[id0] + field[id1])/2    # average vector associated to the edge
+        print(vert0.shape)
+        print(field.shape)
+        print(edge_field.shape)
+        # normalize vectors
+        vec /= np.linalg.norm(vec,axis=1)[:,None]
+        edge_field /= np.linalg.norm(edge_field,axis=1)[:,None]
+        edge_flow = np.einsum('...j,...j', vec, edge_field)
+        #sign = (edge_flow>0).astype(int)
+        #values[edge_verts[sign]] += values[edge_verts[1-sign]]*
+        #values[verts0] += values[verts1]*edge_flow
+
+        timeElapsed = time.time() - start
+        print('       Preparation Time:',timeElapsed)
+        start = time.time()
+
+        # Preserve energy
+        mult = np.zeros(values.shape)
+        #mult[id0] -= edge_flow
+        #mult[id1] += edge_flow
+        np.add.at(mult,id0,-edge_flow)
+        np.add.at(mult,id1,edge_flow)
+        print("mult")
+        mult = scale/mult
+        print(mult)
+        print(np.sum(mult))
+
+
+        #try:
+        print(vec)
+        print(edge_flow)
+        print(edge_flow)
+
+        bool_run = False
+        for j in range(props.cache_frame_start, props.cache_frame_end+1):
+            start2 = time.time()
+            print("{:6d} Reaction-Diffusion: {}".format(j, ob.name))
+            if bool_run:
+                print(values)
+                #for i in range(1):
+                values = integrate_field(n_edges,id0,id1,values,edge_flow,mult,time_steps)
+                #values0 = values
+                #np.add.at(values, id0, values0[id1]*edge_flow*mult[id1])
+                #np.add.at(values, id1, -values0[id0]*edge_flow*mult[id0])
+                #np.add.at(values, id0, values0[id1]*edge_flow*mult)
+                #np.add.at(values, id1, -values0[id0]*edge_flow*mult)
+                #values[id1] += values0[id0]*edge_flow/mult[id1]*dt
+                #values[id0] -= values0[id1]*edge_flow/mult[id0]*dt
+                #values[id1] = edge_flow
+                #values[id1] += edge_flow
+                #a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
+
+                '''
+                lap_a = np.zeros(n_verts)
+                lap_b = np.zeros(n_verts)
+                lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
+                lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
+
+                np.add.at(lap_a, id0, lap_a0)
+                np.add.at(lap_b, id0, lap_b0)
+                np.add.at(lap_a, id1, -lap_a0)
+                np.add.at(lap_b, id1, -lap_b0)
+                '''
+            else:
+                bool_run = True
+
+            if not(os.path.exists(folder)):
+                os.mkdir(folder)
+            file_name = folder / "a_{:04d}".format(j)
+            values.tofile(file_name)
+            file_name = folder / "b_{:04d}".format(j)
+            values.tofile(file_name)
+
+
+            timeElapsed = time.time() - start2
+            print('       Simulation Time:',timeElapsed)
+
+    if props.bool_mod: bpy.data.meshes.remove(me)
+    bm.free()
+    timeElapsed = time.time() - start
+    print('       Closing Time:',timeElapsed)
+
+
+
+
 
 class TISSUE_PT_reaction_diffusion(Panel):
     bl_space_type = 'PROPERTIES'
@@ -3366,6 +4066,23 @@ class TISSUE_PT_reaction_diffusion(Panel):
                     row.enabled = False
                     col.label(text="Cannot use cache", icon='ERROR')
                     col.label(text='please save the Blender or set a Cache directory')
+                col.prop(props, "fast_bake")
+
+            col.separator()
+            col.label(text='Output attributes:')
+            row = col.row(align=True)
+            col2 = row.column(align=True)
+            row2 = col2.row(align=True)
+            row2.prop(props, "update_weight_a", icon='GROUP_VERTEX', text='A')
+            row2.prop(props, "update_weight_b", icon='GROUP_VERTEX', text='B')
+            col2.enabled = props.bool_cache
+            row.separator()
+            #row.prop(props, "update_colors_a", icon='GROUP_VCOL', text='A')
+            #row.prop(props, "update_colors_b", icon='GROUP_VCOL', text='B')
+            row.prop(props, "update_colors", icon='GROUP_VCOL', text='AB')
+            row.separator()
+            row.prop(props, "update_uv", icon='GROUP_UVS', text='AB')
+            col.prop(props,'normalize')
 
             #col.prop_search(props, 'vertex_group_diff_a', ob, "vertex_groups", text='Diff A')
             #col.prop_search(props, 'vertex_group_diff_b', ob, "vertex_groups", text='Diff B')
@@ -3393,6 +4110,9 @@ class TISSUE_PT_reaction_diffusion_weight(Panel):
         #layout.use_property_split = True
         col = layout.column(align=True)
         col.prop(props, "bool_mod")
+        if props.bool_mod and props.fast_bake:
+            col.label(text="When Fast Bake is on, the modifiers", icon='ERROR')
+            col.label(text="          are used only for the first frame")
         col.separator()
         insert_weight_parameter(col, ob, 'brush', text='Brush:')
         insert_weight_parameter(col, ob, 'diff_a', text='Diff A:')
@@ -3791,22 +4511,38 @@ class tissue_weight_streamlines(Operator):
         ob = bpy.data.objects[self.object_name]
         ob.select_set(False)
 
-        dg = context.evaluated_depsgraph_get()
-        ob = ob.evaluated_get(dg)
+
+        seeds = []
+
+        if bpy.context.mode == 'EDIT_MESH':
+            self.use_selected = True
+            bpy.ops.object.mode_set(mode='OBJECT')
+            #ob = bpy.context.object
+            #me = simple_to_mesh(ob)
+        ob = convert_object_to_mesh(ob, apply_modifiers=self.use_modifiers)
+        #dg = context.evaluated_depsgraph_get()
+        #ob = ob.evaluated_get(dg)
         me = ob.data
+
+        if self.use_selected:
+            # generate new bmesh
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            print(len(me.vertices))
+            #for v in me.vertices:
+            #    if v.select: seeds.append(v.index)
+            for v in bm.verts:
+                if v.select: seeds.append(v.index)
+            bm.free()
         n_verts = len(me.vertices)
         n_edges = len(me.edges)
         n_faces = len(me.polygons)
-
-        # generate new bmesh
-        #bm = bmesh.new()
-        #bm.from_mesh(me)
 
         # store weight values
         try:
             weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_streamlines], n_verts)
         except:
-            bm.free()
+            bpy.data.objects.remove(ob)
             self.report({'ERROR'}, "Please select a Vertex Group for streamlines")
             return {'CANCELLED'}
 
@@ -3829,15 +4565,6 @@ class tissue_weight_streamlines(Operator):
         except:
             pass#bevel_weight = np.ones((n_verts))
 
-        seeds = []
-
-        if bpy.context.mode == 'EDIT_MESH':
-            self.use_selected = True
-            bpy.ops.object.mode_set(mode='OBJECT')
-            ob = bpy.context.object
-            me = simple_to_mesh(ob)
-            for v in me.vertices:
-                if v.select: seeds.append(v.index)
 
         if not seeds:
             np.random.seed(self.rand_seed)
@@ -3860,7 +4587,8 @@ class tissue_weight_streamlines(Operator):
             # store neighbors
             for p in me.polygons:
                 face_verts = [v for v in p.vertices]
-                for i in range(len(face_verts)):
+                n_face_verts = len(face_verts)
+                for i in range(n_face_verts):
                     fv = face_verts.copy()
                     neigh[fv.pop(i)] += fv
 
@@ -3941,6 +4669,7 @@ class tissue_weight_streamlines(Operator):
         crv = nurbs_from_vertices(curves, co, bevel_weight, ob.name + '_Streamlines', True, self.interpolation)
         crv.data.bevel_depth = bevel_depth
         crv.matrix_world = ob.matrix_world
+        bpy.data.objects.remove(ob)
 
         print("Streamlines Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}

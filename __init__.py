@@ -33,8 +33,8 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 48),
-    "blender": (2, 91, 0),
+    "version": (0, 3, 50),
+    "blender": (2, 93, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
@@ -46,6 +46,7 @@ bl_info = {
 if "bpy" in locals():
     import importlib
     importlib.reload(tessellate_numpy)
+    importlib.reload(tissue_properties)
     importlib.reload(weight_tools)
     importlib.reload(dual_mesh)
     importlib.reload(lattice)
@@ -58,6 +59,7 @@ if "bpy" in locals():
 
 else:
     from . import tessellate_numpy
+    from . import tissue_properties
     from . import weight_tools
     from . import dual_mesh
     from . import lattice
@@ -76,22 +78,23 @@ classes = (
     config.tissuePreferences,
     config.tissue_install_numba,
 
-    tessellate_numpy.tissue_prop,
-    tessellate_numpy.tissue_tessellate_prop,
+    tissue_properties.tissue_prop,
+    tissue_properties.tissue_tessellate_prop,
     tessellate_numpy.tissue_tessellate,
     tessellate_numpy.tissue_update_tessellate,
     tessellate_numpy.tissue_update_tessellate_deps,
     tessellate_numpy.TISSUE_PT_tessellate,
     tessellate_numpy.tissue_rotate_face_left,
     tessellate_numpy.tissue_rotate_face_right,
-    tessellate_numpy.tissue_rotate_face_twice,
+    tessellate_numpy.tissue_rotate_face_flip,
     tessellate_numpy.TISSUE_PT_tessellate_object,
     tessellate_numpy.TISSUE_PT_tessellate_frame,
+    tessellate_numpy.TISSUE_PT_tessellate_component,
     tessellate_numpy.TISSUE_PT_tessellate_thickness,
     tessellate_numpy.TISSUE_PT_tessellate_direction,
+    tessellate_numpy.TISSUE_PT_tessellate_options,
     tessellate_numpy.TISSUE_PT_tessellate_coordinates,
     tessellate_numpy.TISSUE_PT_tessellate_rotation,
-    tessellate_numpy.TISSUE_PT_tessellate_options,
     tessellate_numpy.TISSUE_PT_tessellate_selective,
     tessellate_numpy.TISSUE_PT_tessellate_morphing,
     tessellate_numpy.TISSUE_PT_tessellate_iterations,
@@ -100,6 +103,7 @@ classes = (
     weight_tools.face_area_to_vertex_groups,
     weight_tools.vertex_colors_to_vertex_groups,
     weight_tools.vertex_group_to_vertex_colors,
+    weight_tools.vertex_group_to_uv,
     weight_tools.TISSUE_PT_weight,
     weight_tools.TISSUE_PT_color,
     weight_tools.weight_contour_curves,
@@ -151,10 +155,10 @@ def register():
         bpy.utils.register_class(cls)
     #bpy.utils.register_module(__name__)
     bpy.types.Object.tissue = PointerProperty(
-                                    type=tessellate_numpy.tissue_prop
+                                    type=tissue_properties.tissue_prop
                                     )
     bpy.types.Object.tissue_tessellate = PointerProperty(
-                                            type=tessellate_numpy.tissue_tessellate_prop
+                                            type=tissue_properties.tissue_tessellate_prop
                                             )
     bpy.types.Object.tissue_to_curve = PointerProperty(
                                             type=curves_tools.tissue_to_curve_prop

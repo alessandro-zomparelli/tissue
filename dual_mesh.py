@@ -57,10 +57,17 @@ class dual_mesh_tessellated(Operator):
                 ('QUAD', 'Quad Faces', ''),
                 ('TRI', 'Triangles', '')],
             name="Source Faces",
-            description="Source polygons",
-            default="QUAD",
+            description="Triangles works with any geometry." \
+                        "Quad option is faster when the object has only Quads",
+            default="TRI",
             options={'LIBRARY_EDITABLE'}
             )
+
+    link_component : BoolProperty(
+        name="Editable Component",
+        default=False,
+        description="Add Component Object to the Scene"
+        )
 
     def execute(self, context):
         auto_layer_collection()
@@ -68,18 +75,22 @@ class dual_mesh_tessellated(Operator):
         name1 = "DualMesh_{}_Component".format(self.source_faces)
         # Generate component
         if self.source_faces == 'QUAD':
-            verts = [(0.0, 0.0, 0.0), (0.0, 0.5, 0.0),
+            verts = [(1.0, 0.0, 0.0), (0.5, 0.0, 0.0),
+                    (0.0, 0.0, 0.0), (0.0, 0.5, 0.0),
                     (0.0, 1.0, 0.0), (0.5, 1.0, 0.0),
                     (1.0, 1.0, 0.0), (1.0, 0.5, 0.0),
-                    (1.0, 0.0, 0.0), (0.5, 0.0, 0.0),
-                    (1/3, 1/3, 0.0), (2/3, 2/3, 0.0)]
+                    (2/3, 1/3, 0.0), (1/3, 2/3, 0.0)]
             edges = [(0,1), (1,2), (2,3), (3,4), (4,5), (5,6), (6,7),
                         (7,0), (1,8), (8,7), (3,9), (9,5), (8,9)]
             faces = [(7,8,1,0), (8,9,3,2,1), (9,5,4,3), (9,8,7,6,5)]
         else:
-            verts = [(0.0,0.0,0.0), (0.5,0.0,0.0), (1.0,0.0,0.0), (0.0,1.0,0.0), (0.5,1.0,0.0), (1.0,1.0,0.0)]
-            edges = [(0,1), (1,2), (2,5), (5,4), (4,3), (3,0), (1,4)]
-            faces = [(0,1,4,3), (1,2,5,4)]
+            verts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0),
+                    (0.0, 1.0, 0.0), (1.0, 1.0, 0.0),
+                    (0.5, 1/3, 0.0), (0.0, 0.5, 0.0),
+                    (1.0, 0.5, 0.0), (0.5, 0.0, 0.0)]
+            edges = [(0,5), (1,7), (3,6), (2,3), (2,5), (1,6), (0,7),
+                        (4,5), (4,7), (4,6)]
+            faces = [(5,0,7,4), (7,1,6,4), (3,2,5,4,6)]
 
         # check pre-existing component
         try:
@@ -95,26 +106,20 @@ class dual_mesh_tessellated(Operator):
             me.from_pydata(verts, edges, faces)
             me.update(calc_edges=True, calc_edges_loose=True)
             if self.source_faces == 'QUAD': seams = (0,1,2,3,4,5,6,9)
-            else: seams = (0,1,2,3,4,5)
+            else: seams = (0,1,2,3,4,5,7)
             for i in seams: me.edges[i].use_seam = True
             ob1 = bpy.data.objects.new(name1, me)
-            context.collection.objects.link(ob1)
             # fix visualization issue
-            context.view_layer.objects.active = ob1
-            ob1.select_set(True)
-            bpy.ops.object.editmode_toggle()
-            bpy.ops.object.editmode_toggle()
-            ob1.select_set(False)
-            # hide component
-            #ob1.hide_select = True
-            ob1.hide_render = True
-            #ob1.hide_viewport = True
+            if self.link_component:
+                context.collection.objects.link(ob1)
+                context.view_layer.objects.active = ob1
+                ob1.select_set(True)
+                bpy.ops.object.editmode_toggle()
+                bpy.ops.object.editmode_toggle()
+                ob1.select_set(False)
+                ob1.hide_render = True
         ob = convert_object_to_mesh(ob0,False,False)
         ob.name = 'DualMesh'
-        #ob = bpy.data.objects.new("DualMesh", convert_object_to_mesh(ob0,False,False))
-        #context.collection.objects.link(ob)
-        #context.view_layer.objects.active = ob
-        #ob.select_set(True)
         ob.tissue.tissue_type = 'TESSELLATE'
         ob.tissue.bool_lock = True
         ob.tissue_tessellate.component = ob1
@@ -122,7 +127,7 @@ class dual_mesh_tessellated(Operator):
         ob.tissue_tessellate.gen_modifiers = self.apply_modifiers
         ob.tissue_tessellate.merge = True
         ob.tissue_tessellate.bool_dissolve_seams = True
-        if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'FAN'
+        if self.source_faces == 'TRI': ob.tissue_tessellate.fill_mode = 'TRI'
         bpy.ops.object.tissue_update_tessellate()
         ob.tissue.bool_lock = False
         ob.location = ob0.location
@@ -157,7 +162,7 @@ class dual_mesh(Operator):
             items=[
                 ('BEAUTY', 'Beauty', 'Arrange the new triangles evenly'),
                 ('CLIP', 'Clip',
-                 'Split the polygons with an ear clipping algorithm')],
+                 'Split the N-gon with an ear clipping algorithm')],
             name="N-gon Method",
             description="Method for splitting the N-gons into triangles",
             default="BEAUTY",

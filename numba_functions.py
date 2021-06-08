@@ -26,6 +26,7 @@ try:
     from .utils_pip import Pip
     Pip._ensure_user_site_package()
     from numba import jit, njit, guvectorize, float64, int32, prange
+    from numba.typed import List
     bool_numba = True
 except:
     pass
@@ -57,6 +58,22 @@ if bool_numba:
             numba_set_ab(a,b,brush)
         return a,b
 
+    @njit(parallel=False)
+    def integrate_field(n_edges, id0, id1, values, edge_flow, mult, time_steps):
+        #n_edges = len(edge_flow)
+        for i in range(time_steps):
+            values0 = values
+            for j in range(n_edges):
+                v0 = id0[j]
+                v1 = id1[j]
+                values[v0] -= values0[v1] * edge_flow[j] * 0.001#mult[v1]
+                values[v1] += values0[v0] * edge_flow[j] * 0.001#mult[v0]
+            for j in range(n_edges):
+                v0 = id0[j]
+                v1 = id1[j]
+                values[v0] = max(values[v0],0)
+                values[v1] = max(values[v1],0)
+        return values
 
     @njit(parallel=True)
     def numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps, grad):
@@ -127,9 +144,9 @@ if bool_numba:
         for i in prange(len(id0)):
             v0 = id0[i]
             v1 = id1[i]
-            lap_a[v0] += (a[v1] - a[v0])*grad[i]
-            lap_a[v1] += (a[v0] - a[v1])*grad[i]
-            lap_b[v0] += (b[v1] - b[v0])*grad[i]
+            lap_a[v0] += (a[v1] - a[v0])
+            lap_a[v1] += (a[v0] - a[v1])
+            lap_b[v0] -= (b[v1] - b[v0])*grad[i]
             lap_b[v1] += (b[v0] - b[v1])*grad[i]
         #return lap_a, lap_b
 
@@ -203,6 +220,7 @@ if bool_numba:
             b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
         return a, b
     '''
+    '''
     @njit(parallel=True)
     def numba_lerp2_(v00, v10, v01, v11, vx, vy):
         sh = v00.shape
@@ -238,9 +256,124 @@ if bool_numba:
                 co1 = val[i][3] + (val[i][2] - val[i][3]) * val[j][0]
                 co2[i][j][0] = co0 + (co1 - co0) * vy[j][0]
         return co2
+    '''
 
     @njit(parallel=True)
+    def numba_combine_and_flatten(arrays):
+        n_faces = len(arrays)
+        n_verts = len(arrays[0])
+        new_list = [0.0]*n_faces*n_verts*3
+        for i in prange(n_faces):
+            for j in prange(n_verts):
+                for k in prange(3):
+                    new_list[i*n_verts*3+j*3+k] = arrays[i][j,k]
+        return new_list
+
+    @njit(parallel=True)
+    def numba_calc_thickness_area_weight(co2,n2,vz,a,weight):
+        shape = co2.shape
+        n_patches = shape[0]
+        n_verts = shape[1]
+        n_co = shape[2]
+        nn = n2.shape[1]-1
+        na = a.shape[1]-1
+        nw = weight.shape[1]-1
+        co3 = np.zeros((n_patches,n_verts,n_co))
+        for i in prange(n_patches):
+            for j in prange(n_verts):
+                for k in prange(n_co):
+                    co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nn),k] * vz[0,j,0] * a[i,min(j,na),0] * weight[i,min(j,nw),0]
+        return co3
+    '''
+    @njit(parallel=True)
+    def numba_calc_thickness_area(co2,n2,vz,a):
+        shape = co2.shape
+        n_patches = shape[0]
+        n_verts = shape[1]
+        n_co = shape[2]
+        #co3 = [0.0]*n_patches*n_verts*n_co #np.zeros((n_patches,n_verts,n_co))
+        co3 = np.zeros((n_patches,n_verts,n_co))
+        for i in prange(n_patches):
+            for j in prange(n_verts):
+                for k in prange(n_co):
+                    #co3[i,j,k] = co2[i,j,k] + n2[i,j,k] * vz[0,j,0] * a[i,j,0]
+                    co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nor_len),k] * vz[0,j,0] * a[i,j,0]
+        return co3
+    '''
+    @njit(parallel=True)
+    def numba_calc_thickness_weight(co2,n2,vz,weight):
+        shape = co2.shape
+        n_patches = shape[0]
+        n_verts = shape[1]
+        n_co = shape[2]
+        nn = n2.shape[1]-1
+        nw = weight.shape[1]-1
+        co3 = np.zeros((n_patches,n_verts,n_co))
+        for i in prange(n_patches):
+            for j in prange(n_verts):
+                for k in prange(n_co):
+                    co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nn),k] * vz[0,j,0] * weight[i,min(j,nw),0]
+        return co3
+
+    @njit(parallel=True)
+    def numba_calc_thickness(co2,n2,vz):
+        shape = co2.shape
+        n_patches = shape[0]
+        n_verts = shape[1]
+        n_co = shape[2]
+        nn = n2.shape[1]-1
+        co3 = np.zeros((n_patches,n_verts,n_co))
+        for i in prange(n_patches):
+            for j in prange(n_verts):
+                for k in prange(n_co):
+                    co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nn),k] * vz[0,j,0]
+        return co3
+
+    @njit(parallel=True)
+    def numba_interp_points(v00, v10, v01, v11, vx, vy):
+        n_patches = v00.shape[0]
+        n_verts = vx.shape[1]
+        n_verts0 = v00.shape[1]
+        n_co = v00.shape[2]
+        vxy = np.zeros((n_patches,n_verts,n_co))
+        for i in prange(n_patches):
+            for j in prange(n_verts):
+                j0 = min(j,n_verts0-1)
+                for k in prange(n_co):
+                    co0 = v00[i,j0,k] + (v10[i,j0,k] - v00[i,j0,k]) * vx[0,j,0]
+                    co1 = v01[i,j0,k] + (v11[i,j0,k] - v01[i,j0,k]) * vx[0,j,0]
+                    vxy[i,j,k] = co0 + (co1 - co0) * vy[0,j,0]
+        return vxy
+
+    @njit(parallel=True)
+    def numba_interp_points_sk(v00, v10, v01, v11, vx, vy):
+        n_patches = v00.shape[0]
+        n_sk = v00.shape[1]
+        n_verts = v00.shape[2]
+        n_co = v00.shape[3]
+        vxy = np.zeros((n_patches,n_sk,n_verts,n_co))
+        for i in prange(n_patches):
+            for sk in prange(n_sk):
+                for j in prange(n_verts):
+                    for k in prange(n_co):
+                        co0 = v00[i,sk,j,k] + (v10[i,sk,j,k] - v00[i,sk,j,k]) * vx[0,sk,j,0]
+                        co1 = v01[i,sk,j,k] + (v11[i,sk,j,k] - v01[i,sk,j,k]) * vx[0,sk,j,0]
+                        vxy[i,sk,j,k] = co0 + (co1 - co0) * vy[0,sk,j,0]
+        return vxy
+
+    @njit
+    def numba_lerp(v0, v1, x):
+        return v0 + (v1 - v0) * x
+
+    @njit
     def numba_lerp2(v00, v10, v01, v11, vx, vy):
+        co0 = numba_lerp(v00, v10, vx)
+        co1 = numba_lerp(v01, v11, vx)
+        co2 = numba_lerp(co0, co1, vy)
+        return co2
+
+    @njit(parallel=True)
+    def numba_lerp2_________________(v00, v10, v01, v11, vx, vy):
         ni = len(v00)
         nj = len(v00[0])
         nk = len(v00[0][0])

@@ -202,12 +202,14 @@ class polyhedra_wireframe(Operator):
                         faces2.append(-(f2.index+1))
                         normals2.append(-f2.normal)
 
+
+
                 # find first polyhedra (positive)
                 plane_x = f1.normal                     # normal
                 plane_y = plane_x.cross(edge_vec1)      # tangent face perp edge
                 id1 = (f1.index+1)
 
-                min_angle0 = 10
+                min_angle0 = 10000
 
                 # check consistent faces
                 if id1 not in done:
@@ -219,15 +221,17 @@ class polyhedra_wireframe(Operator):
                         if angle < min_angle:
                             id2 = i2
                             min_angle = angle
-                    done.append(id2)
-                    add = True
+                    if id2: done.append(id2)
+                    new_poly = True
+                    # add to existing polyhedron
                     for p in polyhedra:
                         if id1 in p or id2 in p:
-                            add = False
+                            new_poly = False
                             if id2 not in p: p.append(id2)
                             if id1 not in p: p.append(id1)
                             break
-                    if add: polyhedra.append([id1, id2])
+                    # start new polyhedron
+                    if new_poly: polyhedra.append([id1, id2])
 
                 # find second polyhedra (negative)
                 plane_x = -f1.normal                    # normal
@@ -272,6 +276,7 @@ class polyhedra_wireframe(Operator):
 
         end_time = time.time()
         print('Tissue: Polyhedra wireframe, found {} polyhedra in {:.4f} sec'.format(len(polyhedra), end_time-start_time))
+
 
         delete_faces = []
         wireframe_faces = []
@@ -349,6 +354,12 @@ class polyhedra_wireframe(Operator):
 
         end_time = time.time()
         print('Tissue: Polyhedra wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
+
+        poly_me = me.copy()
+        bm1.to_mesh(poly_me)
+        poly_me.update()
+        new_ob = bpy.data.objects.new("Polyhedra", poly_me)
+        context.collection.objects.link(new_ob)
 
         ############# FRAME #############
         bm1.faces.index_update()

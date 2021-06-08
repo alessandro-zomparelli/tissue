@@ -196,6 +196,38 @@ class tissue_to_curve_prop(PropertyGroup):
         description='Convert only Sharp edges',
         update = anim_curve_active
         )
+    pattern_depth : FloatProperty(
+        name="Depth",
+        default=0.02,
+        min=0,
+        soft_max=10,
+        description="Displacement pattern depth",
+        update = anim_curve_active
+        )
+    pattern_offset : FloatProperty(
+        name="Offset",
+        default=0,
+        soft_min=-1,
+        soft_max=1,
+        description="Displacement pattern offset",
+        update = anim_curve_active
+        )
+    pattern0 : IntProperty(
+        name="Step 0",
+        default=0,
+        min=0,
+        soft_max=10,
+        description="Pattern step 0",
+        update = anim_curve_active
+        )
+    pattern1 : IntProperty(
+        name="Step 1",
+        default=0,
+        min=0,
+        soft_max=10,
+        description="Pattern step 1",
+        update = anim_curve_active
+        )
 
 class tissue_convert_to_curve(Operator):
     bl_idname = "object.tissue_convert_to_curve"
@@ -299,6 +331,34 @@ class tissue_convert_to_curve(Operator):
         name="Only Sharp Edges",
         description='Convert only Sharp edges'
         )
+    pattern_depth : FloatProperty(
+        name="Depth",
+        default=0.02,
+        min=0,
+        soft_max=10,
+        description="Displacement pattern depth"
+        )
+    pattern_offset : FloatProperty(
+        name="Offset",
+        default=0,
+        soft_min=-1,
+        soft_max=1,
+        description="Displacement pattern offset"
+        )
+    pattern0 : IntProperty(
+        name="Step 0",
+        default=0,
+        min=0,
+        soft_max=10,
+        description="Pattern step 0"
+        )
+    pattern1 : IntProperty(
+        name="Step 1",
+        default=0,
+        min=0,
+        soft_max=10,
+        description="Pattern step 1"
+        )
 
     @classmethod
     def poll(cls, context):
@@ -385,6 +445,14 @@ class tissue_convert_to_curve(Operator):
         col.separator()
         col.label(text='Clean curves:')
         col.prop(self, "clean_distance")
+        col.separator()
+        col.label(text='Displacement Pattern:')
+        row = col.row(align=True)
+        row.prop(self, "pattern0")
+        row.prop(self, "pattern1")
+        row = col.row(align=True)
+        row.prop(self, "pattern_depth")
+        row.prop(self, "pattern_offset")
 
     def execute(self, context):
         ob = context.active_object
@@ -419,6 +487,10 @@ class tissue_convert_to_curve(Operator):
         props.periodic_selection = self.periodic_selection
         props.bounds_selection = self.bounds_selection
         props.only_sharp = self.only_sharp
+        props.pattern0 = self.pattern0
+        props.pattern1 = self.pattern1
+        props.pattern_depth = self.pattern_depth
+        props.pattern_offset = self.pattern_offset
 
         new_ob.tissue.bool_lock = False
 
@@ -516,8 +588,8 @@ class tissue_convert_to_curve_update(Operator):
                             sharp_verts.append(edge.vertices[1])
                     todo_edges = _todo_edges
 
-                if props.bounds_selection == 'BOUNDS': todo_edges = [e for e in todo_edges if e.is_boundary]
-                elif props.bounds_selection == 'INNER': todo_edges = [e for e in todo_edges if not e.is_boundary]
+                if props.bounds_selection == 'BOUNDS': todo_edges = [e for e in todo_edges if len(e.link_faces)<2]
+                elif props.bounds_selection == 'INNER': todo_edges = [e for e in todo_edges if len(e.link_faces)>1]
 
                 if props.mode == 'EDGES':
                     ordered_points = [[e.verts[0].index, e.verts[1].index] for e in todo_edges]
@@ -596,7 +668,10 @@ class tissue_convert_to_curve_update(Operator):
                     #curve_tilt.append(np.arccos(nor[2]))
                 tilt.append(curve_tilt)
             '''
-            update_curve_from_pydata(ob.data, verts, weight, ordered_points, merge_distance=props.clean_distance)
+            depth = props.pattern_depth
+            offset = props.pattern_offset
+            pattern = [props.pattern0,props.pattern1]
+            update_curve_from_pydata(ob.data, verts, normals, weight, ordered_points, merge_distance=props.clean_distance, pattern=pattern, depth=depth, offset=offset)
 
 
             bpy.data.objects.remove(ob0)
@@ -693,7 +768,7 @@ class TISSUE_PT_convert_to_curve(Panel):
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
                 col.separator()
-                
+
         col.label(text='Spline Type:')
         row = col.row(align=True)
         row.prop(
@@ -718,3 +793,11 @@ class TISSUE_PT_convert_to_curve(Panel):
         col.separator()
         col.label(text='Clean Curves:')
         col.prop(props, "clean_distance")
+        col.separator()
+        col.label(text='Displacement Pattern:')
+        row = col.row(align=True)
+        row.prop(props, "pattern0")
+        row.prop(props, "pattern1")
+        row = col.row(align=True)
+        row.prop(props, "pattern_depth")
+        row.prop(props, "pattern_offset")
