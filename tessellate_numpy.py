@@ -1480,7 +1480,7 @@ class tissue_tessellate(Operator):
             default=0,
             min=-1,
             max=1,
-            description="0 means no anysotropy, -1 represent the U direction, while 1 represent the V direction"
+            description="0 means no anisotropy, -1 represent the U direction, while 1 represent the V direction"
             )
     vertex_group_smooth_normals : StringProperty(
             name="Smooth Normals weight", default='',
