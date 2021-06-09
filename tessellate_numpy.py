@@ -246,9 +246,14 @@ def tessellate_patch(props):
                         kd.insert(v, i)
                     kd.balance()
                     step_dist = [neg_step_dist, pos_step_dist]
+                    print(step_dist)
                     mult = 1
                     sign = [-1,1]
                     for sgn, stp in zip(sign, step_dist):
+                        if stp == 0:
+                            if sgn == 1: verts0_normal_pos = verts0_normal
+                            if sgn == -1: verts0_normal_neg = verts0_normal
+                            continue
                         for i in range(even_thickness_iter):
                             test_dist = stp * mult
                             test_pts = verts0_co + verts0_normal * test_dist * sgn
