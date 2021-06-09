@@ -246,7 +246,6 @@ def tessellate_patch(props):
                         kd.insert(v, i)
                     kd.balance()
                     step_dist = [neg_step_dist, pos_step_dist]
-                    print(step_dist)
                     mult = 1
                     sign = [-1,1]
                     for sgn, stp in zip(sign, step_dist):
