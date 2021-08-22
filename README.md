@@ -7,7 +7,7 @@ Tissue is already shipped with both Blender. However I recommend to update the d
 
 ### Blender 2.93
 
-Tissue v0.3.50 for Blender 2.93 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-50
+Tissue v0.3.51 for Blender 2.93 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-51
 
 Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b290-dev
 
