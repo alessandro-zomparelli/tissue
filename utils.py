@@ -687,18 +687,19 @@ def tessellate_prepare_component(ob1, props):
                 cut_edges = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMEdge]
                 cut_verts = [g for g in bisect['geom_cut'] if type(g)==bmesh.types.BMVert]
 
-                for e in cut_edges:
-                    seam = True
-                    # Prevent glitches
-                    for e1 in original_edges:
-                        match_00 = (e.verts[0].co-e1.verts[0].co).length < thres
-                        match_11 = (e.verts[1].co-e1.verts[1].co).length < thres
-                        match_01 = (e.verts[0].co-e1.verts[1].co).length < thres
-                        match_10 = (e.verts[1].co-e1.verts[0].co).length < thres
-                        if (match_00 and match_11) or (match_01 and match_10):
-                            seam = False
-                            break
-                    e.seam = seam
+                if bound!='CLIP':
+                    for e in cut_edges:
+                        seam = True
+                        # Prevent glitches
+                        for e1 in original_edges:
+                            match_00 = (e.verts[0].co-e1.verts[0].co).length < thres
+                            match_11 = (e.verts[1].co-e1.verts[1].co).length < thres
+                            match_01 = (e.verts[0].co-e1.verts[1].co).length < thres
+                            match_10 = (e.verts[1].co-e1.verts[0].co).length < thres
+                            if (match_00 and match_11) or (match_01 and match_10):
+                                seam = False
+                                break
+                        e.seam = seam
 
                 if bound == 'CYCLIC':
                     geom_verts = []

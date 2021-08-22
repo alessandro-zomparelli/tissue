@@ -808,9 +808,9 @@ def tessellate_patch(props):
                 #vy_nor = uv_co[:,1]#.reshape((1,n_verts1,1))
 
                 # grid coordinates
-                np_u = np.maximum(vx_nor//step, 0).astype('int')
+                np_u = np.clip(vx_nor//step, 0, sides).astype('int')
                 #np_v = np.maximum(vy_nor//step, 0).astype('int')
-                np_u1 = np.minimum(np_u+1, sides).astype('int')
+                np_u1 = np.clip(np_u+1, 0, sides).astype('int')
                 #np_v1 = np.minimum(np_v+1, sides).astype('int')
 
                 vx_nor = (vx_nor - np_u * step)/step
@@ -883,10 +883,11 @@ def tessellate_patch(props):
             tt_sk = time.time()
             n_sk = len(sk_uv_quads)
             # ids of face corners for each vertex (n_sk, n_verts1, 4)
-            np_u = sk_uv_quads[:,:,0][:,None,:]
-            np_v = sk_uv_quads[:,:,1][:,None,:]
-            np_u1 = sk_uv_quads[:,:,2][:,None,:]
-            np_v1 = sk_uv_quads[:,:,3][:,None,:]
+            np_u = np.clip(sk_uv_quads[:,:,0], 0, sides).astype('int')[:,None,:]
+            np_v = np.clip(sk_uv_quads[:,:,1], 0, sides).astype('int')[:,None,:]
+            np_u1 = np.clip(sk_uv_quads[:,:,2], 0, sides).astype('int')[:,None,:]
+            np_v1 = np.clip(sk_uv_quads[:,:,3], 0, sides).astype('int')[:,None,:]
+            print(np_v1)
             # face corners for each vertex  (n_patches, n_sk, n_verts1, 4)
             v00 = verts_xyz[:,np_u,np_v].reshape((n_patches,n_sk,n_verts1,3))#.swapaxes(0,1)
             v10 = verts_xyz[:,np_u1,np_v].reshape((n_patches,n_sk,n_verts1,3))#.swapaxes(0,1)
