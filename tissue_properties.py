@@ -572,7 +572,7 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Fill inner faces with Fan tessellation",
             update = anim_tessellate_active
             )
-    frame_boundary_mat : IntProperty(
+    boundary_mat_offset : IntProperty(
             name="Material Offset",
             default=0,
             description="Material Offset for boundaries (with Multi Components or Material ID)",
@@ -806,6 +806,16 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Invert the vertex group influence",
             update = anim_tessellate_active
             )
+    boundary_variable_offset : BoolProperty(
+            name="Boundary Variable Offset", default=False,
+            description="Additional material offset based on the number of boundary vertices",
+            update = anim_tessellate_active
+            )
+    auto_rotate_boundary : BoolProperty(
+            name="Automatic Rotation", default=False,
+            description="Automatically rotate the boundary faces",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -859,7 +869,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.frame_mode = operator.frame_mode
     ob.tissue_tessellate.frame_boundary = operator.frame_boundary
     ob.tissue_tessellate.fill_frame = operator.fill_frame
-    ob.tissue_tessellate.frame_boundary_mat = operator.frame_boundary_mat
+    ob.tissue_tessellate.boundary_mat_offset = operator.boundary_mat_offset
     ob.tissue_tessellate.fill_frame_mat = operator.fill_frame_mat
     ob.tissue_tessellate.cap_material_offset = operator.cap_material_offset
     ob.tissue_tessellate.patch_subs = operator.patch_subs
@@ -890,6 +900,8 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.normals_z = operator.normals_z
     ob.tissue_tessellate.vertex_group_scale_normals = operator.vertex_group_scale_normals
     ob.tissue_tessellate.invert_vertex_group_scale_normals = operator.invert_vertex_group_scale_normals
+    ob.tissue_tessellate.boundary_variable_offset = operator.boundary_variable_offset
+    ob.tissue_tessellate.auto_rotate_boundary = operator.auto_rotate_boundary
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -937,7 +949,7 @@ def load_parameters(operator, ob):
     operator.patch_subs = ob.tissue_tessellate.patch_subs
     operator.frame_boundary = ob.tissue_tessellate.frame_boundary
     operator.fill_frame = ob.tissue_tessellate.fill_frame
-    operator.frame_boundary_mat = ob.tissue_tessellate.frame_boundary_mat
+    operator.boundary_mat_offset = ob.tissue_tessellate.boundary_mat_offset
     operator.fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
     operator.frame_thickness = ob.tissue_tessellate.frame_thickness
     operator.frame_mode = ob.tissue_tessellate.frame_mode
@@ -968,6 +980,8 @@ def load_parameters(operator, ob):
     operator.normals_z = ob.tissue_tessellate.normals_z
     operator.vertex_group_scale_normals = ob.tissue_tessellate.vertex_group_scale_normals
     operator.invert_vertex_group_scale_normals = ob.tissue_tessellate.invert_vertex_group_scale_normals
+    operator.boundary_variable_offset = ob.tissue_tessellate.boundary_variable_offset
+    operator.auto_rotate_boundary = ob.tissue_tessellate.auto_rotate_boundary
     return ob
 
 def props_to_dict(ob):
@@ -1006,7 +1020,7 @@ def props_to_dict(ob):
     tessellate_dict['frame_mode'] = props.frame_mode
     tessellate_dict['frame_boundary'] = props.frame_boundary
     tessellate_dict['fill_frame'] = props.fill_frame
-    tessellate_dict['frame_boundary_mat'] = props.frame_boundary_mat
+    tessellate_dict['boundary_mat_offset'] = props.boundary_mat_offset
     tessellate_dict['fill_frame_mat'] = props.fill_frame_mat
     tessellate_dict['vertex_group_thickness'] = props.vertex_group_thickness
     tessellate_dict['invert_vertex_group_thickness'] = props.invert_vertex_group_thickness
@@ -1034,6 +1048,8 @@ def props_to_dict(ob):
     tessellate_dict["normals_z"] = props.normals_z
     tessellate_dict["vertex_group_scale_normals"] = props.vertex_group_scale_normals
     tessellate_dict["invert_vertex_group_scale_normals"] = props.invert_vertex_group_scale_normals
+    tessellate_dict["boundary_variable_offset"] = props.boundary_variable_offset
+    tessellate_dict["auto_rotate_boundary"] = props.auto_rotate_boundary
     return tessellate_dict
 
 def copy_tessellate_props(source_ob, target_ob):

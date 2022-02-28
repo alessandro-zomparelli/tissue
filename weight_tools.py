@@ -1498,6 +1498,12 @@ class weight_contour_mask(Operator):
         description="Threshold value")
     bool_solidify : BoolProperty(
         name="Solidify", default=True, description="Add Solidify Modifier")
+    offset : FloatProperty(
+        name="Offset", default=1, min=0, max=1,
+        description="Offset")
+    thickness : FloatProperty(
+        name="Thickness", default=0.5, soft_min=0, soft_max=1,
+        description="Thickness")
     normalize_weight : BoolProperty(
         name="Normalize Weight", default=True,
         description="Normalize weight of remaining vertices")
@@ -1698,8 +1704,8 @@ class weight_contour_mask(Operator):
         # Add Solidify
         if self.bool_solidify and True:
             ob.modifiers.new(type='SOLIDIFY', name='Solidify')
-            ob.modifiers['Solidify'].thickness = 0.05
-            ob.modifiers['Solidify'].offset = 0
+            ob.modifiers['Solidify'].thickness = self.thickness
+            ob.modifiers['Solidify'].offset = self.offset
             ob.modifiers['Solidify'].vertex_group = vertex_group_name
 
         bpy.ops.object.mode_set(mode='EDIT')
