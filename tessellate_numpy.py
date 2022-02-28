@@ -2323,7 +2323,7 @@ class TISSUE_PT_tessellate(Panel):
         col = layout.column(align=True)
         col.label(text="Generate:")
         row = col.row(align=True)
-        row.operator("object.tissue_tessellate", text='Tessellate', icon='OBJECT_DATA')
+        row.operator("object.tissue_tessellate", text='Tessellate', icon='OBJECT_DATA').component_mode = 'OBJECT'
         tss = row.operator("object.tissue_tessellate", text='', icon='OUTLINER_COLLECTION')
         tss.component_mode = 'COLLECTION'
         tss.component_coll = context.collection.name
