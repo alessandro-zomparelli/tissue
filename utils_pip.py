@@ -44,7 +44,7 @@ class Pip:
         import sys
         site_package = site.getusersitepackages()
         if not os.path.exists(site_package):
-            site_package = bpy.utils.user_resource('SCRIPTS', "site_package", create=True)
+            site_package = bpy.utils.user_resource('SCRIPTS', path="site_package", create=True)
             site.addsitedir(site_package)
         if site_package not in sys.path:
             sys.path.append(site_package)
