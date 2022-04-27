@@ -1,20 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # ---------------------------- ADAPTIVE DUPLIFACES --------------------------- #
 # ------------------------------- version 0.84 ------------------------------- #
@@ -178,7 +162,7 @@ def tessellate_patch(props):
                 use_modifiers = True
             _props['use_modifiers'] = use_modifiers
             if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, _props, add_id_layer=id_layer)
-            elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, _props)
+            elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, _props, use_modifiers)
             elif fill_mode == 'TRI': ob0_sk = convert_to_triangles(target, _props)
             elif fill_mode == 'QUAD': ob0_sk = reduce_to_quads(target, _props)
         me0_sk = ob0_sk.data
@@ -207,7 +191,7 @@ def tessellate_patch(props):
         if fill_mode == 'FAN':
             id_layer = component_mode == 'COLLECTION' and consistent_wedges
             ob0 = convert_to_fan(_ob0, _props, add_id_layer=id_layer)
-        elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, _props)
+        elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, _props, gen_modifiers)
         elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, _props)
         elif fill_mode == 'QUAD': ob0 = reduce_to_quads(_ob0, _props)
     ob0.name = "_tissue_tmp_ob0"
@@ -333,7 +317,7 @@ def tessellate_patch(props):
                 break
             else: before.modifiers.remove(m)
 
-        before_subsurf = simple_to_mesh(before)
+        before_subsurf = simple_to_mesh_mirror(before)
 
         if boundary_mat_offset != 0:
             bm=bmesh.new()
@@ -1402,7 +1386,7 @@ class tissue_tessellate(Operator):
             )
     use_origin_offset : BoolProperty(
             name="Align to Origins",
-            default=False,
+            default=True,
             description="Define offset according to components origin and local Z coordinate"
             )
 
@@ -2136,7 +2120,7 @@ class tissue_update_tessellate(Operator):
                 # remove faces from last mesh
                 bm = bmesh.new()
                 if (fill_mode == 'PATCH' or gen_modifiers) and iter == 0:
-                    last_mesh = simple_to_mesh(base_ob)#(ob0)
+                    last_mesh = simple_to_mesh_mirror(base_ob)#(ob0)
                 else:
                     last_mesh = iter_objects[-1].data.copy()
                 bm.from_mesh(last_mesh)

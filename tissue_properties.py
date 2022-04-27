@@ -655,7 +655,7 @@ class tissue_tessellate_prop(PropertyGroup):
             )
     use_origin_offset : BoolProperty(
             name="Align to Origins",
-            default=False,
+            default=True,
             description="Define offset according to components origin and local Z coordinate",
             update = anim_tessellate_active
             )
