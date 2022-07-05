@@ -1,4 +1,21 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
 
 import bpy, bmesh
 import threading
@@ -224,7 +241,6 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         #dg = bpy.context.evaluated_depsgraph_get()
         #ob_eval = ob.evaluated_get(dg)
         #me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-        me = simple_to_mesh_mirror(ob)
         new_ob = bpy.data.objects.new(ob.data.name, me)
         new_ob.location, new_ob.matrix_world = ob.location, ob.matrix_world
         if not apply_modifiers:
@@ -232,7 +248,6 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     else:
         if apply_modifiers:
             new_ob = ob.copy()
-            new_me = simple_to_mesh_mirror(ob)
             new_ob.modifiers.clear()
             new_ob.data = new_me
         else:
@@ -247,76 +262,6 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         new_ob.select_set(True)
         bpy.context.view_layer.objects.active = new_ob
     return new_ob
-
-def simple_to_mesh_mirror(ob, depsgraph=None):
-    '''
-    Convert object to mesh applying Modifiers and Shape Keys.
-    Automatically correct Faces rotation for Tessellations.
-    '''
-    if 'MIRROR' in [m.type for m in ob.modifiers]:
-
-        _ob = ob.copy()
-        _ob.name = _ob.name + "_mirror"
-        bpy.context.collection.objects.link(_ob)
-        # Store modifiers
-        mods = list(_ob.modifiers)
-        # Store visibility setting
-        mods_vis = [m.show_viewport for m in _ob.modifiers]
-        # Turn modifiers off
-        for m in _ob.modifiers:
-            m.show_viewport = False
-        while True:
-            if len(mods) == 0: break
-            remove_mods = []
-
-            for m, vis in zip(mods, mods_vis):
-                m.show_viewport = vis
-                remove_mods.append(m)
-                if m.type == 'MIRROR' and vis:
-                    n_axis = m.use_axis[0] + m.use_axis[1] + m.use_axis[2]
-                    fraction = 2**n_axis
-                    me = simple_to_mesh(_ob, depsgraph)
-                    bm = bmesh.new()
-                    bm.from_mesh(me)
-                    bm.faces.ensure_lookup_table()
-                    n_faces = len(bm.faces)
-                    if n_axis > 0:
-                        bm.faces.ensure_lookup_table()
-                        rotate_faces = bm.faces
-                        rot_index = []
-                        if n_axis == 1: fraction_val = [0,1]
-                        elif n_axis == 2: fraction_val = [0,1,1,0]
-                        elif n_axis == 3: fraction_val = [0,1,1,0,1,0,0,1]
-                        for i in fraction_val:
-                            for j in range(n_faces//fraction):
-                                rot_index.append(i)
-                        for face, shift in zip(rotate_faces, rot_index):
-                            if shift == 0: continue
-                            vs = face.verts[:]
-                            vs2 = vs[-shift:]+vs[:-shift]
-                            material_index = face.material_index
-                            bm.faces.remove(face)
-                            f2 = bm.faces.new(vs2)
-                            f2.select = True
-                            f2.material_index = material_index
-                            bm.normal_update()
-                    bm.to_mesh(me)
-                    bm.free()
-                    for rm in remove_mods:
-                        _ob.modifiers.remove(rm)
-                        _ob.data = me
-                        mods = mods[1:]
-                        mods_vis = mods_vis[1:]
-                    remove_mods = []
-                    break
-                if m == mods[-1]:
-                    mods = []
-                    me = simple_to_mesh(_ob, depsgraph)
-                    _ob.data = me
-                    _ob.modifiers.clear()
-    else:
-        me = simple_to_mesh(ob, depsgraph)
-    return me
 
 def simple_to_mesh(ob, depsgraph=None):
     '''
@@ -457,7 +402,6 @@ def get_mesh_before_subs(ob):
             hide_mods = []
             mods_visibility = []
     for m in hide_mods: m.show_viewport = False
-    me = simple_to_mesh_mirror(ob)
     for m, vis in zip(hide_mods,mods_visibility): m.show_viewport = vis
     return me, subs
 

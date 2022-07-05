@@ -6,8 +6,10 @@ http://www.co-de-it.com/wordpress/code/blender-tissue
 Tissue is already shipped with both Blender. However I recommend to update the default version downloading manually the most recent one, for more updated features and more stability.
 
 ### Blender 2.93
+### Blender 3.2
 
 Tissue v0.3.52 for Blender 2.93 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-52
+Tissue v0.3.53 for Blender 2.93 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-53
 
 Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b290-dev
 
@@ -16,6 +18,7 @@ Development branch (usually the most updated version): https://github.com/alessa
 Tissue v0.3.4 for Blender 2.79b (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-4
 
 Development branch (most updated version): https://github.com/alessandro-zomparelli/tissue/tree/dev1
+Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b310-dev
 
 
 ### Installation:
@@ -28,6 +31,7 @@ Development branch (most updated version): https://github.com/alessandro-zompare
 ### Documentation
 
 Tissue documentation for Blender 2.80: https://github.com/alessandro-zomparelli/tissue/wiki
+Tissue documentation for Blender's latest version: https://docs.blender.org/manual/en/latest/addons/mesh/tissue.html
 
 
 ### Issues

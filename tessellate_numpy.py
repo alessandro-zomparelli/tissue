@@ -1,4 +1,21 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
 
 # ---------------------------- ADAPTIVE DUPLIFACES --------------------------- #
 # ------------------------------- version 0.84 ------------------------------- #
@@ -99,6 +116,9 @@ def tessellate_patch(props):
     vertex_group_thickness = props['vertex_group_thickness']
     invert_vertex_group_thickness = props['invert_vertex_group_thickness']
     vertex_group_thickness_factor = props['vertex_group_thickness_factor']
+    vertex_group_frame_thickness = props['vertex_group_frame_thickness']
+    invert_vertex_group_frame_thickness = props['invert_vertex_group_frame_thickness']
+    vertex_group_frame_thickness_factor = props['vertex_group_frame_thickness_factor']
     vertex_group_distribution = props['vertex_group_distribution']
     invert_vertex_group_distribution = props['invert_vertex_group_distribution']
     vertex_group_distribution_factor = props['vertex_group_distribution_factor']
@@ -162,7 +182,6 @@ def tessellate_patch(props):
                 use_modifiers = True
             _props['use_modifiers'] = use_modifiers
             if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, _props, add_id_layer=id_layer)
-            elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, _props, use_modifiers)
             elif fill_mode == 'TRI': ob0_sk = convert_to_triangles(target, _props)
             elif fill_mode == 'QUAD': ob0_sk = reduce_to_quads(target, _props)
         me0_sk = ob0_sk.data
@@ -191,7 +210,6 @@ def tessellate_patch(props):
         if fill_mode == 'FAN':
             id_layer = component_mode == 'COLLECTION' and consistent_wedges
             ob0 = convert_to_fan(_ob0, _props, add_id_layer=id_layer)
-        elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, _props, gen_modifiers)
         elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, _props)
         elif fill_mode == 'QUAD': ob0 = reduce_to_quads(_ob0, _props)
     ob0.name = "_tissue_tmp_ob0"
@@ -317,7 +335,6 @@ def tessellate_patch(props):
                 break
             else: before.modifiers.remove(m)
 
-        before_subsurf = simple_to_mesh_mirror(before)
 
         if boundary_mat_offset != 0:
             bm=bmesh.new()
@@ -1386,7 +1403,6 @@ class tissue_tessellate(Operator):
             )
     use_origin_offset : BoolProperty(
             name="Align to Origins",
-            default=True,
             description="Define offset according to components origin and local Z coordinate"
             )
 
@@ -1399,6 +1415,22 @@ class tissue_tessellate(Operator):
             description="Invert the vertex group influence"
             )
     vertex_group_thickness_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0,
+            max=1,
+            description="Thickness factor to use for zero vertex group influence"
+            )
+
+    vertex_group_frame_thickness : StringProperty(
+            name="Frame thickness weight", default='',
+            description="Vertex Group used for frame thickness"
+            )
+    invert_vertex_group_frame_thickness : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence"
+            )
+    vertex_group_frame_thickness_factor : FloatProperty(
             name="Factor",
             default=0,
             min=0,
@@ -1909,6 +1941,9 @@ class tissue_update_tessellate(Operator):
             vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
             invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
             vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
+            vertex_group_frame_thickness = ob.tissue_tessellate.vertex_group_frame_thickness
+            invert_vertex_group_frame_thickness = ob.tissue_tessellate.invert_vertex_group_frame_thickness
+            vertex_group_frame_thickness_factor = ob.tissue_tessellate.vertex_group_frame_thickness_factor
             vertex_group_distribution = ob.tissue_tessellate.vertex_group_distribution
             invert_vertex_group_distribution = ob.tissue_tessellate.invert_vertex_group_distribution
             vertex_group_distribution_factor = ob.tissue_tessellate.vertex_group_distribution_factor
@@ -2120,7 +2155,6 @@ class tissue_update_tessellate(Operator):
                 # remove faces from last mesh
                 bm = bmesh.new()
                 if (fill_mode == 'PATCH' or gen_modifiers) and iter == 0:
-                    last_mesh = simple_to_mesh_mirror(base_ob)#(ob0)
                 else:
                     last_mesh = iter_objects[-1].data.copy()
                 bm.from_mesh(last_mesh)
@@ -2455,6 +2489,19 @@ class TISSUE_PT_tessellate_frame(Panel):
         row.prop(props, "frame_mode", expand=True)
         row = col.row(align=True)
         row.prop(props, "frame_thickness", icon='NONE', expand=True)
+
+        # Vertex Group Frame Thickness
+        row = col.row(align=True)
+        ob0 = props.generator
+        row.prop_search(props, 'vertex_group_frame_thickness',
+            ob0, "vertex_groups", text='')
+        col2 = row.column(align=True)
+        row2 = col2.row(align=True)
+        row2.prop(props, "invert_vertex_group_frame_thickness", text="",
+            toggle=True, icon='ARROW_LEFTRIGHT')
+        row2.prop(props, "vertex_group_frame_thickness_factor")
+        row2.enabled = props.vertex_group_frame_thickness in ob0.vertex_groups.keys()
+
         col.separator()
         row = col.row(align=True)
         row.prop(props, "fill_frame", icon='NONE')
@@ -3188,6 +3235,7 @@ class tissue_rotate_face_left(Operator):
 
 
 def convert_to_frame(ob, props, use_modifiers):
+def convert_to_frame(ob, props, use_modifiers=True):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
 
     # create bmesh
@@ -3220,6 +3268,7 @@ def convert_to_frame(ob, props, use_modifiers):
             loop_normals = [face.normal]
             selected_edges = selected_edges[1:]
             if props['bool_vertex_group']:
+            if props['bool_vertex_group'] or True:
                 n_verts = len(new_ob.data.vertices)
                 base_vg = [get_weight(vg,n_verts) for vg in new_ob.vertex_groups]
             while True:
@@ -3262,6 +3311,7 @@ def convert_to_frame(ob, props, use_modifiers):
 
     # append regular faces
     for f in original_faces:#bm.faces:
+    for f in original_faces:
         loop = list(f.verts)
         loops.append(loop)
         boundaries_mat.append([f.material_index for v in loop])
@@ -3277,6 +3327,18 @@ def convert_to_frame(ob, props, use_modifiers):
                 area /= len(linked_faces)
             else: area = 0
             verts_area.append(area)
+
+
+    if props['vertex_group_frame_thickness'] in new_ob.vertex_groups.keys():
+        vg = new_ob.vertex_groups[props['vertex_group_frame_thickness']]
+        weight_frame = get_weight_numpy(vg, len(bm.verts))
+        if props['invert_vertex_group_frame_thickness']:
+            weight_frame = 1-weight_frame
+        fact = props['vertex_group_frame_thickness_factor']
+        if fact > 0:
+            weight_frame = weight_frame*(1-fact) + fact
+    else:
+        weight_frame = np.ones((len(bm.verts)))
 
     for loop_index, loop in enumerate(loops):
         is_boundary = loop_index < len(neigh_face_center)
@@ -3302,6 +3364,7 @@ def convert_to_frame(ob, props, use_modifiers):
             tan0 = normal.cross(vec0)
             tan1 = normal.cross(vec1)
             tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']
+            tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']*weight_frame[vert.index]
             tangents.append(tangent)
 
         # calc correct direction for boundaries
@@ -3361,6 +3424,7 @@ def convert_to_frame(ob, props, use_modifiers):
     bm.to_mesh(new_ob.data)
     # propagate vertex groups
     if props['bool_vertex_group']:
+    if props['bool_vertex_group'] or True:
         base_vg = []
         for vg in new_ob.vertex_groups:
             vertex_group = []
