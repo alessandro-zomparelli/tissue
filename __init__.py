@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
 #  This program is free software; you can redistribute it and/or
@@ -33,14 +34,15 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 52),
-    "blender": (3, 1, 0),
+    "version": (0, 3, 53),
+    "blender": (3, 2, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
     "doc_url": "{BLENDER_MANUAL_URL}/addons/mesh/tissue.html",
     "tracker_url": "https://github.com/alessandro-zomparelli/tissue/issues",
-    "category": "Mesh"}
+    "category": "Mesh",
+}
 
 
 if "bpy" in locals():
