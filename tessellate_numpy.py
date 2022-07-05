@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
 #  This program is free software; you can redistribute it and/or
@@ -182,6 +181,7 @@ def tessellate_patch(props):
                 use_modifiers = True
             _props['use_modifiers'] = use_modifiers
             if fill_mode == 'FAN': ob0_sk = convert_to_fan(target, _props, add_id_layer=id_layer)
+            elif fill_mode == 'FRAME': ob0_sk = convert_to_frame(target, _props)
             elif fill_mode == 'TRI': ob0_sk = convert_to_triangles(target, _props)
             elif fill_mode == 'QUAD': ob0_sk = reduce_to_quads(target, _props)
         me0_sk = ob0_sk.data
@@ -210,6 +210,7 @@ def tessellate_patch(props):
         if fill_mode == 'FAN':
             id_layer = component_mode == 'COLLECTION' and consistent_wedges
             ob0 = convert_to_fan(_ob0, _props, add_id_layer=id_layer)
+        elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, _props)
         elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, _props)
         elif fill_mode == 'QUAD': ob0 = reduce_to_quads(_ob0, _props)
     ob0.name = "_tissue_tmp_ob0"
@@ -335,6 +336,7 @@ def tessellate_patch(props):
                 break
             else: before.modifiers.remove(m)
 
+        before_subsurf = simple_to_mesh_mirror(before)
 
         if boundary_mat_offset != 0:
             bm=bmesh.new()
@@ -1403,6 +1405,7 @@ class tissue_tessellate(Operator):
             )
     use_origin_offset : BoolProperty(
             name="Align to Origins",
+            default=False,
             description="Define offset according to components origin and local Z coordinate"
             )
 
@@ -2155,6 +2158,7 @@ class tissue_update_tessellate(Operator):
                 # remove faces from last mesh
                 bm = bmesh.new()
                 if (fill_mode == 'PATCH' or gen_modifiers) and iter == 0:
+                    last_mesh = simple_to_mesh_mirror(base_ob)#(ob0)
                 else:
                     last_mesh = iter_objects[-1].data.copy()
                 bm.from_mesh(last_mesh)
@@ -3234,7 +3238,6 @@ class tissue_rotate_face_left(Operator):
         return {'FINISHED'}
 
 
-def convert_to_frame(ob, props, use_modifiers):
 def convert_to_frame(ob, props, use_modifiers=True):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
 
@@ -3267,7 +3270,6 @@ def convert_to_frame(ob, props, use_modifiers=True):
             face_center = [face.calc_center_median()]
             loop_normals = [face.normal]
             selected_edges = selected_edges[1:]
-            if props['bool_vertex_group']:
             if props['bool_vertex_group'] or True:
                 n_verts = len(new_ob.data.vertices)
                 base_vg = [get_weight(vg,n_verts) for vg in new_ob.vertex_groups]
@@ -3310,7 +3312,6 @@ def convert_to_frame(ob, props, use_modifiers=True):
     vert_ids = []
 
     # append regular faces
-    for f in original_faces:#bm.faces:
     for f in original_faces:
         loop = list(f.verts)
         loops.append(loop)
@@ -3363,7 +3364,6 @@ def convert_to_frame(ob, props, use_modifiers=True):
             normal = face_normals[loop_index][i]
             tan0 = normal.cross(vec0)
             tan1 = normal.cross(vec1)
-            tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']
             tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']*weight_frame[vert.index]
             tangents.append(tangent)
 
@@ -3423,7 +3423,6 @@ def convert_to_frame(ob, props, use_modifiers=True):
     for f in original_faces: bm.faces.remove(f)
     bm.to_mesh(new_ob.data)
     # propagate vertex groups
-    if props['bool_vertex_group']:
     if props['bool_vertex_group'] or True:
         base_vg = []
         for vg in new_ob.vertex_groups:

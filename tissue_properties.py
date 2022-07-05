@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
 #  This program is free software; you can redistribute it and/or
@@ -655,6 +657,7 @@ class tissue_tessellate_prop(PropertyGroup):
             )
     use_origin_offset : BoolProperty(
             name="Align to Origins",
+            default=False,
             description="Define offset according to components origin and local Z coordinate",
             update = anim_tessellate_active
             )
