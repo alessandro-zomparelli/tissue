@@ -614,14 +614,15 @@ class tissue_tessellate_prop(PropertyGroup):
             name="Frame Thickness",
             default=0.2,
             min=0,
-            soft_max=2,
+            soft_max=1,
             description="Frame Thickness",
             update = anim_tessellate_active
             )
     frame_mode : EnumProperty(
             items=(
                 ('CONSTANT', 'Constant', 'Even thickness'),
-                ('RELATIVE', 'Relative', 'Frame offset depends on face areas')),
+                ('RELATIVE', 'Relative', 'Frame offset depends on face areas'),
+                ('SCALE', 'Scale', 'Toward the center of the face')),
             default='CONSTANT',
             name="Offset",
             update = anim_tessellate_active
@@ -697,6 +698,12 @@ class tissue_tessellate_prop(PropertyGroup):
             min=0,
             max=1,
             description="Frame thickness factor to use for zero vertex group influence",
+            update = anim_tessellate_active
+            )
+    face_weight_frame : BoolProperty(
+            name="Face Weight",
+            default=False,
+            description="Uniform weight for individual faces",
             update = anim_tessellate_active
             )
 
@@ -901,6 +908,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.vertex_group_frame_thickness = operator.vertex_group_frame_thickness
     ob.tissue_tessellate.invert_vertex_group_frame_thickness = operator.invert_vertex_group_frame_thickness
     ob.tissue_tessellate.vertex_group_frame_thickness_factor = operator.vertex_group_frame_thickness_factor
+    ob.tissue_tessellate.face_weight_frame = operator.face_weight_frame
     ob.tissue_tessellate.vertex_group_distribution = operator.vertex_group_distribution
     ob.tissue_tessellate.invert_vertex_group_distribution = operator.invert_vertex_group_distribution
     ob.tissue_tessellate.vertex_group_distribution_factor = operator.vertex_group_distribution_factor
@@ -984,6 +992,7 @@ def load_parameters(operator, ob):
     operator.vertex_group_frame_thickness = ob.tissue_tessellate.vertex_group_frame_thickness
     operator.invert_vertex_group_frame_thickness = ob.tissue_tessellate.invert_vertex_group_frame_thickness
     operator.vertex_group_frame_thickness_factor = ob.tissue_tessellate.vertex_group_frame_thickness_factor
+    operator.face_weight_frame = ob.tissue_tessellate.face_weight_frame
     operator.vertex_group_distribution = ob.tissue_tessellate.vertex_group_distribution
     operator.invert_vertex_group_distribution = ob.tissue_tessellate.invert_vertex_group_distribution
     operator.vertex_group_distribution_factor = ob.tissue_tessellate.vertex_group_distribution_factor
@@ -1055,6 +1064,7 @@ def props_to_dict(ob):
     tessellate_dict['vertex_group_frame_thickness'] = props.vertex_group_frame_thickness
     tessellate_dict['invert_vertex_group_frame_thickness'] = props.invert_vertex_group_frame_thickness
     tessellate_dict['vertex_group_frame_thickness_factor'] = props.vertex_group_frame_thickness_factor
+    tessellate_dict['face_weight_frame'] = props.face_weight_frame
     tessellate_dict['vertex_group_distribution'] = props.vertex_group_distribution
     tessellate_dict['invert_vertex_group_distribution'] = props.invert_vertex_group_distribution
     tessellate_dict['vertex_group_distribution_factor'] = props.vertex_group_distribution_factor

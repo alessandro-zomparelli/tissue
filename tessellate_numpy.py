@@ -118,6 +118,7 @@ def tessellate_patch(props):
     vertex_group_frame_thickness = props['vertex_group_frame_thickness']
     invert_vertex_group_frame_thickness = props['invert_vertex_group_frame_thickness']
     vertex_group_frame_thickness_factor = props['vertex_group_frame_thickness_factor']
+    face_weight_frame = props['face_weight_frame']
     vertex_group_distribution = props['vertex_group_distribution']
     invert_vertex_group_distribution = props['invert_vertex_group_distribution']
     vertex_group_distribution_factor = props['vertex_group_distribution_factor']
@@ -770,6 +771,11 @@ def tessellate_patch(props):
             if vertex_group_thickness in ob0.vertex_groups.keys():
                 vg_id = ob0.vertex_groups[vertex_group_thickness].index
                 weight_thickness = store_weight[vg_id,:,:]
+                if invert_vertex_group_thickness:
+                    weight_thickness = 1-weight_thickness
+                fact = vertex_group_thickness_factor
+                if fact > 0:
+                    weight_thickness = weight_thickness*(1-fact) + fact
             if vertex_group_smooth_normals in ob0.vertex_groups.keys():
                 vg_id = ob0.vertex_groups[vertex_group_smooth_normals].index
                 weight_smooth_normals = store_weight[vg_id,:,:]
@@ -1368,13 +1374,14 @@ class tissue_tessellate(Operator):
             name="Frame Thickness",
             default=0.2,
             min=0,
-            soft_max=2,
+            soft_max=1,
             description="Frame Thickness"
             )
     frame_mode : EnumProperty(
             items=(
                 ('CONSTANT', 'Constant', 'Even thickness'),
-                ('RELATIVE', 'Relative', 'Frame offset depends on face areas')),
+                ('RELATIVE', 'Relative', 'Frame offset depends on face areas'),
+                ('SCALE', 'Scale', 'Toward the center of the face')),
             default='CONSTANT',
             name="Offset"
             )
@@ -1439,6 +1446,11 @@ class tissue_tessellate(Operator):
             min=0,
             max=1,
             description="Thickness factor to use for zero vertex group influence"
+            )
+    face_weight_frame : BoolProperty(
+            name="Face Weight",
+            default=False,
+            description="Uniform weight for individual faces"
             )
 
     vertex_group_distribution : StringProperty(
@@ -1683,6 +1695,16 @@ class tissue_tessellate(Operator):
             row = col.row(align=True)
             row.prop(self, "frame_mode", expand=True)
             col.prop(self, "frame_thickness", text='Thickness', icon='NONE')
+            # Vertex Group Frame Thickness
+            row = col.row(align=True)
+            row.prop_search(self, 'vertex_group_frame_thickness',
+                ob0, "vertex_groups", text='')
+            col2 = row.column(align=True)
+            row2 = col2.row(align=True)
+            row2.prop(self, "invert_vertex_group_frame_thickness", text="",
+                toggle=True, icon='ARROW_LEFTRIGHT')
+            row2.prop(self, "vertex_group_frame_thickness_factor")
+            row2.enabled = self.vertex_group_frame_thickness in ob0.vertex_groups.keys()
             col.separator()
             row = col.row(align=True)
             row.prop(self, "fill_frame", icon='NONE')
@@ -1947,6 +1969,7 @@ class tissue_update_tessellate(Operator):
             vertex_group_frame_thickness = ob.tissue_tessellate.vertex_group_frame_thickness
             invert_vertex_group_frame_thickness = ob.tissue_tessellate.invert_vertex_group_frame_thickness
             vertex_group_frame_thickness_factor = ob.tissue_tessellate.vertex_group_frame_thickness_factor
+            face_weight_frame = ob.tissue_tessellate.face_weight_frame
             vertex_group_distribution = ob.tissue_tessellate.vertex_group_distribution
             invert_vertex_group_distribution = ob.tissue_tessellate.invert_vertex_group_distribution
             vertex_group_distribution_factor = ob.tissue_tessellate.vertex_group_distribution_factor
@@ -2505,6 +2528,9 @@ class TISSUE_PT_tessellate_frame(Panel):
             toggle=True, icon='ARROW_LEFTRIGHT')
         row2.prop(props, "vertex_group_frame_thickness_factor")
         row2.enabled = props.vertex_group_frame_thickness in ob0.vertex_groups.keys()
+        row = col.row(align=True)
+        row.prop(props, "face_weight_frame")
+        row.enabled = props.vertex_group_frame_thickness in ob0.vertex_groups.keys()
 
         col.separator()
         row = col.row(align=True)
@@ -2867,6 +2893,8 @@ class TISSUE_PT_tessellate_options(Panel):
     def draw(self, context):
         ob = context.object
         props = ob.tissue_tessellate
+        ob0 = props.generator
+        ob1 = props.component
         layout = self.layout
         layout.use_property_split = True
         layout.use_property_decorate = False  # No animation.
@@ -3237,7 +3265,6 @@ class tissue_rotate_face_left(Operator):
 
         return {'FINISHED'}
 
-
 def convert_to_frame(ob, props, use_modifiers=True):
     new_ob = convert_object_to_mesh(ob, use_modifiers, True)
 
@@ -3257,6 +3284,7 @@ def convert_to_frame(ob, props, use_modifiers=True):
     boundaries_mat = []
     neigh_face_center = []
     face_normals = []
+
     # append boundary loops
     if props['frame_boundary']:
         #selected_edges = [e for e in bm.edges if e.select]
@@ -3329,8 +3357,8 @@ def convert_to_frame(ob, props, use_modifiers=True):
             else: area = 0
             verts_area.append(area)
 
-
-    if props['vertex_group_frame_thickness'] in new_ob.vertex_groups.keys():
+    bool_weight_thick = props['vertex_group_frame_thickness'] in new_ob.vertex_groups.keys()
+    if bool_weight_thick:
         vg = new_ob.vertex_groups[props['vertex_group_frame_thickness']]
         weight_frame = get_weight_numpy(vg, len(bm.verts))
         if props['invert_vertex_group_frame_thickness']:
@@ -3341,6 +3369,9 @@ def convert_to_frame(ob, props, use_modifiers=True):
     else:
         weight_frame = np.ones((len(bm.verts)))
 
+    centers_neigh = []
+    centers_id = []
+    verts_count = len(bm.verts)-1
     for loop_index, loop in enumerate(loops):
         is_boundary = loop_index < len(neigh_face_center)
         materials = boundaries_mat[loop_index]
@@ -3364,7 +3395,7 @@ def convert_to_frame(ob, props, use_modifiers=True):
             normal = face_normals[loop_index][i]
             tan0 = normal.cross(vec0)
             tan1 = normal.cross(vec1)
-            tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']*weight_frame[vert.index]
+            tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']#*weight_frame[vert.index]
             tangents.append(tangent)
 
         # calc correct direction for boundaries
@@ -3378,12 +3409,26 @@ def convert_to_frame(ob, props, use_modifiers=True):
                 dir_val += tangent.dot(vert.co - surf_point)
             if dir_val > 0: mult = 1
 
+        if props['frame_mode'] == 'SCALE':
+            loop_center = Vector((0,0,0))
+            for v in loop_ext[1:]:
+                loop_center += v.co
+            loop_center /= len(loop_ext[1:])
+
         # add vertices
         for i in range(len(loop)):
             vert = loop_ext[i+1]
             if props['frame_mode'] == 'RELATIVE': area = verts_area[vert.index]
             else: area = 1
-            new_co = vert.co + tangents[i] * mult * area
+            if props['face_weight_frame'] == True:
+                weight_factor = [weight_frame[v.index] for v in loop_ext]
+                weight_factor = sum(weight_factor)/len(weight_factor)
+            else:
+                weight_factor = weight_frame[vert.index]
+            if props['frame_mode'] == 'SCALE' and not is_boundary:
+                new_co = vert.co + (loop_center-vert.co)*weight_factor*props['frame_thickness']
+            else:
+                new_co = vert.co + tangents[i] * mult * area * weight_factor
             # add vertex
             new_vert = bm.verts.new(new_co)
             new_loop.append(new_vert)
@@ -3405,11 +3450,19 @@ def convert_to_frame(ob, props, use_modifiers=True):
              new_faces.append(new_face)
         # fill frame
         if props['fill_frame'] and not is_boundary:
+            center_neigh = []
             n_verts = len(new_loop)-1
             loop_center = Vector((0,0,0))
-            for v in new_loop[1:]: loop_center += v.co
+            for v in new_loop[1:]:
+                loop_center += v.co
+                verts_count += 1
+                center_neigh.append(verts_count)
+            centers_neigh.append(center_neigh)
             loop_center /= n_verts
             center = bm.verts.new(loop_center)
+            verts_count += 1
+            vert_ids.append(center.index)
+            centers_id.append(verts_count)
             for i in range(n_verts):
                 v0 = new_loop[i+1]
                 v1 = new_loop[i]
@@ -3418,12 +3471,10 @@ def convert_to_frame(ob, props, use_modifiers=True):
                 new_face.material_index = materials[i] + props['fill_frame_mat']
                 new_face.select = True
                 new_faces.append(new_face)
-    #bpy.ops.object.mode_set(mode='OBJECT')
-    #for f in bm.faces: f.select_set(f not in new_faces)
     for f in original_faces: bm.faces.remove(f)
     bm.to_mesh(new_ob.data)
     # propagate vertex groups
-    if props['bool_vertex_group'] or True:
+    if props['bool_vertex_group'] or bool_weight_thick:
         base_vg = []
         for vg in new_ob.vertex_groups:
             vertex_group = []
@@ -3437,6 +3488,13 @@ def convert_to_frame(ob, props, use_modifiers=True):
         for vg_id, vg in enumerate(new_ob.vertex_groups):
             for ii, jj in zip(vert_ids, new_vert_ids):
                 vg.add([jj], base_vg[vg_id][ii], 'REPLACE')
+            # set weight for the central points
+            if props['fill_frame']:
+                for cn, ii in zip(centers_neigh, centers_id):
+                    cw = [vg.weight(cni) for cni in cn]
+                    cw = sum(cw)/len(cw)
+                    vg.add([ii], cw, 'REPLACE')
+
     new_ob.data.update()
     bm.free()
     return new_ob
