@@ -378,6 +378,7 @@ def tessellate_patch(props):
         if not vertex_group_rotation in ob0.vertex_groups.keys():
             rotation_mode = 'DEFAULT'
 
+    bool_vertex_group = bool_vertex_group and len(ob0.vertex_groups.keys()) > 0
     bool_weight_smooth_normals = vertex_group_smooth_normals in ob0.vertex_groups.keys()
     bool_weight_thickness = vertex_group_thickness in ob0.vertex_groups.keys()
     bool_weight_distribution = vertex_group_distribution in ob0.vertex_groups.keys()
@@ -1377,11 +1378,18 @@ class tissue_tessellate(Operator):
             soft_max=1,
             description="Frame Thickness"
             )
+    frame_boundary_thickness : FloatProperty(
+            name="Frame Boundary Thickness",
+            default=0,
+            min=0,
+            soft_max=1,
+            description="Frame Boundary Thickness (if zero, it uses the Frame Thickness instead)"
+            )
     frame_mode : EnumProperty(
             items=(
                 ('CONSTANT', 'Constant', 'Even thickness'),
                 ('RELATIVE', 'Relative', 'Frame offset depends on face areas'),
-                ('SCALE', 'Scale', 'Toward the center of the face')),
+                ('CENTER', 'Center', 'Toward the center of the face (uses Incenter for Triangles)')),
             default='CONSTANT',
             name="Offset"
             )
@@ -1412,7 +1420,7 @@ class tissue_tessellate(Operator):
             )
     use_origin_offset : BoolProperty(
             name="Align to Origins",
-            default=False,
+            default=True,
             description="Define offset according to components origin and local Z coordinate"
             )
 
@@ -1449,7 +1457,7 @@ class tissue_tessellate(Operator):
             )
     face_weight_frame : BoolProperty(
             name="Face Weight",
-            default=False,
+            default=True,
             description="Uniform weight for individual faces"
             )
 
@@ -1717,6 +1725,10 @@ class tissue_tessellate(Operator):
             col2 = row.column(align=True)
             col2.prop(self, "boundary_mat_offset", icon='NONE')
             col2.enabled = self.frame_boundary and show_frame_mat
+            if self.frame_boundary:
+                col.separator()
+                row = col.row(align=True)
+                col.prop(self, "frame_boundary_thickness", icon='NONE')
 
         if self.rotation_mode == 'UV':
             uv_error = False
@@ -1953,6 +1965,7 @@ class tissue_update_tessellate(Operator):
             bridge_edges_crease = ob.tissue_tessellate.bridge_edges_crease
             bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
             frame_thickness = ob.tissue_tessellate.frame_thickness
+            frame_boundary_thickness = ob.tissue_tessellate.frame_boundary_thickness
             frame_mode = ob.tissue_tessellate.frame_mode
             frame_boundary = ob.tissue_tessellate.frame_boundary
             fill_frame = ob.tissue_tessellate.fill_frame
@@ -2544,6 +2557,10 @@ class TISSUE_PT_tessellate_frame(Panel):
         col2 = row.column(align=True)
         col2.prop(props, "boundary_mat_offset", icon='NONE')
         col2.enabled = props.frame_boundary and show_frame_mat
+        if props.frame_boundary:
+            col.separator()
+            row = col.row(align=True)
+            col.prop(props, "frame_boundary_thickness", icon='NONE')
 
 
 class TISSUE_PT_tessellate_component(Panel):
@@ -3395,7 +3412,11 @@ def convert_to_frame(ob, props, use_modifiers=True):
             normal = face_normals[loop_index][i]
             tan0 = normal.cross(vec0)
             tan1 = normal.cross(vec1)
-            tangent = (tan0 + tan1).normalized()/sin(ang)*props['frame_thickness']#*weight_frame[vert.index]
+            if is_boundary and props['frame_boundary_thickness'] != 0:
+                thickness = props['frame_boundary_thickness']
+            else:
+                thickness = props['frame_thickness']
+            tangent = (tan0 + tan1).normalized()/sin(ang)*thickness
             tangents.append(tangent)
 
         # calc correct direction for boundaries
@@ -3409,30 +3430,54 @@ def convert_to_frame(ob, props, use_modifiers=True):
                 dir_val += tangent.dot(vert.co - surf_point)
             if dir_val > 0: mult = 1
 
-        if props['frame_mode'] == 'SCALE':
-            loop_center = Vector((0,0,0))
-            for v in loop_ext[1:]:
-                loop_center += v.co
-            loop_center /= len(loop_ext[1:])
+        if props['frame_mode'] == 'CENTER':
+            # uses incenter for triangular loops and average point for generic  polygons
+            polygon_loop = list(dict.fromkeys(loop_ext))
+            if len(polygon_loop) == 3:
+                loop_center = incenter([v.co for v in polygon_loop])
+            else:
+                loop_center = Vector((0,0,0))
+                for v in polygon_loop:
+                    loop_center += v.co
+                loop_center /= len(polygon_loop)
 
         # add vertices
+        central_vertex = None
+        skip_vertex = False
         for i in range(len(loop)):
             vert = loop_ext[i+1]
             if props['frame_mode'] == 'RELATIVE': area = verts_area[vert.index]
             else: area = 1
-            if props['face_weight_frame'] == True:
+            if props['face_weight_frame']:
                 weight_factor = [weight_frame[v.index] for v in loop_ext]
                 weight_factor = sum(weight_factor)/len(weight_factor)
             else:
                 weight_factor = weight_frame[vert.index]
-            if props['frame_mode'] == 'SCALE' and not is_boundary:
-                new_co = vert.co + (loop_center-vert.co)*weight_factor*props['frame_thickness']
+            if props['frame_mode'] == 'CENTER':
+                if is_boundary:
+                    new_co = vert.co + tangents[i] * mult * weight_factor
+                else:
+                    factor = weight_factor*props['frame_thickness']
+                    if factor == 1 and props['frame_thickness']:
+                        skip_vertex = True
+                    else:
+                        new_co = vert.co + (loop_center-vert.co)*factor
             else:
                 new_co = vert.co + tangents[i] * mult * area * weight_factor
             # add vertex
-            new_vert = bm.verts.new(new_co)
+            if skip_vertex:
+                # prevents dublicates in the center of the loop
+                if central_vertex:
+                    new_vert = central_vertex
+                else:
+                    central_vertex = bm.verts.new(loop_center)
+                    new_vert = central_vertex
+                    vert_ids.append(vert.index)
+                skip_vertex = False
+            else:
+                new_vert = bm.verts.new(new_co)
+                vert_ids.append(vert.index)
             new_loop.append(new_vert)
-            vert_ids.append(vert.index)
         new_loop.append(new_loop[0])
 
         # add faces
@@ -3444,6 +3489,7 @@ def convert_to_frame(ob, props, use_modifiers=True):
              v3 = new_loop[i]
              face_verts = [v1,v0,v3,v2]
              if mult == -1: face_verts = [v0,v1,v2,v3]
+             face_verts = list(dict.fromkeys(face_verts))
              new_face = bm.faces.new(face_verts)
              new_face.material_index = materials[i+1]
              new_face.select = True
@@ -3467,6 +3513,8 @@ def convert_to_frame(ob, props, use_modifiers=True):
                 v0 = new_loop[i+1]
                 v1 = new_loop[i]
                 face_verts = [v1,v0,center]
+                face_verts = list(dict.fromkeys(face_verts))
+                if len(face_verts) < 3: continue
                 new_face = bm.faces.new(face_verts)
                 new_face.material_index = materials[i] + props['fill_frame_mat']
                 new_face.select = True

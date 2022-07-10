@@ -618,11 +618,19 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Frame Thickness",
             update = anim_tessellate_active
             )
+    frame_boundary_thickness : FloatProperty(
+            name="Frame Boundary Thickness",
+            default=0,
+            min=0,
+            soft_max=1,
+            description="Frame Boundary Thickness (when zero it uses the Frame Thickness instead)",
+            update = anim_tessellate_active
+            )
     frame_mode : EnumProperty(
             items=(
                 ('CONSTANT', 'Constant', 'Even thickness'),
                 ('RELATIVE', 'Relative', 'Frame offset depends on face areas'),
-                ('SCALE', 'Scale', 'Toward the center of the face')),
+                ('CENTER', 'Center', 'Toward the center of the face (uses Incenter for Triangles)')),
             default='CONSTANT',
             name="Offset",
             update = anim_tessellate_active
@@ -658,7 +666,7 @@ class tissue_tessellate_prop(PropertyGroup):
             )
     use_origin_offset : BoolProperty(
             name="Align to Origins",
-            default=False,
+            default=True,
             description="Define offset according to components origin and local Z coordinate",
             update = anim_tessellate_active
             )
@@ -702,7 +710,7 @@ class tissue_tessellate_prop(PropertyGroup):
             )
     face_weight_frame : BoolProperty(
             name="Face Weight",
-            default=False,
+            default=True,
             description="Uniform weight for individual faces",
             update = anim_tessellate_active
             )
@@ -894,6 +902,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bridge_cuts = operator.bridge_cuts
     ob.tissue_tessellate.bridge_smoothness = operator.bridge_smoothness
     ob.tissue_tessellate.frame_thickness = operator.frame_thickness
+    ob.tissue_tessellate.frame_boundary_thickness = operator.frame_boundary_thickness
     ob.tissue_tessellate.frame_mode = operator.frame_mode
     ob.tissue_tessellate.frame_boundary = operator.frame_boundary
     ob.tissue_tessellate.fill_frame = operator.fill_frame
@@ -984,6 +993,7 @@ def load_parameters(operator, ob):
     operator.boundary_mat_offset = ob.tissue_tessellate.boundary_mat_offset
     operator.fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
     operator.frame_thickness = ob.tissue_tessellate.frame_thickness
+    operator.frame_boundary_thickness = ob.tissue_tessellate.frame_boundary_thickness
     operator.frame_mode = ob.tissue_tessellate.frame_mode
     operator.use_origin_offset = ob.tissue_tessellate.use_origin_offset
     operator.vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
@@ -1053,6 +1063,7 @@ def props_to_dict(ob):
     tessellate_dict['even_thickness'] = props.even_thickness
     tessellate_dict['even_thickness_iter'] = props.even_thickness_iter
     tessellate_dict['frame_thickness'] = props.frame_thickness
+    tessellate_dict['frame_boundary_thickness'] = props.frame_boundary_thickness
     tessellate_dict['frame_mode'] = props.frame_mode
     tessellate_dict['frame_boundary'] = props.frame_boundary
     tessellate_dict['fill_frame'] = props.fill_frame
@@ -1090,6 +1101,9 @@ def props_to_dict(ob):
     tessellate_dict["invert_vertex_group_scale_normals"] = props.invert_vertex_group_scale_normals
     tessellate_dict["boundary_variable_offset"] = props.boundary_variable_offset
     tessellate_dict["auto_rotate_boundary"] = props.auto_rotate_boundary
+    tessellate_dict["merge"] = props.merge
+    tessellate_dict["merge_thres"] = props.merge_thres
+    tessellate_dict["merge_open_edges_only"] = props.merge_open_edges_only
     return tessellate_dict
 
 def copy_tessellate_props(source_ob, target_ob):

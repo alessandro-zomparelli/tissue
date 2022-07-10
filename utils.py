@@ -181,6 +181,18 @@ def vector_rotation(vec):
     if ang < 0: ang = 2*pi + ang
     return ang
 
+def incenter(vecs):
+    lengths = x = y = z = 0
+    mid = len(vecs)//2+1
+    for vi, vj, vk in zip(vecs, vecs[1:]+vecs[:1], vecs[mid:]+vecs[:mid]):
+        length = (vj-vi).length
+        lengths += length
+        x += length*vk.x
+        y += length*vk.y
+        z += length*vk.z
+    inc = Vector((x/lengths, y/lengths, z/lengths))
+    return inc
+
 # ------------------------------------------------------------------
 # SCENE
 # ------------------------------------------------------------------
