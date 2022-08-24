@@ -46,14 +46,91 @@ except:
 if bool_numba:
     #from numba import jit, njit, guvectorize, float64, int32, prange
 
+
     @njit(parallel=True)
-    def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps):
-        arr = np.arange(n_edges)*2
-        id0 = edge_verts[arr]
-        id1 = edge_verts[arr+1]
+    #@cuda.jit('void(float32[:,:], float32[:,:])')
+    def tex_laplacian(lap, arr):
+        arr2 = arr*2
+        diag = sqrt(2)/2
+        nx = arr.shape[0]
+        ny = arr.shape[1]
+        for i in prange(nx):
+            for j in prange(ny):
+                i0 = (i-1)%nx
+                j0 = (j-1)%ny
+                i1 = (i+1)%nx
+                j1 = (j+1)%ny
+                #lap[i+1,j+1] = arr[i, j+1] + arr[i+2, j+1] + arr[i+1, j] + arr[i+1, j+2] - 4*arr[i+1,j+1]
+
+                lap[i,j] = ((arr[i0, j] + arr[i1, j] - arr2[i,j]) + \
+                               (arr[i, j0] + arr[i, j1] - arr2[i,j]) + \
+                               (arr[i0, j0] + arr[i1, j1] - arr2[i,j])*diag + \
+                               (arr[i1, j0] + arr[i0, j1] - arr2[i,j])*diag)*0.75
+
+    @njit(parallel=True)
+    def tex_laplacian_ani(lap, arr, VF):
+        arr2 = arr*2
+        nx = arr.shape[0]
+        ny = arr.shape[1]
+        i0 = np.arange(nx)-1
+        i0[0] = 1
+        i1 = np.arange(nx)+1
+        i1[nx-1] = nx-2
+        j0 = np.arange(ny)-1
+        j0[0] = 1
+        j1 = np.arange(ny)+1
+        j1[ny-1] = ny-2
+        for i in prange(nx):
+            for j in prange(ny):
+                lap[i,j] = (arr[i0[i], j] + arr[i1[i], j] - arr2[i,j])*VF[0,i,j] + \
+                               (arr[i, j0[j]] + arr[i, j1[j]] - arr2[i,j])*VF[1,i,j] + \
+                               (arr[i0[i], j0[j]] + arr[i1[i], j1[j]] - arr2[i,j])*VF[2,i,j] + \
+                               (arr[i1[i], j0[j]] + arr[i0[i], j1[j]] - arr2[i,j])*VF[3,i,j]
+        #lap[0,:] = lap[1,:]
+        #lap[:,0] = lap[:,1]
+        #lap[-1,:] = lap[-2,:]
+        #lap[:,-1] = lap[:,-2]
+
+    #@cuda.jit(parallel=True)
+    @njit(parallel=True)
+    def run_tex_rd(A, B, lap_A, lap_B, diff_A, diff_B, f, k, dt, steps, brush):
+        for t in range(steps):
+            tex_laplacian(lap_A, A)
+            tex_laplacian(lap_B, B)
+            nx = A.shape[0]
+            ny = A.shape[1]
+            for i in prange(nx):
+                for j in prange(ny):
+                    B[i,j] += brush[i,j]
+                    ab2 =  A[i,j]*B[i,j]**2
+                    A[i,j] += (lap_A[i,j]*diff_A - ab2 + f*(1-A[i,j]))*dt
+                    B[i,j] += (lap_B[i,j]*diff_B + ab2 - (k+f)*B[i,j])*dt
+
+    @njit(parallel=True)
+    def run_tex_rd_ani(A, B, lap_A, lap_B, diff_A, diff_B, f, k, dt, steps, vf1, vf2, brush):
+        for t in range(steps):
+            tex_laplacian_ani(lap_A, A, vf2)
+            #laplacian(lap_A, A)
+            tex_laplacian_ani(lap_B, B, vf1)
+            nx = A.shape[0]
+            ny = A.shape[1]
+            for i in prange(nx):
+                for j in prange(ny):
+                    B[i,j] += brush[i,j]
+                    ab2 =  A[i ,j]*B[i,j]**2
+                    A[i,j] += (lap_A[i,j]*diff_A[i,j] - ab2 + f[i,j]*(1-A[i,j]))*dt
+                    B[i,j] += (lap_B[i,j]*diff_B[i,j] + ab2 - (k[i,j]+f[i,j])*B[i,j])*dt
+
+
+    @njit(parallel=True)
+    def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps, field_mult):
+        arr = np.arange(n_edges)
+        id0 = edge_verts[arr*2]
+        id1 = edge_verts[arr*2+1]
+        mult = field_mult[arr]
         for i in range(time_steps):
             lap_a, lap_b = rd_init_laplacian(n_verts)
-            numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b)
+            numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b, mult)
             numba_rd_core(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt)
             numba_set_ab(a,b,brush)
         return a,b
@@ -129,14 +206,15 @@ if bool_numba:
 
     #@guvectorize(['(float64[:] ,float64[:] ,float64[:] , float64[:], float64[:], float64[:])'],'(m),(m),(n),(n),(n),(n)',target='parallel')
     @njit(parallel=True)
-    def numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b):
+    def numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b, mult):
         for i in prange(len(id0)):
             v0 = id0[i]
             v1 = id1[i]
-            lap_a[v0] += a[v1] - a[v0]
-            lap_a[v1] += a[v0] - a[v1]
-            lap_b[v0] += b[v1] - b[v0]
-            lap_b[v1] += b[v0] - b[v1]
+            multiplier = mult[i]
+            lap_a[v0] += (a[v1] - a[v0]) * multiplier
+            lap_a[v1] += (a[v0] - a[v1]) * multiplier
+            lap_b[v0] += (b[v1] - b[v0])# * multiplier
+            lap_b[v1] += (b[v0] - b[v1])# * multiplier
         #return lap_a, lap_b
 
     @njit(parallel=True)

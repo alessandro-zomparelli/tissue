@@ -225,7 +225,7 @@ def turn_off_animatable(scene):
 # OBJECTS
 # ------------------------------------------------------------------
 
-def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
+def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True, mirror_correction = True):
     try: ob.name
     except: return None
     if ob.type != 'MESH':
@@ -236,7 +236,10 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
         #dg = bpy.context.evaluated_depsgraph_get()
         #ob_eval = ob.evaluated_get(dg)
         #me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-        me = simple_to_mesh_mirror(ob)
+        if mirror_correction:
+            me = simple_to_mesh_mirror(ob)
+        else:
+            me = simple_to_mesh(ob)
         new_ob = bpy.data.objects.new(ob.data.name, me)
         new_ob.location, new_ob.matrix_world = ob.location, ob.matrix_world
         if not apply_modifiers:
@@ -244,7 +247,10 @@ def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True):
     else:
         if apply_modifiers:
             new_ob = ob.copy()
-            new_me = simple_to_mesh_mirror(ob)
+            if mirror_correction:
+                new_me = simple_to_mesh_mirror(ob)
+            else:
+                new_me = simple_to_mesh(ob)
             new_ob.modifiers.clear()
             new_ob.data = new_me
         else:
@@ -1358,13 +1364,15 @@ def get_weight_numpy(vertex_group, n_verts):
         except: pass
     return np.array(weight)
 
-def bmesh_get_weight_numpy(group_index, layer, verts):
+def bmesh_get_weight_numpy(group_index, layer, verts, normalized=False):
     weight = np.zeros(len(verts))
     for i, v in enumerate(verts):
         dvert = v[layer]
         if group_index in dvert:
             weight[i] = dvert[group_index]
             #dvert[group_index] = 0.5
+    if normalized:
+        weight = (weight - np.min(weight))/np.ptp(weight)
     return weight
 
 def bmesh_set_weight_numpy(group_index, layer, verts, weight):
@@ -1536,3 +1544,15 @@ def auto_layer_collection():
             lc = recurLayerCollection(layer_collection, c.name)
             if not c.hide_viewport and not lc.hide_viewport:
                 bpy.context.view_layer.active_layer_collection = lc
+
+def np_remap_image_values(img, channel=0, min=0, max=1, invert=False):
+    nx = img.size[1]
+    ny = img.size[0]
+    px = np.float32(np.zeros(nx*ny*4))
+    img.pixels.foreach_get(px)
+    px = np.array(px).reshape((-1,4))
+    values = px[:,channel]
+    values = values.reshape((nx,ny))
+    if invert:
+        values = 1-values
+    return min + values*(max-min)

@@ -248,7 +248,7 @@ def tessellate_patch(props):
                     first_component = True
                     for com in components:
                         if com:
-                            com = convert_object_to_mesh(com, com_modifiers, False)
+                            com = convert_object_to_mesh(com, com_modifiers, False, False)
                             com, com_area = tessellate_prepare_component(com, props)
                             com_verts = get_vertices_numpy(com.data)
                             bpy.data.objects.remove(com)
@@ -639,7 +639,7 @@ def tessellate_patch(props):
                 mod_visibility.append(m.show_viewport)
                 m.show_viewport = False
             com_modifiers = True
-        ob1 = convert_object_to_mesh(_ob1, com_modifiers, False)
+        ob1 = convert_object_to_mesh(_ob1, com_modifiers, False, False)
         ob1, com_area = tessellate_prepare_component(ob1, props)
         ob1.name = "_tissue_tmp_ob1"
 

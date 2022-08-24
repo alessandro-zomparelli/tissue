@@ -577,13 +577,13 @@ class tissue_tessellate_prop(PropertyGroup):
     boundary_mat_offset : IntProperty(
             name="Material Offset",
             default=0,
-            description="Material Offset for boundaries (with Multi Components or Material ID)",
+            description="Material Offset for boundaries (with components based on Materials)",
             update = anim_tessellate_active
             )
     fill_frame_mat : IntProperty(
             name="Material Offset",
             default=0,
-            description="Material Offset for inner faces (with Multi Components or Material ID)",
+            description="Material Offset for inner faces (with components based on Materials)",
             update = anim_tessellate_active
             )
     open_edges_crease : FloatProperty(

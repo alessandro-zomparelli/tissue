@@ -150,19 +150,19 @@ class reaction_diffusion_prop(PropertyGroup):
         description="Vertex Group used for adding/removing B")
 
     invert_vertex_group_diff_a : BoolProperty(default=False,
-        description='Inverte the value of the Vertex Group Diff A')
+        description='Invert the value of the Vertex Group Diff A')
 
     invert_vertex_group_diff_b : BoolProperty(default=False,
-        description='Inverte the value of the Vertex Group Diff B')
+        description='Invert the value of the Vertex Group Diff B')
 
     invert_vertex_group_scale : BoolProperty(default=False,
-        description='Inverte the value of the Vertex Group Scale')
+        description='Invert the value of the Vertex Group Scale')
 
     invert_vertex_group_f : BoolProperty(default=False,
-        description='Inverte the value of the Vertex Group f')
+        description='Invert the value of the Vertex Group f')
 
     invert_vertex_group_k : BoolProperty(default=False,
-        description='Inverte the value of the Vertex Group k')
+        description='Invert the value of the Vertex Group k')
 
     min_diff_a : FloatProperty(
         name="Min Diff A", default=0.1, min=0, soft_max=2, precision=3,

@@ -33,9 +33,9 @@
 
 bl_info = {
     "name": "Tissue",
-    "author": "Alessandro Zomparelli (Co-de-iT)",
-    "version": (0, 3, 53),
-    "blender": (3, 2, 0),
+    "author": "Alessandro Zomparelli",
+    "version": (0, 3, 54),
+    "blender": (3, 2, 2),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
@@ -58,6 +58,7 @@ if "bpy" in locals():
     importlib.reload(material_tools)
     importlib.reload(curves_tools)
     importlib.reload(polyhedra)
+    importlib.reload(texture_reaction_diffusion)
 
 else:
     from . import tessellate_numpy
@@ -71,6 +72,7 @@ else:
     from . import material_tools
     from . import curves_tools
     from . import polyhedra
+    from . import texture_reaction_diffusion
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
@@ -148,7 +150,13 @@ classes = (
 
     uv_to_mesh.uv_to_mesh,
 
-    polyhedra.polyhedra_wireframe
+    polyhedra.polyhedra_wireframe,
+
+    texture_reaction_diffusion.tex_reaction_diffusion_prop,
+    texture_reaction_diffusion.start_tex_reaction_diffusion,
+    texture_reaction_diffusion.reset_tex_reaction_diffusion,
+    texture_reaction_diffusion.TISSUE_PT_tex_reaction_diffusion,
+    texture_reaction_diffusion.TISSUE_PT_tex_reaction_diffusion_images
 )
 
 def register():
@@ -171,8 +179,12 @@ def register():
     bpy.types.Object.reaction_diffusion_settings = PointerProperty(
                         type=weight_tools.reaction_diffusion_prop
                         )
+    bpy.types.Object.tex_reaction_diffusion_settings = PointerProperty(
+        type=texture_reaction_diffusion.tex_reaction_diffusion_prop
+        )
     # weight_tools
     bpy.app.handlers.frame_change_post.append(weight_tools.reaction_diffusion_def)
+    bpy.app.handlers.frame_change_post.append(texture_reaction_diffusion.tex_reaction_diffusion_def)
     #bpy.app.handlers.frame_change_post.append(tessellate_numpy.anim_tessellate)
 
 def unregister():
