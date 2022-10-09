@@ -68,7 +68,8 @@ from bpy.props import (
     IntProperty,
     StringProperty,
     FloatVectorProperty,
-    IntVectorProperty
+    IntVectorProperty,
+    PointerProperty
 )
 
 from .utils import *
@@ -78,6 +79,11 @@ def reaction_diffusion_add_handler(self, context):
     reaction_diffusion_remove_handler(self, context)
     # add new handler
     bpy.app.handlers.frame_change_post.append(reaction_diffusion_scene)
+
+def reaction_diffusion_bake_geometry(self, context):
+    props = context.object.reaction_diffusion_settings
+    if props.bake_geometry:
+        props.update_baked_geometry = True
 
 def reaction_diffusion_remove_handler(self, context):
     # remove existing handlers
@@ -150,19 +156,19 @@ class reaction_diffusion_prop(PropertyGroup):
         description="Vertex Group used for adding/removing B")
 
     invert_vertex_group_diff_a : BoolProperty(default=False,
-        description='Invert the value of the Vertex Group Diff A')
+        description='Inverte the value of the Vertex Group Diff A')
 
     invert_vertex_group_diff_b : BoolProperty(default=False,
-        description='Invert the value of the Vertex Group Diff B')
+        description='Inverte the value of the Vertex Group Diff B')
 
     invert_vertex_group_scale : BoolProperty(default=False,
-        description='Invert the value of the Vertex Group Scale')
+        description='Inverte the value of the Vertex Group Scale')
 
     invert_vertex_group_f : BoolProperty(default=False,
-        description='Invert the value of the Vertex Group f')
+        description='Inverte the value of the Vertex Group f')
 
     invert_vertex_group_k : BoolProperty(default=False,
-        description='Invert the value of the Vertex Group k')
+        description='Inverte the value of the Vertex Group k')
 
     min_diff_a : FloatProperty(
         name="Min Diff A", default=0.1, min=0, soft_max=2, precision=3,
@@ -261,6 +267,50 @@ class reaction_diffusion_prop(PropertyGroup):
         name="Fast Bake", default=True,
         description="Do not update modifiers or vertex groups while baking. Much faster!")
 
+    bake_geometry : BoolProperty(
+        name="Bake Geometry", default=False, update = reaction_diffusion_bake_geometry,
+        description="Bake geometry data. Improve the real-time speed. If vector fields or geometry change, it must be updated. Disable and enable to update the data")
+
+    update_baked_geometry : BoolProperty(
+        name="Update Baked Geometry", default=False,
+        description="Force to update geometry data on the next iteration.")
+
+    vector_field_mode : EnumProperty(
+            items=(
+                ('NONE', "None", "Isotropic Reaction-Diffusion"),
+                ('VECTOR', "Vector", "Uniform vector"),
+                ('OBJECT', "Object", "Orient the field with a target object's Z"),
+                ('GRADIENT', "Gradient", "Gradient vertex group"),
+                ('XYZ', "x, y, z", "Vector field defined by vertex groups 'x', 'y' and 'z'")
+                ),
+            default='NONE',
+            name="Vector Field controlling the direction of the Reaction-Diffusion",
+            update = reaction_diffusion_bake_geometry
+            )
+
+    anisotropy : FloatProperty(
+        name="Anisotropy", default=0.5, min=0, max=1, precision=2,
+        description="Influence of the Vector Field")
+
+    vector : FloatVectorProperty(
+        name='Vector', description='Constant Vector', default=(0.0, 0.0, 1.0),
+        update = reaction_diffusion_bake_geometry)
+
+    perp_vector_field : BoolProperty(default=False,
+        description='Use the perpendicular direction',
+        update = reaction_diffusion_bake_geometry)
+
+    vector_field_object : PointerProperty(
+        type=bpy.types.Object,
+        name="",
+        description="Target Object",
+        update = reaction_diffusion_bake_geometry
+        )
+
+    vertex_group_gradient : StringProperty(
+        name="Gradient", default='',
+        description="Vertex Group for the gradient vector field",
+        update = reaction_diffusion_bake_geometry)
 
 from numpy import *
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
@@ -818,7 +868,6 @@ class weight_laplacian(Operator):
         lap = np.array(lap)
         lap /= np.max(lap)
         lap = list(lap)
-        print(lap)
 
         for i in range(n_verts):
             vg.add([i], lap[i], 'REPLACE')
@@ -3128,7 +3177,6 @@ class start_reaction_diffusion(Operator):
         ob.reaction_diffusion_settings.diff_a = self.diff_a
         ob.reaction_diffusion_settings.diff_b = self.diff_b
 
-
         # check vertex group A
         try:
             vg = ob.vertex_groups['A']
@@ -3255,7 +3303,7 @@ def reaction_diffusion_def(ob, bake=False):
     if type(ob) == bpy.types.Scene: return None
     props = ob.reaction_diffusion_settings
 
-    if bake or props.bool_cache:
+    if bake or props.bool_cache or True:
         if props.cache_dir == '':
             letters = string.ascii_letters
             random_name = ''.join(rnd.choice(letters) for i in range(6))
@@ -3330,7 +3378,7 @@ def reaction_diffusion_def(ob, bake=False):
 
         if props.vertex_group_diff_a != '':
             group_index = ob.vertex_groups[props.vertex_group_diff_a].index
-            diff_a = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            diff_a = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
             if props.invert_vertex_group_diff_a:
                 vg_bounds = (props.min_diff_a, props.max_diff_a)
             else:
@@ -3339,7 +3387,7 @@ def reaction_diffusion_def(ob, bake=False):
 
         if props.vertex_group_diff_b != '':
             group_index = ob.vertex_groups[props.vertex_group_diff_b].index
-            diff_b = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            diff_b = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
             if props.invert_vertex_group_diff_b:
                 vg_bounds = (props.max_diff_b, props.min_diff_b)
             else:
@@ -3348,7 +3396,7 @@ def reaction_diffusion_def(ob, bake=False):
 
         if props.vertex_group_scale != '':
             group_index = ob.vertex_groups[props.vertex_group_scale].index
-            scale = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            scale = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
             if props.invert_vertex_group_scale:
                 vg_bounds = (props.max_scale, props.min_scale)
             else:
@@ -3357,7 +3405,7 @@ def reaction_diffusion_def(ob, bake=False):
 
         if props.vertex_group_f != '':
             group_index = ob.vertex_groups[props.vertex_group_f].index
-            f = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            f = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
             if props.invert_vertex_group_f:
                 vg_bounds = (props.max_f, props.min_f)
             else:
@@ -3366,7 +3414,7 @@ def reaction_diffusion_def(ob, bake=False):
 
         if props.vertex_group_k != '':
             group_index = ob.vertex_groups[props.vertex_group_k].index
-            k = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            k = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
             if props.invert_vertex_group_k:
                 vg_bounds = (props.max_k, props.min_k)
             else:
@@ -3375,7 +3423,7 @@ def reaction_diffusion_def(ob, bake=False):
 
         if props.vertex_group_brush != '':
             group_index = ob.vertex_groups[props.vertex_group_brush].index
-            brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+            brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
             brush *= brush_mult
 
 
@@ -3386,26 +3434,128 @@ def reaction_diffusion_def(ob, bake=False):
         diff_a *= scale
         diff_b *= scale
 
-        edge_verts = [0]*n_edges*2
-        me.edges.foreach_get("vertices", edge_verts)
+        force_bake_geometry = False
+        if props.bake_geometry:
+            if props.update_baked_geometry:
+                force_bake_geometry = True
+            else:
+                try:
+                    file_name = folder / "edge_verts_0000"
+                    edge_verts = np.fromfile(file_name, dtype='int')
+                    file_name = folder / "field_mult_0000"
+                    field_mult = np.fromfile(file_name)
+                    n_edges = int(len(edge_verts)/2)
+                except:
+                    force_bake_geometry = True
+
+        if not props.bake_geometry or force_bake_geometry:
+            is_vector_field = True
+
+            if props.vector_field_mode not in ('NONE'):
+                if props.vector_field_mode == 'VECTOR':
+                    vec = Vector(props.vector)
+                    vector_field = [vec]*n_edges
+
+                if props.vector_field_mode == 'OBJECT':
+                    print(props.vector_field_object)
+                    if props.vector_field_object:
+                        mat = props.vector_field_object.matrix_world
+                    else:
+                        mat = ob.matrix_world
+                    vec = Vector((mat[0][2],mat[1][2],mat[2][2]))
+                    vector_field = [vec]*n_edges
+
+                if props.vector_field_mode == 'XYZ':
+                    vgk = ob.vertex_groups.keys()
+                    if 'x' in vgk and 'y' in vgk and 'z' in vgk:
+                        group_index = ob.vertex_groups["x"].index
+                        field_x = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                        group_index = ob.vertex_groups["y"].index
+                        field_y = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                        group_index = ob.vertex_groups["z"].index
+                        field_z = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                        field_x = field_x*2-1
+                        field_y = field_y*2-1
+                        field_z = field_z*2-1
+                        vector_field = []
+                        for x,y,z in zip(field_x, field_y, field_z):
+                            vector_field.append(Vector((x,y,z)))
+                    else:
+                        is_vector_field = False
+
+                if props.vector_field_mode == 'GRADIENT':
+                    is_vector_field = False
+                    if props.vertex_group_gradient:
+                        if props.vertex_group_gradient in ob.vertex_groups.keys():
+                            edge_verts = [0]*n_edges*2
+                            me.edges.foreach_get("vertices", edge_verts)
+                            edge_verts = np.array(edge_verts)
+
+                            group_index = ob.vertex_groups[props.vertex_group_gradient].index
+                            weight = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+
+                            vector_field = []
+                            for v0 in bm.verts:
+                                vec = Vector((0,0,0))
+                                w0 = weight[v0.index]
+                                for e in v0.link_edges:
+                                    v1 = e.other_vert(v0)
+                                    dw = weight[v1.index]-w0
+                                    vec += (v1.co-v0.co)*dw
+                                vec.normalized()
+                                vector_field.append(vec)
+                            is_vector_field = True
+
+                if is_vector_field:
+                    edge_verts = []
+                    field_mult = []
+                    edge_verts_dict = {}
+                    for p in me.polygons:
+                        n_face_verts = len(p.vertices)
+                        for i in range(n_face_verts-1):
+                            for j in range(i+1, n_face_verts):
+                                pair = [p.vertices[i],p.vertices[j]]
+                                pair.sort()
+                                edge_verts_dict[str(pair[0]) + " " + str(pair[1])] = 0
+
+                    if props.perp_vector_field:
+                        for i, vert in enumerate(bm.verts):
+                            vector_field[i] = vector_field[i].cross(vert.normal)
+
+                    for pair in edge_verts_dict.keys():
+                        pair = pair.split()
+                        v0 = int(pair[0])
+                        v1 = int(pair[1])
+                        field_dir = (vector_field[v0]+vector_field[v1]).normalized()
+                        edge_verts.append(v0)
+                        edge_verts.append(v1)
+                        v0 = me.vertices[v0].co
+                        v1 = me.vertices[v1].co
+                        #dist = (v1-v0).length()
+                        vec = (v1-v0).normalized()
+                        field_mult.append(abs(vec.dot(field_dir)))
+                    n_edges = len(edge_verts_dict.keys())-1
+                    field_mult = np.array(field_mult)
+            else:
+                is_vector_field = False
+
+            if props.vector_field_mode == 'NONE' or not is_vector_field:
+                edge_verts = [0]*n_edges*2
+                field_mult = np.zeros((1))
+                me.edges.foreach_get("vertices", edge_verts)
+
         edge_verts = np.array(edge_verts)
 
-        if 'gradient' in ob.vertex_groups.keys() and False:
-            group_index = ob.vertex_groups['gradient'].index
-            gradient = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        if force_bake_geometry:
+            if not(os.path.exists(folder)):
+                os.mkdir(folder)
+            file_name = folder / "edge_verts_0000"
+            edge_verts.tofile(file_name)
+            file_name = folder / "field_mult_0000"
+            field_mult.tofile(file_name)
+            props.update_baked_geometry = False
 
-            arr = (np.arange(n_edges)*2).astype(int)
-            id0 = edge_verts[arr]
-            id1 = edge_verts[arr+1]
-
-            #gradient = np.abs(gradient[id0] - gradient[id1])
-            gradient = gradient[id1] - gradient[id0]
-            gradient /= np.max(gradient)
-            sign = np.sign(gradient)
-            sign[sign==0] = 1
-            gradient = (0.05*abs(gradient) + 0.95)*sign
-            #gradient *= (1-abs(gradient)
-            #gradient = 0.2*(1-gradient) + 0.95
+        field_mult = field_mult*props.anisotropy + (1-props.anisotropy)
 
         #gradient = get_uv_edge_vectors(me)
         #uv_dir = Vector((0.5,0.5,0)).normalized()
@@ -3423,26 +3573,28 @@ def reaction_diffusion_def(ob, bake=False):
             _diff_a = diff_a if type(diff_a) is np.ndarray else np.array((diff_a,))
             _diff_b = diff_b if type(diff_b) is np.ndarray else np.array((diff_b,))
             _brush = brush if type(brush) is np.ndarray else np.array((brush,))
-
-            #a, b = numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps, gradient)
-            a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
+            if len(field_mult) == 1:
+                a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
+            else:
+                a, b = numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps, field_mult)
         except:
             print('Not using Numba! The simulation could be slow.')
-            arr = np.arange(n_edges)*2
-            id0 = edge_verts[arr]     # first vertex indices for each edge
-            id1 = edge_verts[arr+1]   # second vertex indices for each edge
+            arr = np.arange(n_edges)
+            id0 = edge_verts[arr*2]     # first vertex indices for each edge
+            id1 = edge_verts[arr*2+1]   # second vertex indices for each edge
+            if len(field_mult) == 1: mult = 1
+            else: mult = field_mult[arr]   # second vertex indices for each edge
             for i in range(time_steps):
                 b += brush
                 lap_a = np.zeros(n_verts)
                 lap_b = np.zeros(n_verts)
-                lap_a0 =  a[id1] -  a[id0]   # laplacian increment for first vertex of each edge
-                lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
+                lap_a0 =  (a[id1] -  a[id0])*mult   # laplacian increment for first vertex of each edge
+                lap_b0 =  (b[id1] -  b[id0])*mult   # laplacian increment for first vertex of each edge
 
                 np.add.at(lap_a, id0, lap_a0)
                 np.add.at(lap_b, id0, lap_b0)
                 np.add.at(lap_a, id1, -lap_a0)
                 np.add.at(lap_b, id1, -lap_b0)
-
                 ab2 = a*b**2
                 a += eval("(diff_a*lap_a - ab2 + f*(1-a))*dt")
                 b += eval("(diff_b*lap_b + ab2 - (k+f)*b)*dt")
@@ -3717,14 +3869,52 @@ def fast_bake_def(ob, frame_start=1, frame_end=250):
     diff_a *= scale
     diff_b *= scale
 
-    edge_verts = [0]*n_edges*2
-    me.edges.foreach_get("vertices", edge_verts)
+    if True:
 
+        group_index = ob.vertex_groups["x"].index
+        field_x = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        group_index = ob.vertex_groups["y"].index
+        field_y = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+        field_x = field_x*2-1
+        field_y = field_y*2-1
+        vector_field = []
+        for x,y in zip(field_x, field_y):
+            vector_field.append(Vector((x,y,0)))
+        edge_verts = []
+        field_mult = []
+        edge_verts_dict = {}
+        for p in me.polygons:
+            n_face_verts = len(p.vertices)
+            for i in range(n_face_verts-1):
+                for j in range(i+1, n_face_verts):
+                    pair = [p.vertices[i],p.vertices[j]]
+                    pair.sort()
+                    edge_verts_dict[str(pair[0]) + " " + str(pair[1])] = 0
+        for pair in edge_verts_dict.keys():
+            pair = pair.split()
+            v0 = int(pair[0])
+            v1 = int(pair[1])
+            field_dir = (vector_field[v0]+vector_field[v1]).normalized()
+            edge_verts.append(v0)
+            edge_verts.append(v1)
+            v0 = me.vertices[v0].co
+            v1 = me.vertices[v1].co
+            vec = (v1-v0).normalized()
+            #field_dir = Vector((0,0,1))
+            field_mult.append(abs(vec.dot(field_dir))*0.5 + 0.5)
+        n_edges = len(edge_verts_dict.keys())-1
+        field_mult = np.array(field_mult)
+    else:
+        edge_verts = [0]*n_edges*2
+        me.edges.foreach_get("vertices", edge_verts)
+    edge_verts = np.array(edge_verts)
+
+    '''
     gradient = get_uv_edge_vectors(me)
     uv_dir = Vector((0.5,0.5,0))
     #gradient = [abs(g.dot(uv_dir)) for g in gradient]
     gradient = [max(0,g.dot(uv_dir)) for g in gradient]
-
+    '''
     timeElapsed = time.time() - start
     print('       Preparation Time:',timeElapsed)
     start = time.time()
@@ -3743,7 +3933,7 @@ def fast_bake_def(ob, frame_start=1, frame_end=250):
             print("{:6d} Reaction-Diffusion: {}".format(j, ob.name))
             if run_rd:
                 b += _brush
-                a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps)
+                a, b = numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, _brush, _diff_a, _diff_b, _f, _k, dt, time_steps, field_mult)
             else:
                 run_rd = True
 
@@ -4055,9 +4245,35 @@ class TISSUE_PT_reaction_diffusion(Panel):
             col1.prop(props, "k")
             col1.enabled = props.vertex_group_k == '' and not props.bool_cache
             col.separator()
+            col.label(text='Vector Field:')
+            col.prop(props, "vector_field_mode", text="Mode")
+            if props.vector_field_mode == 'OBJECT':
+                col.prop_search(props, "vector_field_object", context.scene, "objects", text='Object')
+            if props.vector_field_mode == 'GRADIENT':
+                col.prop_search(props, 'vertex_group_gradient', ob, "vertex_groups")
+            if props.vector_field_mode == 'XYZ':
+                vgk = ob.vertex_groups.keys()
+                if 'x' not in vgk:
+                    col.label(text="Vertex Group 'x' is missing", icon='ERROR')
+                if 'y' not in vgk:
+                    col.label(text="Vertex Group 'y' is missing", icon='ERROR')
+                if 'z' not in vgk:
+                    col.label(text="Vertex Group 'z' is missing", icon='ERROR')
+            if props.vector_field_mode == 'VECTOR':
+                row = col.row()
+                row.prop(props, "vector")
+            if props.vector_field_mode != 'NONE':
+                col.separator()
+                row = col.row()
+                #row.prop(props, 'perp_vector_field', icon='DRIVER_ROTATIONAL_DIFFERENCE', text='Perpendicular')
+                row.prop(props, 'perp_vector_field', text='Perpendicular')
+                row.prop(props, "anisotropy")
+            col.separator()
             col.label(text='Cache:')
             #col.prop(props, "bool_cache")
             col.prop(props, "cache_dir", text='')
+            col.separator()
+            col.prop(props, "bake_geometry", icon="MESH_DATA")
             col.separator()
             row = col.row(align=True)
             row.prop(props, "cache_frame_start")

@@ -5,11 +5,11 @@ http://www.co-de-it.com/wordpress/code/blender-tissue
 
 Tissue is already shipped with both Blender. However I recommend to update the default version downloading manually the most recent one, for more updated features and more stability.
 
-### Blender 3.2
+### Blender 3.3
 
-Tissue v0.3.53 for Blender 2.93 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-53
+Tissue v0.3.54 for Blender 3.3 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-54
 
-Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b310-dev
+Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b320-dev
 
 
 ### Installation:
@@ -34,7 +34,7 @@ If you like my work and you want to help me, please consider to support me on **
 
 [![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
 
-A special thanks to all my patrons, in particular to my **Tissue Supporters**: *TomaLaboratory*, *Scott Shorter*, *Garrett Post*, *Kairomon*, *Art Evans*, *Justin Davis*, *John Wise*, *Avi Bryant*, *Ahmed Saber*, *SlimeSound Production*, *Steffen Meier*.
+A special thanks to all my patrons, in particular to my **Tissue Supporters**: *Scott Shorter*, *Avi Briant*, *Beili Wang*, *Cal McGaugh*, *Chris Costanzi*, *Justin Davis*, *MutableHurdle*, *Stefano Giovacchini*, *Tomek Zamojski*.
 
 Many thanks,
 

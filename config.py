@@ -35,9 +35,13 @@ class tissuePreferences(bpy.types.AddonPreferences):
         numba_spec = importlib.util.find_spec('numba')
         found = numba_spec is not None
         if found:
-            layout.label(text='Numba module installed correctly!', icon='INFO')
-            layout.prop(self, "use_numba_tess")
-        else:
+            try:
+                import numba
+                layout.label(text='Numba module installed correctly!', icon='INFO')
+                layout.prop(self, "use_numba_tess")
+            except:
+                found = False
+        if not found:
             layout.label(text='Numba module not installed!', icon='ERROR')
             layout.label(text='Installing Numba will make Tissue faster', icon='INFO')
             row = layout.row()
@@ -54,6 +58,8 @@ class tissue_install_numba(bpy.types.Operator):
         try:
             from .utils_pip import Pip
             #Pip.upgrade_pip()
+            Pip.uninstall('llvmlite')
+            Pip.uninstall('numba')
             Pip.install('llvmlite')
             Pip.install('numba')
             from numba import jit, njit, guvectorize, float64, int32, prange

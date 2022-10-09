@@ -123,14 +123,13 @@ if bool_numba:
 
 
     @njit(parallel=True)
-    def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps, field_mult):
+    def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps):
         arr = np.arange(n_edges)
         id0 = edge_verts[arr*2]
         id1 = edge_verts[arr*2+1]
-        mult = field_mult[arr]
         for i in range(time_steps):
             lap_a, lap_b = rd_init_laplacian(n_verts)
-            numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b, mult)
+            numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b)
             numba_rd_core(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt)
             numba_set_ab(a,b,brush)
         return a,b
@@ -153,17 +152,14 @@ if bool_numba:
         return values
 
     @njit(parallel=True)
-    def numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps, grad):
-        arr = np.arange(n_edges)*2
-        id0 = edge_verts[arr]
-        id1 = edge_verts[arr+1]
-        #grad = weight_grad[id0] - weight_grad[id1]
-        #grad = np.abs(grad)
-        #grad /= abs(np.max(grad))
-        #grad = grad*0.98 + 0.02
+    def numba_reaction_diffusion_anisotropic(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps, field_mult):
+        arr = np.arange(n_edges)
+        id0 = edge_verts[arr*2]
+        id1 = edge_verts[arr*2+1]
+        mult = field_mult[arr]
         for i in range(time_steps):
             lap_a, lap_b = rd_init_laplacian(n_verts)
-            numba_rd_laplacian_anisotropic(id0, id1, a, b, lap_a, lap_b, grad)
+            numba_rd_laplacian_anisotropic(id0, id1, a, b, lap_a, lap_b, mult)
             numba_rd_core(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt)
             numba_set_ab(a,b,brush)
         return a,b
@@ -203,29 +199,27 @@ if bool_numba:
             if a[i] < 0: a[i] = 0
             elif a[i] > 1: a[i] = 1
 
-
-    #@guvectorize(['(float64[:] ,float64[:] ,float64[:] , float64[:], float64[:], float64[:])'],'(m),(m),(n),(n),(n),(n)',target='parallel')
     @njit(parallel=True)
-    def numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b, mult):
-        for i in prange(len(id0)):
-            v0 = id0[i]
-            v1 = id1[i]
-            multiplier = mult[i]
-            lap_a[v0] += (a[v1] - a[v0]) * multiplier
-            lap_a[v1] += (a[v0] - a[v1]) * multiplier
-            lap_b[v0] += (b[v1] - b[v0])# * multiplier
-            lap_b[v1] += (b[v0] - b[v1])# * multiplier
-        #return lap_a, lap_b
-
-    @njit(parallel=True)
-    def numba_rd_laplacian_anisotropic(id0, id1, a, b, lap_a, lap_b, grad):
+    def numba_rd_laplacian(id0, id1, a, b, lap_a, lap_b):
         for i in prange(len(id0)):
             v0 = id0[i]
             v1 = id1[i]
             lap_a[v0] += (a[v1] - a[v0])
             lap_a[v1] += (a[v0] - a[v1])
-            lap_b[v0] -= (b[v1] - b[v0])*grad[i]
-            lap_b[v1] += (b[v0] - b[v1])*grad[i]
+            lap_b[v0] += (b[v1] - b[v0])
+            lap_b[v1] += (b[v0] - b[v1])
+        #return lap_a, lap_b
+
+    @njit(parallel=True)
+    def numba_rd_laplacian_anisotropic(id0, id1, a, b, lap_a, lap_b, mult):
+        for i in prange(len(id0)):
+            v0 = id0[i]
+            v1 = id1[i]
+            multiplier = mult[i]
+            lap_a[v0] += (a[v1] - a[v0])# * multiplier
+            lap_a[v1] += (a[v0] - a[v1])# * multiplier
+            lap_b[v0] += (b[v1] - b[v0]) * multiplier
+            lap_b[v1] += (b[v0] - b[v1]) * multiplier
         #return lap_a, lap_b
 
     @njit(parallel=True)
