@@ -51,22 +51,134 @@ import random, time, copy
 import bmesh
 from .utils import *
 
-class polyhedra_wireframe(Operator):
-    bl_idname = "object.polyhedra_wireframe"
-    bl_label = "Tissue Polyhedra Wireframe"
+def anim_polyhedra_active(self, context):
+    ob = context.object
+    props = ob.tissue_polyhedra
+    if not (ob.tissue.bool_lock):
+        try:
+            props.object.name
+            bpy.ops.object.tissue_update_polyhedra()
+        except: pass
+
+class tissue_polyhedra_prop(PropertyGroup):
+    object : PointerProperty(
+        type=bpy.types.Object,
+        name="Object",
+        description="Source object",
+        update = anim_polyhedra_active
+        )
+
+    mode : EnumProperty(
+        items=(
+                ('POLYHEDRA', "Polyhedra", "Polyhedral Complex Decomposition, the result are disconnected polyhedra geometries"),
+                ('WIREFRAME', "Wireframe", "Polyhedral Wireframe through edges tickening")
+                ),
+        default='POLYHEDRA',
+        name="Polyhedra Mode",
+        update = anim_polyhedra_active
+        )
+
+    bool_modifiers : BoolProperty(
+        name="Use Modifiers",
+        description="",
+        default=True,
+        update = anim_polyhedra_active
+        )
+
+    dissolve : EnumProperty(
+        items=(
+                ('NONE', "None", "Keeps original topology"),
+                ('INNER', "Inner", "Dissolve inner loops"),
+                ('OUTER', "Outer", "Dissolve outer loops")
+                ),
+        default='NONE',
+        name="Dissolve",
+        update = anim_polyhedra_active
+        )
+
+    thickness : FloatProperty(
+        name="Thickness", default=1, soft_min=0, soft_max=10,
+        description="Thickness along the edges",
+        update = anim_polyhedra_active
+        )
+
+    crease : FloatProperty(
+        name="Crease", default=0, min=0, max=1,
+        description="Crease Inner Loops",
+        update = anim_polyhedra_active
+        )
+
+    segments : IntProperty(
+        name="Segments",
+        default=0,
+        min=1,
+        soft_max=20,
+        description="Segments for every edge",
+        update = anim_polyhedra_active
+        )
+
+    proportional_segments : BoolProperty(
+        name="Proportional Segments", default=True,
+        description="The number of segments is proportional to the length of the edges",
+        update = anim_polyhedra_active
+        )
+
+    error_message : StringProperty(
+        name="Error Message",
+        default=""
+        )
+
+class polyhedral_wireframe(Operator):
+    bl_idname = "object.polyhedral_wireframe"
+    bl_label = "Tissue Polyhedral Wireframe"
     bl_description = "Generate wireframes around the faces.\
                       \nDoesn't works with boundary edges.\
                       \n(Experimental)"
     bl_options = {'REGISTER', 'UNDO'}
+
+    object : StringProperty(
+        name="Object",
+        description="Source object",
+        default = ""
+        )
 
     thickness : FloatProperty(
         name="Thickness", default=0.1, min=0.001, soft_max=200,
         description="Wireframe thickness"
         )
 
-    subdivisions : IntProperty(
+    crease : FloatProperty(
+        name="Crease", default=0, min=0, max=1,
+        description="Crease Inner Loops"
+        )
+
+    segments : IntProperty(
         name="Segments", default=1, min=1, soft_max=10,
-        description="Max sumber of segments, used for the longest edge"
+        description="Segments for every edge"
+        )
+
+    proportional_segments : BoolProperty(
+        name="Proportional Segments", default=True,
+        description="The number of segments is proportional to the length of the edges"
+        )
+
+    mode : EnumProperty(
+        items=(
+                ('POLYHEDRA', "Polyhedra", "Polyhedral Complex Decomposition, the result are disconnected polyhedra geometries"),
+                ('WIREFRAME', "Wireframe", "Polyhedral Wireframe through edges tickening")
+                ),
+        default='POLYHEDRA',
+        name="Polyhedra Mode"
+        )
+
+    dissolve : EnumProperty(
+        items=(
+                ('NONE', "None", "Keeps original topology"),
+                ('INNER', "Inner", "Dissolve inner loops"),
+                ('OUTER', "Outer", "Dissolve outer loops")
+                ),
+        default='NONE',
+        name="Dissolve"
         )
 
     #regular_sections : BoolProperty(
@@ -74,32 +186,126 @@ class polyhedra_wireframe(Operator):
     #    description="Turn inner loops into polygons"
     #    )
 
-    dissolve_inners : BoolProperty(
-        name="Dissolve Inners", default=False,
-        description="Dissolve inner edges"
+    bool_hold : BoolProperty(
+            name="Hold",
+            description="Wait...",
+            default=False
         )
 
-    @classmethod
-    def poll(cls, context):
-        try:
-            #bool_tessellated = context.object.tissue_tessellate.generator != None
-            ob = context.object
-            return ob.type == 'MESH' and ob.mode == 'OBJECT'# and bool_tessellated
-        except:
-            return False
+    def draw(self, context):
+        ob = context.object
+        layout = self.layout
+        col = layout.column(align=True)
+        if not self.bool_hold:
+            self.object = ob.name
+        col.prop_search(self, "object", context.scene, "objects")
+        self.bool_hold = True
+        #col.separator()
+        #col.prop(self, "mode")
+        if self.mode == 'WIREFRAME':
+            col.separator()
+            col.prop(self, "thickness")
+            col.separator()
+            col.prop(self, "segments")
+        return
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
+        try:
+            ob0 = bpy.data.objects[self.object]
+        except:
+            return {'CANCELLED'}
 
-        merge_dist = self.thickness*0.001
+        self.object_name = "Polyhedral Wireframe"
+        # Check if existing object with same name
+        names = [o.name for o in bpy.data.objects]
+        if self.object_name in names:
+            count_name = 1
+            while True:
+                test_name = self.object_name + '.{:03d}'.format(count_name)
+                if not (test_name in names):
+                    self.object_name = test_name
+                    break
+                count_name += 1
 
-        subs = self.subdivisions
+        if ob0.type not in ('MESH'):
+            message = "Source object must be a Mesh!"
+            self.report({'ERROR'}, message)
+            self.generator = ""
+
+        if bpy.ops.object.select_all.poll():
+            bpy.ops.object.select_all(action='TOGGLE')
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        bool_update = False
+        if context.object == ob0:
+            auto_layer_collection()
+            new_ob = convert_object_to_mesh(ob0,False,False)
+            new_ob.data.name = self.object_name
+            new_ob.name = self.object_name
+        else:
+            new_ob = context.object
+            bool_update = True
+
+        # Store parameters
+        props = new_ob.tissue_polyhedra
+        if self.object in bpy.data.objects.keys():
+            props.object = bpy.data.objects[self.object]
+        props.mode = self.mode
+        props.thickness = self.thickness
+        props.segments = self.segments
+        props.dissolve = self.dissolve
+        props.proportional_segments = self.proportional_segments
+        props.crease = self.crease
+
+        new_ob.tissue.tissue_type = 'POLYHEDRA'
+        try: bpy.ops.object.tissue_update_polyhedra()
+        except RuntimeError as e:
+            bpy.data.objects.remove(new_ob)
+            remove_temp_objects()
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+        if not bool_update:
+            self.object_name = new_ob.name
+            #self.working_on = self.object_name
+            new_ob.location = ob0.location
+            new_ob.matrix_world = ob0.matrix_world
+
+        # Assign collection of the base object
+        old_coll = new_ob.users_collection
+        if old_coll != ob0.users_collection:
+            for c in old_coll:
+                c.objects.unlink(new_ob)
+            for c in ob0.users_collection:
+                c.objects.link(new_ob)
+        context.view_layer.objects.active = new_ob
+
+        return {'FINISHED'}
+
+class tissue_update_polyhedra(Operator):
+    bl_idname = "object.tissue_update_polyhedra"
+    bl_label = "Tissue Update Polyhedral Wireframe"
+    bl_description = "Update a previously generated polyhedral object"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ob = context.object
+        props = ob.tissue_polyhedra
+        thickness = props.thickness
+
+        merge_dist = thickness*0.001
+
+        subs = props.segments
+        if props.mode == 'POLYHEDRA': subs = 1
 
         start_time = time.time()
-        ob = context.object
-        me = simple_to_mesh(ob)
+        ob0 = props.object
+        if props.bool_modifiers:
+            me = simple_to_mesh(ob0)
+        else:
+            me = ob0.data.copy()
         bm = bmesh.new()
         bm.from_mesh(me)
 
@@ -108,19 +314,21 @@ class polyhedra_wireframe(Operator):
         bm.faces.ensure_lookup_table()
 
         # Subdivide edges
-        proportional_subs = True
-        if subs > 1 and proportional_subs:
-            wire_length = [e.calc_length() for e in bm.edges]
-            all_edges = list(bm.edges)
-            max_segment = max(wire_length)/subs
-            split_edges = [[] for i in range(subs+1)]
-            for e, l in zip(all_edges, wire_length):
-                split_edges[int(l//max_segment)].append(e)
-            for i in range(2,subs):
-                perc = {}
-                for e in split_edges[i]:
-                    perc[e]=0.1
-                bmesh.ops.bisect_edges(bm, edges=split_edges[i], cuts=i, edge_percents=perc)
+        if subs > 1:
+            if props.proportional_segments:
+                wire_length = [e.calc_length() for e in bm.edges]
+                all_edges = list(bm.edges)
+                max_segment = max(wire_length)/subs+0.00001 # prevent out_of_bounds
+                split_edges = [[] for i in range(subs)]
+                for e, l in zip(all_edges, wire_length):
+                    split_edges[int(l//max_segment)].append(e)
+                for i in range(1,subs):
+                    #perc = {}
+                    #for e in split_edges[i]:
+                    #    perc[e]=0.1
+                    bmesh.ops.bisect_edges(bm, edges=split_edges[i], cuts=i)
+            else:
+                bmesh.ops.bisect_edges(bm, edges=bm.edges, cuts=subs)
 
         ### Create double faces
         double_faces = []
@@ -202,9 +410,7 @@ class polyhedra_wireframe(Operator):
                         faces2.append(-(f2.index+1))
                         normals2.append(-f2.normal)
 
-
-
-                # find first polyhedra (positive)
+                # find first polyhedron (positive)
                 plane_x = f1.normal                     # normal
                 plane_y = plane_x.cross(edge_vec1)      # tangent face perp edge
                 id1 = (f1.index+1)
@@ -275,7 +481,7 @@ class polyhedra_wireframe(Operator):
                 bm1.faces[j].material_index = i
 
         end_time = time.time()
-        print('Tissue: Polyhedra wireframe, found {} polyhedra in {:.4f} sec'.format(len(polyhedra), end_time-start_time))
+        print('Tissue: Polyhedral wireframe, found {} polyhedra in {:.4f} sec'.format(len(polyhedra), end_time-start_time))
 
 
         delete_faces = []
@@ -288,7 +494,7 @@ class polyhedra_wireframe(Operator):
         #bmesh.ops.bisect_edges(bm1, edges=bm1.edges, cuts=3)
 
         end_time = time.time()
-        print('Tissue: Polyhedra wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
+        print('Tissue: Polyhedral wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
 
         bm1.faces.index_update()
         #merge_verts = []
@@ -324,7 +530,7 @@ class polyhedra_wireframe(Operator):
                         vec1 = v1 - v
                         ang = (pi - vec0.angle(vec1))/2
                         length = min(vec0.length, vec1.length)*sin(ang)
-                        if length < self.thickness/2:
+                        if length < props.thickness/2:
                             delete = True
                             break
 
@@ -353,13 +559,18 @@ class polyhedra_wireframe(Operator):
         flat_faces = list(dict.fromkeys(flat_faces))
 
         end_time = time.time()
-        print('Tissue: Polyhedra wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
+        print('Tissue: Polyhedral wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
 
         poly_me = me.copy()
         bm1.to_mesh(poly_me)
         poly_me.update()
-        new_ob = bpy.data.objects.new("Polyhedra", poly_me)
-        context.collection.objects.link(new_ob)
+        if props.mode == 'POLYHEDRA':
+            ob.data = poly_me
+            end_time = time.time()
+            print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-start_time))
+            return {'FINISHED'}
+            #new_ob = bpy.data.objects.new("Polyhedra", poly_me)
+            #context.collection.objects.link(new_ob)
 
         ############# FRAME #############
         bm1.faces.index_update()
@@ -414,7 +625,7 @@ class polyhedra_wireframe(Operator):
                 normal = face_normals[loop_index][i]
                 tan0 = normal.cross(vec0)
                 tan1 = normal.cross(vec1)
-                tangent = (tan0 + tan1).normalized()/sin(ang)*self.thickness/2
+                tangent = (tan0 + tan1).normalized()/sin(ang)*props.thickness/2
                 tangents.append(tangent)
 
             # calc correct direction for boundaries
@@ -454,7 +665,7 @@ class polyhedra_wireframe(Operator):
                 new_face.select = True
                 new_faces.append(new_face)
                 wire_length.append((v0.co - v1.co).length)
-            max_segment = max(wire_length)/self.subdivisions
+            max_segment = max(wire_length)/subs
             #for f,l in zip(new_faces,wire_length):
             #    f.material_index = min(int(l/max_segment), self.subdivisions-1)
             bm1.verts.ensure_lookup_table()
@@ -463,7 +674,7 @@ class polyhedra_wireframe(Operator):
         # At this point topology han been build, but not yet thickened
 
         end_time = time.time()
-        print('Tissue: Polyhedra wireframe, frames in {:.4f} sec'.format(end_time-start_time))
+        print('Tissue: Polyhedral wireframe, frames in {:.4f} sec'.format(end_time-start_time))
 
         bm1.verts.ensure_lookup_table()
         bm1.edges.ensure_lookup_table()
@@ -499,19 +710,19 @@ class polyhedra_wireframe(Operator):
                 ang /= len(vecs)
                 div = sin(ang)
                 if div == 0: div = 1
-                v.co += nor*self.thickness/2/div
+                v.co += nor*props.thickness/2/div
 
         end_time = time.time()
-        print('Tissue: Polyhedra wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
+        print('Tissue: Polyhedral wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
 
         # Removing original flat faces
 
         flat_faces = [bm1.faces[i] for i in flat_faces]
         for f in flat_faces:
-            f.material_index = self.subdivisions+1
+            f.material_index = subs+1
             for v in f.verts:
                 if smooth_corners[v.index]:
-                    v.co += v.normal*self.thickness/2
+                    v.co += v.normal*props.thickness/2
                     smooth_corners[v.index] = False
         delete_faces = delete_faces + [f.index for f in original_faces]
         delete_faces = list(dict.fromkeys(delete_faces))
@@ -523,14 +734,24 @@ class polyhedra_wireframe(Operator):
         bm1.edges.ensure_lookup_table()
         bm1.verts.ensure_lookup_table()
 
-        if self.dissolve_inners:
+        if props.crease > 0 and props.dissolve != 'INNER':
+            creaseLayer = bm1.edges.layers.crease.verify()
+            bm1.edges.index_update()
+            crease_edges = []
+            for f in bm1.faces:
+                e = f.edges[2]
+                e[creaseLayer] = props.crease
+
+        if props.dissolve != 'NONE':
+            if props.dissolve == 'INNER': dissolve_id = 2
+            if props.dissolve == 'OUTER': dissolve_id = 0
             bm1.edges.index_update()
             dissolve_edges = []
             for f in bm1.faces:
-                e = f.edges[2]
+                e = f.edges[dissolve_id]
                 if e not in dissolve_edges:
                     dissolve_edges.append(e)
-            bmesh.ops.dissolve_edges(bm1, edges=dissolve_edges, use_verts=True, use_face_split=True)
+            bmesh.ops.dissolve_edges(bm1, edges=dissolve_edges, use_verts=True, use_face_split=False)
 
         all_lines = [[] for e in me.edges]
         all_end_points = [[] for e in me.edges]
@@ -540,18 +761,88 @@ class polyhedra_wireframe(Operator):
         _me = me.copy()
         bm1.to_mesh(me)
         me.update()
+        ob.data = me
+
+        '''
         new_ob = bpy.data.objects.new("Wireframe", me)
         context.collection.objects.link(new_ob)
         for o in context.scene.objects: o.select_set(False)
         new_ob.select_set(True)
         context.view_layer.objects.active = new_ob
         me = _me
-
+        '''
         bm1.free()
         bpy.data.meshes.remove(_me)
         #new_ob.location = ob.location
+        '''
         new_ob.matrix_world = ob.matrix_world
-
+        '''
         end_time = time.time()
-        print('Tissue: Polyhedra wireframe in {:.4f} sec'.format(end_time-start_time))
+        print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-start_time))
         return {'FINISHED'}
+
+class TISSUE_PT_polyhedra_object(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_label = "Tissue Polyhedra"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            ob = context.object
+            return ob.type == 'MESH' and ob.tissue.tissue_type == 'POLYHEDRA'
+        except: return False
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_polyhedra
+        tissue_props = ob.tissue
+
+        bool_polyhedra = tissue_props.tissue_type == 'POLYHEDRA'
+        layout = self.layout
+        if not bool_polyhedra:
+            layout.label(text="The selected object is not a Polyhedral object",
+                        icon='INFO')
+        else:
+            if props.error_message != "":
+                layout.label(text=props.error_message,
+                            icon='ERROR')
+            col = layout.column(align=True)
+            row = col.row(align=True)
+
+            #set_tessellate_handler(self,context)
+            row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
+            lock_icon = 'LOCKED' if tissue_props.bool_lock else 'UNLOCKED'
+            #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
+            deps_icon = 'LINKED' if tissue_props.bool_dependencies else 'UNLINKED'
+            row.prop(tissue_props, "bool_dependencies", text="", icon=deps_icon)
+            row.prop(tissue_props, "bool_lock", text="", icon=lock_icon)
+            col2 = row.column(align=True)
+            col2.prop(tissue_props, "bool_run", text="",icon='TIME')
+            col2.enabled = not tissue_props.bool_lock
+            #layout.use_property_split = True
+            #layout.use_property_decorate = False  # No animation.
+            col = layout.column(align=True)
+            col.label(text='Polyhedral Mode:')
+            col.prop(props, 'mode', text='')
+            col.separator()
+            col.label(text='Source object:')
+            row = col.row(align=True)
+            row.prop_search(props, "object", context.scene, "objects", text='')
+            col2 = row.column(align=True)
+            col2.prop(props, "bool_modifiers", text='Use Modifiers',icon='MODIFIER')
+            if props.mode == 'WIREFRAME':
+                col.separator()
+                col.prop(props, 'thickness')
+                col.separator()
+                col.label(text='Segments:')
+                row = col.row()
+                row.prop(props, 'segments')
+                row.prop(props, 'proportional_segments', text='Proportional')
+                col.separator()
+                col.label(text='Loops:')
+                col.prop(props, 'dissolve')
+                col.separator()
+                col.prop(props, 'crease')

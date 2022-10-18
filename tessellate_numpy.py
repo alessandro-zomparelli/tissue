@@ -1882,10 +1882,16 @@ class tissue_update_tessellate_deps(Operator):
                 'selected_objects' : [o]
                 }
             if o.type == 'MESH':
-                try:
-                    bpy.ops.object.tissue_update_tessellate(override)
-                except:
-                    self.report({'ERROR'}, "Can't Tessellate :-(")
+                if o.tissue.tissue_type == 'TESSELLATE':
+                    try:
+                        bpy.ops.object.tissue_update_tessellate(override)
+                    except:
+                        self.report({'ERROR'}, "Can't Tessellate :-(")
+                if o.tissue.tissue_type == 'POLYHEDRA':
+                    try:
+                        bpy.ops.object.tissue_update_polyhedra(override)
+                    except:
+                        self.report({'ERROR'}, "Can't compute Polyhedra :-(")
             else:
                 try:
                     bpy.ops.object.tissue_convert_to_curve_update(override)
@@ -2390,6 +2396,12 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.dual_mesh_tessellated", text='Dual Mesh', icon='SEQ_CHROMA_SCOPE')
         col.separator()
 
+        op = col.operator("object.polyhedral_wireframe", icon='MESH_CUBE', text='Polyhedral Decomposition')
+        op.mode = 'POLYHEDRA'
+        op = col.operator("object.polyhedral_wireframe", icon='MOD_WIREFRAME', text='Polyhedral Wireframe')
+        op.mode = 'WIREFRAME'
+        col.separator()
+
         #col.label(text="Curves:")
         col.operator("object.tissue_convert_to_curve", icon='OUTLINER_OB_CURVE', text="Convert to Curve")
         #row.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='')
@@ -2407,7 +2419,6 @@ class TISSUE_PT_tessellate(Panel):
         col.separator()
         col.label(text="Other:")
         col.operator("object.dual_mesh", icon='SEQ_CHROMA_SCOPE')
-        col.operator("object.polyhedra_wireframe", icon='MOD_WIREFRAME', text='Polyhedra Wireframe')
         col.operator("object.lattice_along_surface", icon="OUTLINER_OB_LATTICE")
 
         act = context.object

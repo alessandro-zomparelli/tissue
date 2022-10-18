@@ -66,6 +66,8 @@ def get_deps(ob):
         return [ob.tissue_tessellate.generator, ob.tissue_tessellate.component]
     elif type == 'TO_CURVE':
         return [ob.tissue_to_curve.object]
+    elif type == 'POLYHEDRA':
+        return [ob.tissue_polyhedra.object]
     else: return []
 
 def anim_tessellate_active(self, context):
@@ -129,6 +131,8 @@ def anim_tessellate(scene, depsgraph=None):
                 bpy.ops.object.tissue_update_tessellate(override)
             elif ob.tissue.tissue_type == 'TO_CURVE':
                 bpy.ops.object.tissue_convert_to_curve_update(override)
+            elif ob.tissue.tissue_type == 'POLYHEDRA':
+                bpy.ops.object.tissue_polyhedra_update(override)
 
         if old_mode != None:
             objects = bpy.context.view_layer.objects
@@ -224,7 +228,8 @@ class tissue_prop(PropertyGroup):
         items=(
                 ('NONE', "None", ""),
                 ('TESSELLATE', "Tessellate", ""),
-                ('TO_CURVE', "To Curve", "")
+                ('TO_CURVE', "To Curve", ""),
+                ('POLYHEDRA', "Polyhedra", "")
                 ),
         default='NONE',
         name=""

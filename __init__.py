@@ -150,7 +150,10 @@ classes = (
 
     uv_to_mesh.uv_to_mesh,
 
-    polyhedra.polyhedra_wireframe,
+    polyhedra.polyhedral_wireframe,
+    polyhedra.tissue_update_polyhedra,
+    polyhedra.tissue_polyhedra_prop,
+    polyhedra.TISSUE_PT_polyhedra_object,
 
     texture_reaction_diffusion.tex_reaction_diffusion_prop,
     texture_reaction_diffusion.start_tex_reaction_diffusion,
@@ -169,6 +172,9 @@ def register():
                                     )
     bpy.types.Object.tissue_tessellate = PointerProperty(
                                             type=tissue_properties.tissue_tessellate_prop
+                                            )
+    bpy.types.Object.tissue_polyhedra = PointerProperty(
+                                            type=polyhedra.tissue_polyhedra_prop
                                             )
     bpy.types.Object.tissue_to_curve = PointerProperty(
                                             type=curves_tools.tissue_to_curve_prop
