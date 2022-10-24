@@ -4833,6 +4833,7 @@ class tissue_weight_streamlines(Operator):
             if self.pos_steps > 0:
                 for i in range(n_verts):
                     n = neigh[i]
+                    if len(n) == 0: continue
                     nw = neigh_weight[i]
                     max_w = max(nw)
                     if self.same_weight:
@@ -4846,6 +4847,7 @@ class tissue_weight_streamlines(Operator):
                 prev_vert = [-1]*n_verts
                 for i in range(n_verts):
                     n = neigh[i]
+                    if len(n) == 0: continue
                     nw = neigh_weight[i]
                     min_w = min(nw)
                     if self.same_weight:
@@ -4866,7 +4868,8 @@ class tissue_weight_streamlines(Operator):
             for j in range(self.pos_steps):
                 if self.rand_dir > 0:
                     n = neigh[next_pts[-1]]
-                    next = n[int(len(n) * (1-random.random() * self.rand_dir))]
+                    if len(n) == 0: break
+                    next = n[int((len(n)-1) * (1-random.random() * self.rand_dir))]
                 else:
                     next = next_vert[next_pts[-1]]
                 if next > 0:
@@ -4877,6 +4880,7 @@ class tissue_weight_streamlines(Operator):
             for j in range(self.neg_steps):
                 if self.rand_dir > 0:
                     n = neigh[prev_pts[-1]]
+                    if len(n) == 0: break
                     prev = n[int(len(n) * random.random() * self.rand_dir)]
                 else:
                     prev = prev_vert[prev_pts[-1]]
