@@ -61,13 +61,6 @@ from . import config
 def allowed_objects():
     return ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META')
 
-def remove_temp_objects():
-    # clean objects
-    for o in bpy.data.objects:
-        if "_tissue_tmp" in o.name:
-            bpy.data.objects.remove(o)
-    return
-
 def tessellated(ob):
     tess_props = ob.tissue_tessellate
     if tess_props.generator not in list(bpy.data.objects):
@@ -1893,10 +1886,16 @@ class tissue_update_tessellate_deps(Operator):
                     except:
                         self.report({'ERROR'}, "Can't compute Polyhedra :-(")
             else:
-                try:
-                    bpy.ops.object.tissue_convert_to_curve_update(override)
-                except:
-                    self.report({'ERROR'}, "Can't compute Curve :-(")
+                if o.tissue.tissue_type == 'TO_CURVE':
+                    try:
+                        bpy.ops.object.tissue_convert_to_curve_update(override)
+                    except:
+                        self.report({'ERROR'}, "Can't compute Curve :-(")
+                if o.tissue.tissue_type == 'CONTOUR_CURVES':
+                    try:
+                        bpy.ops.object.tissue_update_contour_curves(override)
+                    except:
+                        self.report({'ERROR'}, "Can't compute Contour Curves :-(")
 
         context.view_layer.objects.active = active_ob
         for o in context.view_layer.objects:
@@ -2404,6 +2403,8 @@ class TISSUE_PT_tessellate(Panel):
 
         #col.label(text="Curves:")
         col.operator("object.tissue_convert_to_curve", icon='OUTLINER_OB_CURVE', text="Convert to Curve")
+        col.operator("object.tissue_weight_contour_curves_pattern", icon='FORCE_TURBULENCE', text="Contour Curves")
+
         #row.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='')
 
         col.separator()

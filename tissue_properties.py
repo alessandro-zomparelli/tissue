@@ -229,10 +229,16 @@ class tissue_prop(PropertyGroup):
                 ('NONE', "None", ""),
                 ('TESSELLATE', "Tessellate", ""),
                 ('TO_CURVE', "To Curve", ""),
-                ('POLYHEDRA', "Polyhedra", "")
+                ('POLYHEDRA', "Polyhedra", ""),
+                ('CONTOUR_CURVES', "Contour Curves", "")
                 ),
         default='NONE',
         name=""
+        )
+    bool_hold : BoolProperty(
+            name="Hold",
+            description="Wait...",
+            default=False
         )
 
 class tissue_tessellate_prop(PropertyGroup):

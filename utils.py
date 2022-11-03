@@ -225,6 +225,13 @@ def turn_off_animatable(scene):
 # OBJECTS
 # ------------------------------------------------------------------
 
+def remove_temp_objects():
+    # clean objects
+    for o in bpy.data.objects:
+        if "_tissue_tmp" in o.name:
+            bpy.data.objects.remove(o)
+    return
+
 def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True, mirror_correction = True):
     try: ob.name
     except: return None
@@ -1101,8 +1108,54 @@ def curve_from_points(points, name='Curve'):
     ob_curve = bpy.data.objects.new(name,curve)
     return ob_curve
 
-def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True, only_data=False):
-    curve = bpy.data.curves.new(name,'CURVE')
+def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True, only_data=False, curve=None):
+    if not curve:
+        curve = bpy.data.curves.new(name,'CURVE')
+    curve.dimensions = '3D'
+    use_rad = True
+    for c in indexes:
+        bool_cyclic = c[0] == c[-1]
+        if bool_cyclic: c.pop(-1)
+        # cleanup
+        pts = np.array([points[i] for i in c])
+        try:
+            rad = np.array([radii[i] for i in c])
+        except:
+            use_rad = False
+            rad = 1
+        if merge_distance > 0:
+            pts1 = np.roll(pts,1,axis=0)
+            dist = np.linalg.norm(pts1-pts, axis=1)
+            count = 0
+            n = len(dist)
+            mask = np.ones(n).astype('bool')
+            for i in range(n):
+                count += dist[i]
+                if count > merge_distance: count = 0
+                else: mask[i] = False
+            pts = pts[mask]
+            if use_rad: rad = rad[mask]
+
+        if skip_open and not bool_cyclic: continue
+        s = curve.splines.new('POLY')
+        n_pts = len(pts)
+        s.points.add(n_pts-1)
+        w = np.ones(n_pts).reshape((n_pts,1))
+        co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
+        s.points.foreach_set('co',co)
+        if use_rad: s.points.foreach_set('radius',rad)
+        s.use_cyclic_u = bool_cyclic
+    if only_data:
+        return curve
+    else:
+        ob_curve = bpy.data.objects.new(name,curve)
+        bpy.context.collection.objects.link(ob_curve)
+        if set_active:
+            bpy.context.view_layer.objects.active = ob_curve
+        return ob_curve
+
+def update_curve_from_pydata_simple(curve, points, radii, indexes, skip_open=False, merge_distance=1, set_active=True, only_data=False):
+    curve.splines.clear()
     curve.dimensions = '3D'
     use_rad = True
     for c in indexes:
@@ -1358,11 +1411,11 @@ def get_weight_numpy(vertex_group, n_verts):
     :return: Readed weight values as numpy array.
     :rtype: :class:'numpy.ndarray'
     """
-    weight = [0]*n_verts
+    weight = np.zeros(n_verts)
     for i in range(n_verts):
         try: weight[i] = vertex_group.weight(i)
         except: pass
-    return np.array(weight)
+    return weight
 
 def bmesh_get_weight_numpy(group_index, layer, verts, normalized=False):
     weight = np.zeros(len(verts))

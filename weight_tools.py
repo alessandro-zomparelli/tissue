@@ -1305,7 +1305,7 @@ class weight_contour_displace(Operator):
         vertex_group_name = ob0.vertex_groups[group_id].name
 
         bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         if self.use_modifiers:
             #me0 = ob0.to_mesh(preserve_all_data_layers=True, depsgraph=bpy.context.evaluated_depsgraph_get()).copy()
@@ -1876,7 +1876,7 @@ class weight_contour_mask_wip(Operator):
 
         return {'FINISHED'}
 
-
+'''
 class weight_contour_curves(Operator):
     bl_idname = "object.weight_contour_curves"
     bl_label = "Contour Curves"
@@ -2106,12 +2106,201 @@ class weight_contour_curves(Operator):
         bpy.data.meshes.remove(me)
 
         return {'FINISHED'}
+'''
+
+
+def anim_contour_curves(self, context):
+    ob = context.object
+    props = ob.tissue_contour_curves
+    if not (ob.tissue.bool_lock or ob.tissue.bool_hold):
+        try:
+            props.object.name
+            bpy.ops.object.tissue_update_contour_curves()
+        except: pass
+
+class tissue_contour_curves_prop(PropertyGroup):
+    object : PointerProperty(
+        type=bpy.types.Object,
+        name="Object",
+        description="Source object",
+        update = anim_contour_curves
+        )
+
+    use_modifiers : BoolProperty(
+        name="Use Modifiers", default=True,
+        description="Apply all the modifiers",
+        update = anim_contour_curves
+        )
+
+    auto_bevel : BoolProperty(
+        name="Automatic Bevel", default=False,
+        description="Bevel depends on weight density",
+        update = anim_contour_curves
+        )
+
+    min_iso : FloatProperty(
+        name="Min Value", default=0., soft_min=0, soft_max=1,
+        description="Minimum weight value",
+        update = anim_contour_curves
+        )
+    max_iso : FloatProperty(
+        name="Max Value", default=1, soft_min=0, soft_max=1,
+        description="Maximum weight value",
+        update = anim_contour_curves
+        )
+    n_curves : IntProperty(
+        name="Curves", default=10, soft_min=1, soft_max=100,
+        description="Number of Contour Curves",
+        update = anim_contour_curves
+        )
+
+    in_displace : FloatProperty(
+        name="Displace A", default=0, soft_min=-10, soft_max=10,
+        description="Pattern displace strength",
+        update = anim_contour_curves
+        )
+    out_displace : FloatProperty(
+        name="Displace B", default=2, soft_min=-10, soft_max=10,
+        description="Pattern displace strength",
+        update = anim_contour_curves
+        )
+
+    in_steps : IntProperty(
+        name="Steps A", default=1, min=0, soft_max=10,
+        description="Number of layers to move inwards",
+        update = anim_contour_curves
+        )
+    out_steps : IntProperty(
+        name="Steps B", default=1, min=0, soft_max=10,
+        description="Number of layers to move outwards",
+        update = anim_contour_curves
+        )
+    limit_z : BoolProperty(
+        name="Limit Z", default=False,
+        description="Limit Pattern in Z",
+        update = anim_contour_curves
+        )
+
+    merge : BoolProperty(
+        name="Merge Vertices", default=True,
+        description="Merge points",
+        update = anim_contour_curves
+        )
+    merge_thres : FloatProperty(
+        name="Merge Threshold", default=0.01, min=0, soft_max=1,
+        description="Minimum Curve Radius",
+        update = anim_contour_curves
+        )
+
+    bevel_depth : FloatProperty(
+        name="Bevel Depth", default=0, min=0, soft_max=1,
+        description="",
+        update = anim_contour_curves
+        )
+    min_bevel_depth : FloatProperty(
+        name="Min Bevel Depth", default=0.1, min=0, soft_max=1,
+        description="",
+        update = anim_contour_curves
+        )
+    max_bevel_depth : FloatProperty(
+        name="Max Bevel Depth", default=1, min=0, soft_max=1,
+        description="",
+        update = anim_contour_curves
+        )
+    remove_open_curves : BoolProperty(
+        name="Remove Open Curves", default=False,
+        description="Remove Open Curves",
+        update = anim_contour_curves
+        )
+
+    vertex_group_pattern : StringProperty(
+        name="Displace", default='',
+        description="Vertex Group used for pattern displace",
+        update = anim_contour_curves
+        )
+
+    vertex_group_bevel : StringProperty(
+        name="Bevel", default='',
+        description="Variable Bevel depth",
+        update = anim_contour_curves
+        )
+
+    object_name : StringProperty(
+        name="Active Object", default='',
+        description="",
+        update = anim_contour_curves
+        )
+
+    vertex_group_contour : StringProperty(
+        name="Contour", default="",
+        description="Vertex Group used for contouring",
+        update = anim_contour_curves
+        )
+    clean_distance : FloatProperty(
+        name="Clean Distance", default=0, min=0, soft_max=10,
+        description="Remove short segments",
+        update = anim_contour_curves
+        )
+
+
+    spiralized: BoolProperty(
+        name='Spiralized', default=False,
+        description='Create a Spiral Contour. Works better with dense meshes.',
+        update = anim_contour_curves
+        )
+    spiral_axis: FloatVectorProperty(
+        name="Spiral Axis", default=(0,0,1),
+        description="Axis of the Spiral (in local coordinates)",
+        update = anim_contour_curves
+        )
+    spiral_rotation : FloatProperty(
+        name="Spiral Rotation", default=0, min=0, max=2*pi,
+        description="",
+        update = anim_contour_curves
+        )
+
+    contour_mode : EnumProperty(
+        items=(
+            #('VECTOR', "Vector", "Orient the Contour to a given vector starting from the origin of the object"),
+            ('GLOBALX', "Global X", "Orient the Contour to the Global X axis"),
+            ('GLOBALY', "Global Y", "Orient the Contour to the Global Y axis"),
+            ('GLOBALZ', "Global Z", "Orient the Contour to the Global Z axis"),
+            ('OBJECT', "Object", "Orient the Contour to a target object's Z"),
+            ('WEIGHT', "Weight", "Contour based on a Vertex Group")
+            ),
+        default='GLOBALZ',
+        name="Mode used for the Contour Curves",
+        update = anim_contour_curves
+        )
+
+    contour_vector : FloatVectorProperty(
+        name='Vector', description='Constant Vector', default=(0.0, 0.0, 1.0),
+        update = anim_contour_curves
+        )
+    contour_vector_object : PointerProperty(
+        type=bpy.types.Object,
+        name="",
+        description="Target Object",
+        update = anim_contour_curves
+        )
+    contour_offset : FloatProperty(
+        name="Offset", default=0.05, min=0.000001, soft_min=0.01, soft_max=10,
+        description="Contour offset along the Vector",
+        update = anim_contour_curves
+        )
+
 
 class tissue_weight_contour_curves_pattern(Operator):
     bl_idname = "object.tissue_weight_contour_curves_pattern"
     bl_label = "Contour Curves"
     bl_description = ("")
     bl_options = {'REGISTER', 'UNDO'}
+
+    object : StringProperty(
+        name="Object",
+        description="Source object",
+        default = ""
+        )
 
     use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
@@ -2205,30 +2394,83 @@ class tissue_weight_contour_curves_pattern(Operator):
         name="Spiral Rotation", default=0, min=0, max=2*pi,
         description=""
     )
+    bool_hold : BoolProperty(
+            name="Hold",
+            description="Wait...",
+            default=False
+        )
 
-    @classmethod
-    def poll(cls, context):
-        ob = context.object
-        return ob and len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
+    contour_mode : EnumProperty(
+        items=(
+            #('VECTOR', "Vector", "Orient the Contour to a given vector starting from the origin of the object"),
+            ('GLOBALX', "Global X", "Orient the Contour to the Global X axis"),
+            ('GLOBALY', "Global Y", "Orient the Contour to the Global Y axis"),
+            ('GLOBALZ', "Global Z", "Orient the Contour to the Global Z axis"),
+            ('OBJECT', "Object", "Orient the Contour to a target object's Z"),
+            ('WEIGHT', "Weight", "Contour based on a Vertex Group")
+            ),
+        default='GLOBALZ',
+        name="Mode used for the Contour Curves"
+        )
+
+    contour_vector : FloatVectorProperty(
+        name='Vector', description='Constant Vector', default=(0.0, 0.0, 1.0)
+        )
+    contour_vector_object : StringProperty(
+        name="Object",
+        description="Target object",
+        default = ""
+        )
+    contour_offset : FloatProperty(
+        name="Offset", default=0.05, min=0.000001, soft_min=0.01, soft_max=10,
+        description="Contour offset along the Vector"
+        )
+
+    #@classmethod
+    #def poll(cls, context):
+    #    ob = context.object
+    #    return ob and len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self, width=250)
 
     def draw(self, context):
-        if not context.object.type == 'CURVE':
-            self.object_name = context.object.name
-        ob = bpy.data.objects[self.object_name]
+        if self.object == '':
+            self.object = context.object.name
+            #if not context.object.type == 'CURVE':
+            #self.object_name = context.object.name
+
+        ob = bpy.data.objects[self.object]
+        print(ob)
         if self.vertex_group_contour not in [vg.name for vg in ob.vertex_groups]:
             self.vertex_group_contour = ob.vertex_groups.active.name
+
+        if not self.bool_hold:
+            self.object = ob.name
+        self.bool_hold = True
+
         layout = self.layout
         col = layout.column(align=True)
         col.prop(self, "use_modifiers")
         col.label(text="Contour Curves:")
-        col.prop_search(self, 'vertex_group_contour', ob, "vertex_groups", text='')
-        row = col.row(align=True)
-        row.prop(self,'min_iso')
-        row.prop(self,'max_iso')
-        col.prop(self,'n_curves')
+
+        col.prop(self, "contour_mode", text="Mode")
+        if self.contour_mode == 'OBJECT':
+            col.prop_search(self, "contour_vector_object", context.scene, "objects", text='Object')
+            col.prop(self,'contour_offset')
+        if self.contour_mode in ('GLOBALX', 'GLOBALY', 'GLOBALZ'):
+            row = col.row()
+            #row.prop(props, "contour_vector")
+            col.prop(self,'contour_offset')
+
+        ob0 = bpy.data.objects[self.object]
+
+        if self.contour_mode == 'WEIGHT':
+            col.prop_search(self, 'vertex_group_contour', ob, "vertex_groups", text='')
+            row = col.row(align=True)
+            row.prop(self,'min_iso')
+            row.prop(self,'max_iso')
+            col.prop(self,'n_curves')
         col.separator()
         col.label(text='Curves Bevel:')
         col.prop(self,'auto_bevel')
@@ -2268,46 +2510,177 @@ class tissue_weight_contour_curves_pattern(Operator):
         col.prop(self,'remove_open_curves')
 
     def execute(self, context):
-        n_curves = self.n_curves
+        try:
+            ob0 = bpy.data.objects[self.object]
+        except:
+            return {'CANCELLED'}
+        self.object_name = "Contour Curves"
+        # Check if existing object with same name
+        names = [o.name for o in bpy.data.objects]
+        if self.object_name in names:
+            count_name = 1
+            while True:
+                test_name = self.object_name + '.{:03d}'.format(count_name)
+                if not (test_name in names):
+                    self.object_name = test_name
+                    break
+                count_name += 1
+
+        '''
+        if ob0.type not in ('MESH'):
+            message = "Source object must be a Mesh!"
+            self.report({'ERROR'}, message)
+            self.generator = ""
+        '''
+
+        if bpy.ops.object.select_all.poll():
+            bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        bool_update = False
+        if context.object == ob0:
+            auto_layer_collection()
+            curve = bpy.data.curves.new(self.object_name,'CURVE')
+            new_ob = bpy.data.objects.new(self.object_name,curve)
+            bpy.context.collection.objects.link(new_ob)
+            bpy.context.view_layer.objects.active = new_ob
+            if bpy.ops.object.select_all.poll():
+                bpy.ops.object.select_all(action='DESELECT')
+            bpy.ops.object.mode_set(mode='OBJECT')
+            new_ob.select_set(True)
+        else:
+            new_ob = context.object
+            bool_update = True
+
+        # Store parameters
+        props = new_ob.tissue_contour_curves
+        new_ob.tissue.bool_hold = True
+        if self.object in bpy.data.objects.keys():
+            props.object = bpy.data.objects[self.object]
+        props.use_modifiers = self.use_modifiers
+        props.auto_bevel = self.auto_bevel
+        props.min_iso = self.min_iso
+        props.max_iso = self.max_iso
+        props.n_curves = self.n_curves
+        props.in_displace = self.in_displace
+        props.out_displace = self.out_displace
+        props.in_steps = self.in_steps
+        props.out_steps = self.out_steps
+        props.limit_z = self.limit_z
+        props.merge = self.merge
+        props.merge_thres = self.merge_thres
+        props.bevel_depth = self.bevel_depth
+        props.min_bevel_depth = self.min_bevel_depth
+        props.max_bevel_depth = self.max_bevel_depth
+        props.remove_open_curves = self.remove_open_curves
+        props.vertex_group_pattern = self.vertex_group_pattern
+        props.vertex_group_bevel = self.vertex_group_bevel
+        props.object_name = self.object_name
+        props.vertex_group_contour = self.vertex_group_contour
+        props.clean_distance = self.clean_distance
+        props.spiralized = self.spiralized
+        props.spiral_axis = self.spiral_axis
+        props.spiral_rotation = self.spiral_rotation
+        props.contour_mode = self.contour_mode
+        if self.contour_vector_object in bpy.data.objects.keys():
+            props.contour_vector_object = bpy.data.objects[self.contour_vector_object]
+        props.contour_vector = self.contour_vector
+        props.contour_offset = self.contour_offset
+        new_ob.tissue.bool_hold = False
+
+        new_ob.tissue.tissue_type = 'CONTOUR_CURVES'
+        try: bpy.ops.object.tissue_update_contour_curves()
+        except RuntimeError as e:
+            print("no update")
+            bpy.data.objects.remove(new_ob)
+            remove_temp_objects()
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+        if not bool_update:
+            self.object_name = new_ob.name
+            #self.working_on = self.object_name
+            new_ob.location = ob0.location
+            new_ob.matrix_world = ob0.matrix_world
+
+        # Assign collection of the base object
+        old_coll = new_ob.users_collection
+        if old_coll != ob0.users_collection:
+            for c in old_coll:
+                c.objects.unlink(new_ob)
+            for c in ob0.users_collection:
+                c.objects.link(new_ob)
+        context.view_layer.objects.active = new_ob
+
+        return {'FINISHED'}
+
+class tissue_update_contour_curves(Operator):
+    bl_idname = "object.tissue_update_contour_curves"
+    bl_label = "Update Contour Curves"
+    bl_description = ("Update a previously generated Contour Curves object")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ob = context.object
+        props = ob.tissue_contour_curves
+        _ob0 = props.object
+        n_curves = props.n_curves
         start_time = timeit.default_timer()
         try:
-            check = context.object.vertex_groups[0]
+            check = _ob0.vertex_groups[0]
         except:
             self.report({'ERROR'}, "The object doesn't have Vertex Groups")
             return {'CANCELLED'}
-        ob0 = bpy.data.objects[self.object_name]
+        #_ob0 = bpy.data.objects[props.object]
 
-        dg = context.evaluated_depsgraph_get()
-        ob = ob0.evaluated_get(dg)
-        me0 = ob.data
+        ob0 = convert_object_to_mesh(_ob0)
+        me0 = ob0.data
 
         # generate new bmesh
         bm = bmesh.new()
         bm.from_mesh(me0)
         n_verts = len(bm.verts)
+        vertices, normals = get_vertices_and_normals_numpy(me0)
 
         # store weight values
-        try:
-            weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_contour], len(me0.vertices))
-        except:
-            bm.free()
-            self.report({'ERROR'}, "Please select a Vertex Group for contouring")
-            return {'CANCELLED'}
+        if props.contour_mode != 'WEIGHT':
+            ob0_matrix = np.matrix(ob0.matrix_world.to_3x3().transposed())
+            global_verts = np.matmul(vertices,ob0_matrix)
+            global_verts += np.array(ob0.matrix_world.translation)
+            if props.contour_mode == 'OBJECT' and props.contour_vector_object:
+                vec_ob = props.contour_vector_object
+                global_verts -= np.array(vec_ob.matrix_world.translation)
+                vec_ob_matrix = np.matrix(vec_ob.matrix_world.to_3x3().inverted().transposed())
+                global_verts = np.matmul(global_verts,vec_ob_matrix)
+                weight = global_verts[:,2].A1
+            elif props.contour_mode == 'GLOBALX':
+                weight = global_verts[:,0].A1
+            elif props.contour_mode == 'GLOBALY':
+                weight = global_verts[:,1].A1
+            elif props.contour_mode == 'GLOBALZ':
+                weight = global_verts[:,2].A1
+
+        elif props.contour_mode == 'WEIGHT':
+            try:
+                weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group_contour], len(me0.vertices))
+            except:
+                bm.free()
+                self.report({'ERROR'}, "Please select a Vertex Group for contouring")
+                return {'CANCELLED'}
 
         try:
-            pattern_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_pattern], len(me0.vertices))
+            pattern_weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group_pattern], len(me0.vertices))
         except:
             #self.report({'WARNING'}, "There is no Vertex Group assigned to the pattern displace")
             pattern_weight = np.zeros(len(me0.vertices))
 
         variable_bevel = False
         try:
-            bevel_weight = get_weight_numpy(ob.vertex_groups[self.vertex_group_bevel], len(me0.vertices))
+            bevel_weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group_bevel], len(me0.vertices))
             variable_bevel = True
         except:
             bevel_weight = np.ones(len(me0.vertices))
 
-        if self.auto_bevel:
+        if props.auto_bevel:
             # calc weight density
             bevel_weight = np.ones(len(me0.vertices))*10000
             bevel_weight = np.zeros(len(me0.vertices))
@@ -2333,18 +2706,17 @@ class tissue_weight_contour_curves_pattern(Operator):
         radius = []
 
         # start iterate contours levels
-        vertices, normals = get_vertices_and_normals_numpy(me0)
         filtered_edges = get_edges_id_numpy(me0)
 
 
-        min_iso = min(self.min_iso, self.max_iso)
-        max_iso = max(self.min_iso, self.max_iso)
+        min_iso = min(props.min_iso, props.max_iso)
+        max_iso = max(props.min_iso, props.max_iso)
 
         # Spiral
-        if self.spiralized:
+        if props.spiralized:
             nx = normals[:,0]
             ny = normals[:,1]
-            ang = self.spiral_rotation + weight*pi*n_curves+arctan2(nx,ny)
+            ang = props.spiral_rotation + weight*pi*n_curves+arctan2(nx,ny)
             weight = sin(ang)/2+0.5
             n_curves = 1
 
@@ -2353,6 +2725,10 @@ class tissue_weight_contour_curves_pattern(Operator):
 
         else:
             delta_iso = None
+
+        if props.contour_mode != 'WEIGHT':
+            delta_iso = props.contour_offset
+            n_curves = int(np.max(weight)/delta_iso)+1
 
         faces_weight = [np.array([weight[v] for v in p.vertices]) for p in me0.polygons]
         fw_min = np.array([np.min(fw) for fw in faces_weight])
@@ -2384,14 +2760,14 @@ class tissue_weight_contour_curves_pattern(Operator):
 
             count = len(total_verts)
 
-            new_filtered_edges, edges_index, verts, bevel = contour_edges_pattern(self, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight)
+            new_filtered_edges, edges_index, verts, bevel = contour_edges_pattern(props, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight)
 
             if len(edges_index) > 0:
-                if self.auto_bevel and False:
+                if props.auto_bevel and False:
                     bevel = 1-dens[edges_index]
                     bevel = bevel[:,np.newaxis]
-                if self.max_bevel_depth != self.min_bevel_depth:
-                    min_radius = self.min_bevel_depth / max(0.0001,self.max_bevel_depth)
+                if props.max_bevel_depth != props.min_bevel_depth:
+                    min_radius = props.min_bevel_depth / max(0.0001,props.max_bevel_depth)
                     radii = min_radius + bevel*(1 - min_radius)
                 else:
                     radii = bevel
@@ -2422,13 +2798,15 @@ class tissue_weight_contour_curves_pattern(Operator):
             total_verts = np.concatenate((total_verts, verts))
             total_radii = np.concatenate((total_radii, radii))
 
-            if self.min_rad != self.max_rad:
+            '''
+            if props.min_rad != props.max_rad:
                 try:
-                    iso_rad = c*(self.max_rad-self.min_rad)/(self.n_curves-1)+self.min_rad
-                    if iso_rad < 0: iso_rad = (self.min_rad + self.max_rad)/2
+                    iso_rad = c*(props.max_rad-props.min_rad)/(props.n_curves-1)+props.min_rad
+                    if iso_rad < 0: iso_rad = (props.min_rad + props.max_rad)/2
                 except:
-                    iso_rad = (self.min_rad + self.max_rad)/2
+                    iso_rad = (props.min_rad + props.max_rad)/2
                 radius = radius + [iso_rad]*len(verts)
+            '''
         #print("Contour Curves, points computing: " + str(timeit.default_timer() - step_time) + " sec")
         step_time = timeit.default_timer()
 
@@ -2438,22 +2816,29 @@ class tissue_weight_contour_curves_pattern(Operator):
 
             #print("Contour Curves, point ordered in: " + str(timeit.default_timer() - step_time) + " sec")
             step_time = timeit.default_timer()
-            crv = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', self.remove_open_curves, merge_distance=self.clean_distance)
-            context.view_layer.objects.active = crv
-            if variable_bevel: crv.data.bevel_depth = self.max_bevel_depth
-            else: crv.data.bevel_depth = self.bevel_depth
+            ob.data.splines.clear()
+            ob.data = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', props.remove_open_curves, merge_distance=props.clean_distance, only_data=True, curve=ob.data)
+            #context.view_layer.objects.active = crv
+            if variable_bevel: ob.data.bevel_depth = props.max_bevel_depth
+            else: ob.data.bevel_depth = props.bevel_depth
 
-            crv.select_set(True)
-            ob0.select_set(False)
-            crv.matrix_world = ob0.matrix_world
+            #crv.select_set(True)
+            #ob0.select_set(False)
+            #crv.matrix_world = ob0.matrix_world
             #print("Contour Curves, curves created in: " + str(timeit.default_timer() - step_time) + " sec")
         else:
-            bm.free()
-            self.report({'ERROR'}, "There are no values in the chosen range")
-            return {'CANCELLED'}
+            ob.data.splines.clear()
+            pass
+            #bpy.data.objects.remove(ob0)
+            #bm.free()
+            #self.report({'ERROR'}, "There are no values in the chosen range")
+            #return {'CANCELLED'}
         bm.free()
+        bpy.data.objects.remove(ob0)
         print("Contour Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}
+
+
 
 class vertex_colors_to_vertex_groups(Operator):
     bl_idname = "object.vertex_colors_to_vertex_groups"
@@ -3096,7 +3481,8 @@ class TISSUE_PT_weight(Panel):
         col.label(text="Weight Curves:")
         #col.operator("object.weight_contour_curves", icon="MOD_CURVE")
         col.operator("object.tissue_weight_streamlines", icon="ANIM")
-        col.operator("object.tissue_weight_contour_curves_pattern", icon="FORCE_TURBULENCE")
+        op = col.operator("object.tissue_weight_contour_curves_pattern", icon="FORCE_TURBULENCE")
+        op.contour_mode = 'WEIGHT'
         col.separator()
         col.operator("object.weight_contour_displace", icon="MOD_DISPLACE")
         col.operator("object.weight_contour_mask", icon="MOD_MASK")
@@ -4901,3 +5287,104 @@ class tissue_weight_streamlines(Operator):
 
         print("Streamlines Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}
+
+
+class TISSUE_PT_contour_curves(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "data"
+    bl_label = "Tissue Contour Curves"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            #bool_curve = context.object.tissue_to_curve.object != None
+            ob = context.object
+            return ob.type == 'CURVE' and ob.tissue.tissue_type == 'CONTOUR_CURVES'
+        except:
+            return False
+
+    def draw(self, context):
+        ob = context.object
+        props = ob.tissue_contour_curves
+
+        layout = self.layout
+        #layout.use_property_split = True
+        #layout.use_property_decorate = False
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        #col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
+        row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
+        lock_icon = 'LOCKED' if ob.tissue.bool_lock else 'UNLOCKED'
+        #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
+        deps_icon = 'LINKED' if ob.tissue.bool_dependencies else 'UNLINKED'
+        row.prop(ob.tissue, "bool_dependencies", text="", icon=deps_icon)
+        row.prop(ob.tissue, "bool_lock", text="", icon=lock_icon)
+        col2 = row.column(align=True)
+        col2.prop(ob.tissue, "bool_run", text="",icon='TIME')
+        col2.enabled = not ob.tissue.bool_lock
+
+        col.separator()
+        row = col.row(align=True)
+        row.prop_search(props, "object", context.scene, "objects", text="")
+        row.prop(props, "use_modifiers", icon='MODIFIER', text='')
+        col.separator()
+        col.label(text="Contour Curves:")
+
+        col.prop(props, "contour_mode", text="Mode")
+        if props.contour_mode == 'OBJECT':
+            col.prop_search(props, "contour_vector_object", context.scene, "objects", text='Object')
+            col.prop(props,'contour_offset')
+        if props.contour_mode in ('GLOBALX', 'GLOBALY', 'GLOBALZ'):
+            row = col.row()
+            #row.prop(props, "contour_vector")
+            col.prop(props,'contour_offset')
+
+        ob0 = bpy.data.objects[props.object.name]
+
+        if props.contour_mode == 'WEIGHT':
+            col.prop_search(props, 'vertex_group_contour', ob0, "vertex_groups", text='')
+            row = col.row(align=True)
+            row.prop(props,'min_iso')
+            row.prop(props,'max_iso')
+            col.prop(props,'n_curves')
+        col.separator()
+        col.label(text='Curves Bevel:')
+        col.prop(props,'auto_bevel')
+        if not props.auto_bevel:
+            col.prop_search(props, 'vertex_group_bevel', ob0, "vertex_groups", text='')
+        if props.vertex_group_bevel != '' or props.auto_bevel:
+            row = col.row(align=True)
+            row.prop(props,'min_bevel_depth')
+            row.prop(props,'max_bevel_depth')
+        else:
+            col.prop(props,'bevel_depth')
+        col.separator()
+
+        col.label(text="Displace Pattern:")
+        col.prop_search(props, 'vertex_group_pattern', ob0, "vertex_groups", text='')
+        if props.vertex_group_pattern != '':
+            row = col.row(align=True)
+            row.prop(props,'in_steps')
+            row.prop(props,'out_steps')
+            row = col.row(align=True)
+            row.prop(props,'in_displace')
+            row.prop(props,'out_displace')
+            col.prop(props,'limit_z')
+        col.separator()
+        row=col.row(align=True)
+        '''
+        row.prop(props,'spiralized')
+        row.label(icon='MOD_SCREW')
+        if props.spiralized:
+            #row=col.row(align=True)
+            #row.prop(self,'spiral_axis')
+            #col.separator()
+            col.prop(props,'spiral_rotation')
+        col.separator()
+        '''
+
+        col.label(text='Clean Curves:')
+        col.prop(props,'clean_distance')
+        col.prop(props,'remove_open_curves')
