@@ -2441,9 +2441,12 @@ class tissue_weight_contour_curves_pattern(Operator):
             #self.object_name = context.object.name
 
         ob = bpy.data.objects[self.object]
-        print(ob)
-        if self.vertex_group_contour not in [vg.name for vg in ob.vertex_groups]:
-            self.vertex_group_contour = ob.vertex_groups.active.name
+        if self.contour_mode == 'WEIGHT':
+            try:
+                if self.vertex_group_contour not in [vg.name for vg in ob.vertex_groups]:
+                    self.vertex_group_contour = ob.vertex_groups.active.name
+            except:
+                self.contour_mode == 'GLOBALZ'
 
         if not self.bool_hold:
             self.object = ob.name
@@ -2625,11 +2628,13 @@ class tissue_update_contour_curves(Operator):
         _ob0 = props.object
         n_curves = props.n_curves
         start_time = timeit.default_timer()
-        try:
-            check = _ob0.vertex_groups[0]
-        except:
-            self.report({'ERROR'}, "The object doesn't have Vertex Groups")
-            return {'CANCELLED'}
+        if props.contour_mode == 'WEIGHT':
+            try:
+                check = _ob0.vertex_groups[0]
+            except:
+                #props.contour_mode = 'GLOBALZ'
+                self.report({'ERROR'}, "The object doesn't have Vertex Groups")
+                return {'CANCELLED'}
         #_ob0 = bpy.data.objects[props.object]
 
         ob0 = convert_object_to_mesh(_ob0)
