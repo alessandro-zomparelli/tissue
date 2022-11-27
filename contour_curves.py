@@ -425,15 +425,13 @@ class tissue_weight_contour_curves_pattern(Operator):
     #    return ob and len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
 
     def invoke(self, context, event):
+        self.object = context.object.name
         return context.window_manager.invoke_props_dialog(self, width=250)
 
     def draw(self, context):
-        if self.object == '':
-            self.object = context.object.name
-            #if not context.object.type == 'CURVE':
-            #self.object_name = context.object.name
+        ob = context.object
+        ob0 = bpy.data.objects[self.object]
 
-        ob = bpy.data.objects[self.object]
         if self.contour_mode == 'WEIGHT':
             try:
                 if self.vertex_group_contour not in [vg.name for vg in ob.vertex_groups]:
@@ -511,25 +509,14 @@ class tissue_weight_contour_curves_pattern(Operator):
             row.prop(self,'displace_y', text="Y", toggle=1)
             row.prop(self,'displace_z', text="Z", toggle=1)
         col.separator()
-        #row=col.row(align=True)
-        #row.prop(self,'spiralized')
-        #row.label(icon='MOD_SCREW')
-        #if self.spiralized:
-            #row=col.row(align=True)
-            #row.prop(self,'spiral_axis')
-            #col.separator()
-        #    col.prop(self,'spiral_rotation')
-        #col.separator()
 
         col.label(text='Clean Curves:')
         col.prop(self,'clean_distance')
         col.prop(self,'remove_open_curves')
 
     def execute(self, context):
-        try:
-            ob0 = bpy.data.objects[self.object]
-        except:
-            return {'CANCELLED'}
+        ob0 = bpy.context.object
+
         self.object_name = "Contour Curves"
         # Check if existing object with same name
         names = [o.name for o in bpy.data.objects]
@@ -569,6 +556,7 @@ class tissue_weight_contour_curves_pattern(Operator):
             bool_update = True
 
         # Store parameters
+        print(new_ob)
         props = new_ob.tissue_contour_curves
         new_ob.tissue.bool_hold = True
         if self.object in bpy.data.objects.keys():
@@ -643,6 +631,8 @@ class tissue_update_contour_curves(Operator):
         ob = context.object
         props = ob.tissue_contour_curves
         _ob0 = props.object
+        print("_ob0")
+        print(_ob0)
         n_curves = props.n_curves
         tt0 = time.time()
         tt1 = time.time()
@@ -775,6 +765,7 @@ class tissue_update_contour_curves(Operator):
 
         if props.contour_mode in ('VECTOR','OBJECT','GEODESIC'):
             delta_iso = props.contour_offset
+            print(weight)
             n_curves = min(int((np.max(weight)-props.min_value)/delta_iso)+1, props.n_curves)
         else:
             if n_curves == 1:
@@ -792,8 +783,13 @@ class tissue_update_contour_curves(Operator):
         faces_weight = np.split(faces_weight, np.cumsum(faces_n_verts)[:-1])
         '''
         faces_weight = [np.array([weight[v] for v in p.vertices]) for p in me0.polygons]
-        fw_min = np.min(faces_weight, axis=1)
-        fw_max = np.max(faces_weight, axis=1)
+        try:
+            fw_min = np.min(faces_weight, axis=1)
+            fw_max = np.max(faces_weight, axis=1)
+        except:
+            # necessary for irregular meshes
+            fw_min = np.array([min(fw) for fw in faces_weight])
+            fw_max = np.array([max(fw) for fw in faces_weight])
         bm_faces = np.array(bm.faces)
 
         tt1 = tissue_time(tt1, "Compute face values", levels=1)
