@@ -683,13 +683,17 @@ class tissue_update_contour_curves(Operator):
                 weight = global_verts[:,2].A1
             elif props.contour_mode == 'VECTOR':
                 vec = np.array(props.contour_vector)
+                vec_len = np.linalg.norm(vec)
+                if vec_len == 0:
+                    vec = np.array((0,0,1))
+                    vec_len = 1
+                else:
+                    vec /= vec_len
+                    vec_len = 1
                 global_verts = global_verts.A
                 projected_verts = global_verts * vec
                 projected_verts = np.sum(projected_verts,axis=1)[:,np.newaxis]
-                vec_len = np.linalg.norm(vec)
-                vec = np.tile(vec,(n_verts,1))
-                projected_verts = ((projected_verts) / vec_len**2 ) * vec
-                weight = np.sum(projected_verts,axis=1)
+                weight = projected_verts.reshape((-1))
         elif props.contour_mode == 'WEIGHT':
             try:
                 weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group_contour], len(me0.vertices))
