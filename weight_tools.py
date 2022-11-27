@@ -697,7 +697,7 @@ class _weight_laplacian(Operator):
 
         for i in range(len(lap)):
             val = (lap[i]-min_def)/delta_def
-            if val > 0.7: print(str(val) + " " + str(lap[i]))
+            #if val > 0.7: print(str(val) + " " + str(lap[i]))
             #val = weight[i] + 0.2*lap[i]
             ob.vertex_groups[-1].add([i], val, 'REPLACE')
         self.bounds_string = str(round(min_def,2)) + " to " + str(round(max_def,2))
@@ -3761,9 +3761,6 @@ def create_fast_bake_def(ob, frame_start=1, frame_end=250):
         vert1 = verts[id1]
         vec = vert1-vert0
         edge_field = (field[id0] + field[id1])/2    # average vector associated to the edge
-        print(vert0.shape)
-        print(field.shape)
-        print(edge_field.shape)
         # normalize vectors
         vec /= np.linalg.norm(vec,axis=1)[:,None]
         edge_field /= np.linalg.norm(edge_field,axis=1)[:,None]
@@ -3782,23 +3779,13 @@ def create_fast_bake_def(ob, frame_start=1, frame_end=250):
         #mult[id1] += edge_flow
         np.add.at(mult,id0,-edge_flow)
         np.add.at(mult,id1,edge_flow)
-        print("mult")
         mult = scale/mult
-        print(mult)
-        print(np.sum(mult))
-
-
-        #try:
-        print(vec)
-        print(edge_flow)
-        print(edge_flow)
 
         bool_run = False
         for j in range(props.cache_frame_start, props.cache_frame_end+1):
             start2 = time.time()
             print("{:6d} Reaction-Diffusion: {}".format(j, ob.name))
             if bool_run:
-                print(values)
                 #for i in range(1):
                 values = integrate_field(n_edges,id0,id1,values,edge_flow,mult,time_steps)
                 #values0 = values
@@ -4340,7 +4327,6 @@ class tissue_weight_streamlines(Operator):
             # generate new bmesh
             bm = bmesh.new()
             bm.from_mesh(me)
-            print(len(me.vertices))
             #for v in me.vertices:
             #    if v.select: seeds.append(v.index)
             for v in bm.verts:

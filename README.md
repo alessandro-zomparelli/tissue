@@ -33,7 +33,7 @@ If you like my work and you want to help me, please consider to support me on **
 
 [![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
 
-A special thanks to all my patrons, in particular to my **Tissue Supporters**: *Scott Shorter*, *Avi Briant*, *Beili Wang*, *Cal McGaugh*, *Chris Costanzi*, *Justin Davis*, *MutableHurdle*, *Stefano Giovacchini*, *Tomek Zamojski*.
+A special thanks to all my patrons, in particular to my active **Tissue Supporters**: *Scott Shorter*, *Avi Briant*, *Beili Wang*, *Chris Costanzi*, *Justin Davis*, *MutableHurdle*, *Stefano Giovacchini*, *Tomek Zamojski*, *Chengyuan Wei*, *Kenned Doll*.
 
 If that is too much for you or you are just passing by, then you can also **buy me a coffee**:
 

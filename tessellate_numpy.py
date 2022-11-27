@@ -918,7 +918,6 @@ def tessellate_patch(props):
             np_v = np.clip(sk_uv_quads[:,:,1], 0, sides).astype('int')[:,None,:]
             np_u1 = np.clip(sk_uv_quads[:,:,2], 0, sides).astype('int')[:,None,:]
             np_v1 = np.clip(sk_uv_quads[:,:,3], 0, sides).astype('int')[:,None,:]
-            print(np_v1)
             # face corners for each vertex  (n_patches, n_sk, n_verts1, 4)
             v00 = verts_xyz[:,np_u,np_v].reshape((n_patches,n_sk,n_verts1,3))#.swapaxes(0,1)
             v10 = verts_xyz[:,np_u1,np_v].reshape((n_patches,n_sk,n_verts1,3))#.swapaxes(0,1)

@@ -224,9 +224,6 @@ class tissue_contour_curves_prop(PropertyGroup):
     contour_mode : EnumProperty(
         items=(
             ('VECTOR', "Vector", "Orient the Contour to a given vector starting from the origin of the object"),
-            #('GLOBALX', "Global X", "Orient the Contour to the Global X axis"),
-            #('GLOBALY', "Global Y", "Orient the Contour to the Global Y axis"),
-            #('GLOBALZ', "Global Z", "Orient the Contour to the Global Z axis"),
             ('OBJECT', "Object", "Orient the Contour to a target object's Z"),
             ('WEIGHT', "Weight", "Contour based on a Vertex Group"),
             ('GEODESIC', "Geodesic Distance", "Contour based on the geodesic distance from the chosen vertices"),
@@ -388,9 +385,6 @@ class tissue_weight_contour_curves_pattern(Operator):
     contour_mode : EnumProperty(
         items=(
             ('VECTOR', "Vector", "Orient the Contour to a given vector starting from the origin of the object"),
-            #('GLOBALX', "Global X", "Orient the Contour to the Global X axis"),
-            #('GLOBALY', "Global Y", "Orient the Contour to the Global Y axis"),
-            #('GLOBALZ', "Global Z", "Orient the Contour to the Global Z axis"),
             ('OBJECT', "Object", "Orient the Contour to a target object's Z"),
             ('WEIGHT', "Weight", "Contour based on a Vertex Group"),
             ('GEODESIC', "Geodesic Distance", "Contour based on the geodesic distance from the chosen vertices"),
@@ -476,7 +470,7 @@ class tissue_weight_contour_curves_pattern(Operator):
         if self.contour_mode == 'OBJECT':
             col.prop(self,'contour_offset')
             col.prop(self,'n_curves', text='Max Curves')
-        elif self.contour_mode in ('VECTOR','GLOBALX', 'GLOBALY', 'GLOBALZ', 'GEODESIC'):
+        elif self.contour_mode in ('VECTOR', 'GEODESIC'):
             col.prop(self,'contour_offset')
             row = col.row(align=True)
             row.prop(self,'min_value')
@@ -650,17 +644,9 @@ class tissue_update_contour_curves(Operator):
         props = ob.tissue_contour_curves
         _ob0 = props.object
         n_curves = props.n_curves
-        start_time = timeit.default_timer()
-        '''
-        if props.contour_mode == 'WEIGHT':
-            try:
-                check = _ob0.vertex_groups[0]
-            except:
-                #props.contour_mode = 'GLOBALZ'
-                self.report({'ERROR'}, "The object doesn't have Vertex Groups")
-                return {'CANCELLED'}
-        '''
-        #_ob0 = bpy.data.objects[props.object]
+        tt0 = time.time()
+        tt1 = time.time()
+        print("Tissue: Contour Curves...")
 
         ob0 = convert_object_to_mesh(_ob0)
         ob0.name = "_tissue_tmp_ob0"
@@ -682,8 +668,10 @@ class tissue_update_contour_curves(Operator):
                 self.report({'ERROR'}, "Please select an target Object")
                 return {'CANCELLED'}
 
+        tt1 = tissue_time(tt1, "Load objects", levels=1)
+
         # store weight values
-        if props.contour_mode in ('VECTOR','OBJECT','GLOBALX','GLOBALY','GLOBALZ'):
+        if props.contour_mode in ('VECTOR','OBJECT'):
             ob0_matrix = np.matrix(ob0.matrix_world.to_3x3().transposed())
             global_verts = np.matmul(vertices,ob0_matrix)
             global_verts += np.array(ob0.matrix_world.translation)
@@ -693,20 +681,15 @@ class tissue_update_contour_curves(Operator):
                 vec_ob_matrix = np.matrix(vec_ob.matrix_world.to_3x3().inverted().transposed())
                 global_verts = np.matmul(global_verts,vec_ob_matrix)
                 weight = global_verts[:,2].A1
-            elif props.contour_mode == 'GLOBALX':
-                weight = global_verts[:,0].A1
-            elif props.contour_mode == 'GLOBALY':
-                weight = global_verts[:,1].A1
-            elif props.contour_mode == 'GLOBALZ':
-                weight = global_verts[:,2].A1
             elif props.contour_mode == 'VECTOR':
                 vec = np.array(props.contour_vector)
-                vec = np.tile(vec,(n_verts,1))
-                projected_verts = global_verts @ np.transpose(vec)
+                global_verts = global_verts.A
+                projected_verts = global_verts * vec
+                projected_verts = np.sum(projected_verts,axis=1)[:,np.newaxis]
                 vec_len = np.linalg.norm(vec)
+                vec = np.tile(vec,(n_verts,1))
                 projected_verts = ((projected_verts) / vec_len**2 ) * vec
-                weight = projected_verts[:,2].A1
-
+                weight = np.sum(projected_verts,axis=1)
         elif props.contour_mode == 'WEIGHT':
             try:
                 weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group_contour], len(me0.vertices))
@@ -715,8 +698,7 @@ class tissue_update_contour_curves(Operator):
                 bpy.data.objects.remove(ob0)
                 self.report({'ERROR'}, "Please select a Vertex Group for contouring")
                 return {'CANCELLED'}
-
-        if props.contour_mode in ('GEODESIC','TOPOLOGY'):
+        elif props.contour_mode in ('GEODESIC','TOPOLOGY'):
             cancel = False
             weight = [None]*n_verts
             seed_verts = []
@@ -748,15 +730,14 @@ class tissue_update_contour_curves(Operator):
                     if seeds[i]>0.999999:
                         seed_verts.append(v)
                         weight[i] = 0
-
-            weight = fill_neighbors_attribute(seed_verts, weight, props.contour_mode)
-            weight = np.array(weight)
-
-            if cancel:
+            if cancel or len(seed_verts)==0:
                 bm.free()
                 bpy.data.objects.remove(ob0)
                 self.report({'ERROR'}, "No seed vertices found")
                 return {'CANCELLED'}
+
+            weight = fill_neighbors_attribute(seed_verts, weight, props.contour_mode)
+            weight = np.array(weight)
 
         try:
             pattern_weight = get_weight_numpy(ob0.vertex_groups[props.vertex_group_pattern], len(me0.vertices))
@@ -780,15 +761,17 @@ class tissue_update_contour_curves(Operator):
         total_segments = []# np.array([])
         radius = []
 
+        tt1 = tissue_time(tt1, "Compute values", levels=1)
+
         # start iterate contours levels
         filtered_edges = get_edges_id_numpy(me0)
 
         min_value = props.min_value
         max_value = props.min_value + props.range_value
 
-        if props.contour_mode in ('VECTOR','OBJECT', 'GLOBALX', 'GLOBALY', 'GLOBALZ', 'GEODESIC'):
+        if props.contour_mode in ('VECTOR','OBJECT','GEODESIC'):
             delta_iso = props.contour_offset
-            n_curves = min(int(np.max(weight)/delta_iso)+1, props.n_curves)
+            n_curves = min(int((np.max(weight)-props.min_value)/delta_iso)+1, props.n_curves)
         else:
             if n_curves == 1:
                 delta_iso = props.range_value/2
@@ -797,14 +780,19 @@ class tissue_update_contour_curves(Operator):
         if props.contour_mode == 'TOPOLOGY':
             weight = weight/np.max(weight)
 
+        '''
+        # numpy method
+        faces_n_verts = get_attribute_numpy(me0.polygons, attribute='loop_total').astype('int')
+        faces_verts = get_attribute_numpy(me0.polygons, attribute='vertices', size=np.sum(faces_n_verts)).astype('int')
+        faces_weight = weight[faces_verts]
+        faces_weight = np.split(faces_weight, np.cumsum(faces_n_verts)[:-1])
+        '''
         faces_weight = [np.array([weight[v] for v in p.vertices]) for p in me0.polygons]
-        fw_min = np.array([np.min(fw) for fw in faces_weight])
-        fw_max = np.array([np.max(fw) for fw in faces_weight])
-
+        fw_min = np.min(faces_weight, axis=1)
+        fw_max = np.max(faces_weight, axis=1)
         bm_faces = np.array(bm.faces)
 
-        #print("Contour Curves, data loaded: " + str(timeit.default_timer() - start_time) + " sec")
-        step_time = timeit.default_timer()
+        tt1 = tissue_time(tt1, "Compute face values", levels=1)
         for c in range(n_curves):
             if delta_iso:
                 iso_val = c*delta_iso + min_value
@@ -860,24 +848,10 @@ class tissue_update_contour_curves(Operator):
             total_segments = total_segments + segments
             total_verts = np.concatenate((total_verts, verts))
             total_radii = np.concatenate((total_radii, radii))
-
-            '''
-            if props.min_rad != props.max_rad:
-                try:
-                    iso_rad = c*(props.max_rad-props.min_rad)/(props.n_curves-1)+props.min_rad
-                    if iso_rad < 0: iso_rad = (props.min_rad + props.max_rad)/2
-                except:
-                    iso_rad = (props.min_rad + props.max_rad)/2
-                radius = radius + [iso_rad]*len(verts)
-            '''
-        #print("Contour Curves, points computing: " + str(timeit.default_timer() - step_time) + " sec")
-        step_time = timeit.default_timer()
+        tt1 = tissue_time(tt1, "Compute curves", levels=1)
 
         if len(total_segments) > 0:
-            step_time = timeit.default_timer()
             ordered_points = find_curves(total_segments, len(total_verts))
-
-            #print("Contour Curves, point ordered in: " + str(timeit.default_timer() - step_time) + " sec")
             step_time = timeit.default_timer()
             ob.data.splines.clear()
             if props.variable_bevel and not weight_bevel:
@@ -888,25 +862,17 @@ class tissue_update_contour_curves(Operator):
                 if not weight_bevel:
                     ob.data.bevel_depth = 1
                 else:
-                    ob.data.bevel_depth = props.max_bevel_depth
-            else: ob.data.bevel_depth = props.bevel_depth
-
-            #crv.select_set(True)
-            #ob0.select_set(False)
-            #crv.matrix_world = ob0.matrix_world
-            #print("Contour Curves, curves created in: " + str(timeit.default_timer() - step_time) + " sec")
+                    ob.data.bevel_depth = max(props.max_bevel_depth, props.min_bevel_depth)
+            tt1 = tissue_time(tt1, "Store curves data", levels=1)
         else:
             ob.data.splines.clear()
             pass
-            #bpy.data.objects.remove(ob0)
-            #bm.free()
-            #self.report({'ERROR'}, "There are no values in the chosen range")
-            #return {'CANCELLED'}
         bm.free()
         for o in bpy.data.objects:
             if '_tissue_tmp_' in o.name:
                 bpy.data.objects.remove(o)
-        print("Contour Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
+
+        tt0 = tissue_time(tt0, "Contour Curves, total time", levels=0)
         return {'FINISHED'}
 
 
@@ -974,7 +940,7 @@ class TISSUE_PT_contour_curves(Panel):
         if props.contour_mode == 'OBJECT':
             col.prop(props,'contour_offset')
             col.prop(props,'n_curves', text='Max Curves')
-        elif props.contour_mode in ('VECTOR','GLOBALX', 'GLOBALY', 'GLOBALZ', 'GEODESIC'):
+        elif props.contour_mode in ('VECTOR','GEODESIC'):
             col.prop(props,'contour_offset')
             row = col.row(align=True)
             row.prop(props,'min_value')

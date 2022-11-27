@@ -1012,13 +1012,16 @@ def get_polygons_select_numpy(mesh):
     selections = np.array(selections)
     return selections
 
-def get_attribute_numpy(elements_list, attribute='select', mult=1):
+def get_attribute_numpy(elements_list, attribute='select', mult=1, size=None):
     '''
     Generate a numpy array getting attribute from a list of element using
     the foreach_get() function.
     '''
-    n_elements = len(elements_list)
-    values = [0]*n_elements*mult
+    if size:
+        n_elements = size
+    else:
+        n_elements = len(elements_list)
+    values = np.zeros(int(n_elements*mult))
     elements_list.foreach_get(attribute, values)
     values = np.array(values)
     if mult > 1: values = values.reshape((n_elements,mult))
