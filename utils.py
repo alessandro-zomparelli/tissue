@@ -1551,6 +1551,22 @@ def mesh_diffusion_vector(me, vectors, iter, diff, uv_dir=0):
     vectors[:,2] = z
     return vectors
 
+def fill_neighbors_attribute(verts,weight,attribute):
+    neigh = {}
+    for v0 in verts:
+        for f in v0.link_faces:
+            for v1 in f.verts:
+                if attribute == 'GEODESIC':
+                    dist = weight[v0.index] + (v0.co-v1.co).length
+                elif attribute == 'TOPOLOGY':
+                    dist = weight[v0.index] + 1.0
+                w1 = weight[v1.index]
+                if w1 == None or w1 > dist:
+                    weight[v1.index] = dist
+                    neigh[v1] = 0
+    if len(neigh) == 0: return weight
+    else: return fill_neighbors_attribute(neigh.keys(), weight, attribute)
+
 # ------------------------------------------------------------------
 # MODIFIERS
 # ------------------------------------------------------------------

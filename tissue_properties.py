@@ -94,7 +94,7 @@ def anim_tessellate_object(ob):
 
 
 def anim_tessellate(scene, depsgraph=None):
-    print('Tissue: animating tessellations...')
+    print('Tissue: animating generated objects...')
 
     #config.evaluatedDepsgraph = depsgraph
 
@@ -133,6 +133,8 @@ def anim_tessellate(scene, depsgraph=None):
                 bpy.ops.object.tissue_convert_to_curve_update(override)
             elif ob.tissue.tissue_type == 'POLYHEDRA':
                 bpy.ops.object.tissue_polyhedra_update(override)
+            elif ob.tissue.tissue_type == 'CONTOUR_CURVES':
+                bpy.ops.object.tissue_update_contour_curves(override)
 
         if old_mode != None:
             objects = bpy.context.view_layer.objects

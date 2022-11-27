@@ -59,6 +59,7 @@ if "bpy" in locals():
     importlib.reload(curves_tools)
     importlib.reload(polyhedra)
     importlib.reload(texture_reaction_diffusion)
+    importlib.reload(contour_curves)
 
 else:
     from . import tessellate_numpy
@@ -73,6 +74,7 @@ else:
     from . import curves_tools
     from . import polyhedra
     from . import texture_reaction_diffusion
+    from . import contour_curves
 
 import bpy
 from bpy.props import PointerProperty, CollectionProperty, BoolProperty
@@ -111,9 +113,6 @@ classes = (
     weight_tools.TISSUE_PT_weight,
     weight_tools.TISSUE_PT_color,
     #weight_tools.weight_contour_curves,
-    weight_tools.tissue_weight_contour_curves_pattern,
-    weight_tools.tissue_update_contour_curves,
-    weight_tools.tissue_contour_curves_prop,
     weight_tools.weight_contour_mask,
     weight_tools.weight_contour_displace,
     weight_tools.harmonic_weight,
@@ -136,7 +135,11 @@ classes = (
     weight_tools.bake_reaction_diffusion,
     weight_tools.reaction_diffusion_free_data,
     weight_tools.tissue_weight_streamlines,
-    weight_tools.TISSUE_PT_contour_curves,
+
+    contour_curves.tissue_weight_contour_curves_pattern,
+    contour_curves.tissue_update_contour_curves,
+    contour_curves.tissue_contour_curves_prop,
+    contour_curves.TISSUE_PT_contour_curves,
 
     dual_mesh.dual_mesh,
     dual_mesh.dual_mesh_tessellated,
@@ -183,7 +186,7 @@ def register():
                                             type=curves_tools.tissue_to_curve_prop
                                             )
     bpy.types.Object.tissue_contour_curves = PointerProperty(
-                                            type=weight_tools.tissue_contour_curves_prop
+                                            type=contour_curves.tissue_contour_curves_prop
                                             )
     bpy.types.Object.formula_settings = CollectionProperty(
                                             type=weight_tools.formula_prop
