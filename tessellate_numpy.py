@@ -434,7 +434,10 @@ def tessellate_patch(props):
             v01 = all_verts[:,0,-1]
             v10 = all_verts[:,-1,0]
             v11 = all_verts[:,-1,-1]
-            face_weight = (weight_distribution[v00] + weight_distribution[v01] + weight_distribution[v10] + weight_distribution[v11])/4 * len(components)
+            # Average method
+            face_weight = np.average(weight_distribution[all_verts.reshape((all_verts.shape[0], -1))], axis=1) * len(components)
+            # Corners Method
+            #face_weight = (weight_distribution[v00] + weight_distribution[v01] + weight_distribution[v10] + weight_distribution[v11])/4 * len(components)
             if fill_mode == 'FAN' and consistent_wedges:
                 for i in range(n_original_faces):
                     face_mask = faces_id == i

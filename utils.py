@@ -108,7 +108,7 @@ def calc_thickness(co2,n2,vz,a,weight):
             nw = weight.shape[1]-1
             co3 = np.empty((n_sk,n_patches,n_verts,3))
             for i in range(n_sk):
-                co3[i] = numba_calc_thickness_area_weight(co2[:,i],n2[:,i],vz[:,i],a[:,min(i,na)],weight[:,min(i,nw)])
+                co3[i] = numba_calc_thickness_area_weight(co2[:,i],n2[:,i],vz[:,i],a[:,min(i,na)],weight)
             co3 = co3.swapaxes(0,1)
     else:
         use_area = type(a) == np.ndarray
@@ -1101,6 +1101,72 @@ def find_curves(edges, n_verts):
                 break
         curves.append(curve)
     return curves
+
+def find_curves_attribute(edges, n_verts, attribute):
+    # dictionary with a list for every point
+    verts_dict = {key:[] for key in range(n_verts)}
+    # get neighbors for every point
+    for e in edges:
+        verts_dict[e[0]].append(e[1])
+        verts_dict[e[1]].append(e[0])
+    curves = []
+    ordered_attr = []
+    while True:
+        if len(verts_dict) == 0: break
+        # next starting point
+        v = list(verts_dict.keys())[0]
+        # neighbors
+        v01 = verts_dict[v]
+        if len(v01) == 0:
+            verts_dict.pop(v)
+            continue
+        curve = []
+        attr = []
+        if len(v01) > 1:
+            curve.append(v01[1])    # add neighbors
+            attr.append(attribute[v01[1]])    # add neighbors
+        curve.append(v)         # add starting point
+        attr.append(attribute[v])
+        curve.append(v01[0])    # add neighbors
+        attr.append(attribute[v01[0]])
+        verts_dict.pop(v)
+        # start building curve
+        while True:
+            #last_point = curve[-1]
+            #if last_point not in verts_dict: break
+
+            # try to change direction if needed
+            if curve[-1] in verts_dict: pass
+            elif curve[0] in verts_dict:
+                curve.reverse()
+                attr.reverse()
+            else: break
+
+            # neighbors points
+            last_point = curve[-1]
+            v01 = verts_dict[last_point]
+
+            # curve end
+            if len(v01) == 1:
+                verts_dict.pop(last_point)
+                if curve[0] in verts_dict: continue
+                else: break
+
+            # chose next point
+            new_point = None
+            if v01[0] == curve[-2]: new_point = v01[1]
+            elif v01[1] == curve[-2]: new_point = v01[0]
+            #else: break
+
+            #if new_point != curve[1]:
+            curve.append(new_point)
+            ordered_attr.append(attr)
+            verts_dict.pop(last_point)
+            if curve[0] == curve[-1]:
+                verts_dict.pop(new_point)
+                break
+        curves.append(curve)
+    return curves, ordered_attr
 
 def curve_from_points(points, name='Curve'):
     curve = bpy.data.curves.new(name,'CURVE')
