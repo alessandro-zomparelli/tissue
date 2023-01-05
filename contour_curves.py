@@ -631,8 +631,6 @@ class tissue_update_contour_curves(Operator):
         ob = context.object
         props = ob.tissue_contour_curves
         _ob0 = props.object
-        print("_ob0")
-        print(_ob0)
         n_curves = props.n_curves
         tt0 = time.time()
         tt1 = time.time()
@@ -752,6 +750,7 @@ class tissue_update_contour_curves(Operator):
         #filtered_edges = bm.edges
         total_verts = np.zeros((0,3))
         total_radii = np.zeros((0,1))
+        total_edges_index = np.zeros((0)).astype('int')
         total_segments = []# np.array([])
         radius = []
 
@@ -765,7 +764,6 @@ class tissue_update_contour_curves(Operator):
 
         if props.contour_mode in ('VECTOR','OBJECT','GEODESIC'):
             delta_iso = props.contour_offset
-            print(weight)
             n_curves = min(int((np.max(weight)-props.min_value)/delta_iso)+1, props.n_curves)
         else:
             if n_curves == 1:
@@ -774,6 +772,15 @@ class tissue_update_contour_curves(Operator):
                 delta_iso = props.range_value/(n_curves-1)
         if props.contour_mode == 'TOPOLOGY':
             weight = weight/np.max(weight)
+
+        if True:
+            edges_verts = get_attribute_numpy(me0.edges,"vertices",mult=2).astype('int')
+            #edges_vec = vertices[edges_verts[:,0]]-vertices[edges_verts[:,1]]
+            edges_vec = global_verts[edges_verts[:,0]]-global_verts[edges_verts[:,1]]
+            edges_length = np.linalg.norm(edges_vec,axis=1)
+            edges_vec /= edges_length[:,np.newaxis]
+            edges_dw = np.abs(weight[edges_verts[:,0]]-weight[edges_verts[:,1]])
+            edges_bevel = delta_iso*edges_length/edges_dw/2
 
         '''
         # numpy method
@@ -815,6 +822,7 @@ class tissue_update_contour_curves(Operator):
             if not weight_bevel and props.variable_bevel:
                 bevel_weight = np.full(n_verts, c)
             new_filtered_edges, edges_index, verts, bevel = contour_edges_pattern(props, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight)
+            bevel = edges_bevel[edges_index][:,np.newaxis]
 
             if len(edges_index) > 0:
                 if props.variable_bevel and weight_bevel and False:#props.max_bevel_depth != props.min_bevel_depth:
@@ -848,13 +856,50 @@ class tissue_update_contour_curves(Operator):
             total_segments = total_segments + segments
             total_verts = np.concatenate((total_verts, verts))
             total_radii = np.concatenate((total_radii, radii))
+            total_edges_index = np.concatenate((total_edges_index, edges_index))
         tt1 = tissue_time(tt1, "Compute curves", levels=1)
 
         if len(total_segments) > 0:
-            ordered_points = find_curves(total_segments, len(total_verts))
+            id0 = np.array(total_segments,dtype='int')[:,0]
+            id1 = np.array(total_segments,dtype='int')[:,1]
+            v0 = total_verts[id0]
+            v1 = total_verts[id1]
+            vec = v1-v0
+            e_vec = edges_vec[total_edges_index]
+
+            vec /= np.linalg.norm(vec,axis=1)[:,np.newaxis]
+            e_vec /= np.linalg.norm(e_vec,axis=1)[:,np.newaxis]
+            perp = np.cross(np.cross(vec,e_vec),vec) # vector perpendicular to the contour lines
+            perp /= np.linalg.norm(perp,axis=1)[:,np.newaxis]
+            mult = np.abs(np.sum(perp * e_vec,axis=1))[:,np.newaxis]
+
+            total_mult = np.zeros(total_radii.shape)
+            total_mult[id0] += mult #np.min((mult, total_mult[id0]))
+            total_mult[id1] += mult # np.min((mult, total_mult[id1]))
+
+            #total_radii *= total_mult/2
+
+
+            ordered_points, ordered_points_edge_id = find_curves_attribute(total_segments, len(total_verts), total_edges_index)
+
+            total_tangents = np.zeros((len(total_verts),3))
+            for curve in ordered_points:
+                np_curve = np.array(curve).astype('int')
+                curve_pts = total_verts[np_curve]
+                tangents = np.roll(curve_pts,1) - np.roll(curve_pts,-1)
+                tangents /= np.linalg.norm(tangents,axis=1)[:,np.newaxis]
+                total_tangents[curve] = tangents
+
+            e_vec = edges_vec[total_edges_index]
+            #e_vec /= np.linalg.norm(e_vec, axis=1)[:,np.newaxis]
+            perp = np.cross(np.cross(total_tangents,e_vec),total_tangents) # vector perpendicular to the contour lines
+            perp /= np.linalg.norm(perp,axis=1)[:,np.newaxis]
+            mult = np.abs(np.sum(perp * e_vec,axis=1))[:,np.newaxis]
+            total_radii = edges_bevel[total_edges_index,np.newaxis]#*mult
+
             step_time = timeit.default_timer()
             ob.data.splines.clear()
-            if props.variable_bevel and not weight_bevel:
+            if props.variable_bevel and not weight_bevel and False:
                 total_radii = np.interp(total_radii, (total_radii.min(), total_radii.max()), (props.min_bevel_depth, props.max_bevel_depth))
             ob.data = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', props.remove_open_curves, merge_distance=props.clean_distance, only_data=True, curve=ob.data)
             #context.view_layer.objects.active = crv

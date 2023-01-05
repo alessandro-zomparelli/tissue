@@ -2130,19 +2130,20 @@ class vertex_colors_to_vertex_groups(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            return len(context.object.data.vertex_colors) > 0
+            return len(context.object.data.color_attributes) > 0
         except: return False
 
     def execute(self, context):
-        obj = context.active_object
-        id = len(obj.vertex_groups)
+        ob = context.active_object
+        id = len(ob.vertex_groups)
         id_red = id
         id_green = id
         id_blue = id
         id_value = id
 
-        boolCol = len(obj.data.vertex_colors)
-        if(boolCol): col_name = obj.data.vertex_colors.active.name
+        boolCol = len(ob.data.color_attributes)
+        if(boolCol):
+            col = ob.data.color_attributes.active_color
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
 
@@ -2150,25 +2151,25 @@ class vertex_colors_to_vertex_groups(Operator):
             bpy.ops.object.vertex_group_add()
             bpy.ops.object.vertex_group_assign()
             id_red = id
-            obj.vertex_groups[id_red].name = col_name + '_red'
+            ob.vertex_groups[id_red].name = col.name + '_red'
             id+=1
         if(self.green and boolCol):
             bpy.ops.object.vertex_group_add()
             bpy.ops.object.vertex_group_assign()
             id_green = id
-            obj.vertex_groups[id_green].name = col_name + '_green'
+            ob.vertex_groups[id_green].name = col.name + '_green'
             id+=1
         if(self.blue and boolCol):
             bpy.ops.object.vertex_group_add()
             bpy.ops.object.vertex_group_assign()
             id_blue = id
-            obj.vertex_groups[id_blue].name = col_name + '_blue'
+            ob.vertex_groups[id_blue].name = col.name + '_blue'
             id+=1
         if(self.value and boolCol):
             bpy.ops.object.vertex_group_add()
             bpy.ops.object.vertex_group_assign()
             id_value = id
-            obj.vertex_groups[id_value].name = col_name + '_value'
+            ob.vertex_groups[id_value].name = col.name + '_value'
             id+=1
 
         mult = 1
@@ -2179,14 +2180,15 @@ class vertex_colors_to_vertex_groups(Operator):
         sub_blue = 1 + self.value
         sub_value = 1
 
-        id = len(obj.vertex_groups)
+        id = len(ob.vertex_groups)
         if(id_red <= id and id_green <= id and id_blue <= id and id_value <= \
                 id and boolCol):
-            v_colors = obj.data.vertex_colors.active.data
+            v_colors = ob.data.color_attributes.active_color.data
+
             i = 0
-            for f in obj.data.polygons:
-                for v in f.vertices:
-                    gr = obj.data.vertices[v].groups
+            if ob.data.color_attributes.active_color.domain == 'POINT':
+                for v in ob.data.vertices:
+                    gr = v.groups
                     if(self.red): gr[min(len(gr)-sub_red, id_red)].weight = \
                         self.invert + mult * v_colors[i].color[0]
                     if(self.green): gr[min(len(gr)-sub_green, id_green)].weight\
@@ -2200,6 +2202,24 @@ class vertex_colors_to_vertex_groups(Operator):
                         gr[min(len(gr)-sub_value, id_value)].weight\
                         = self.invert + mult * (0.2126*r + 0.7152*g + 0.0722*b)
                     i+=1
+            elif ob.data.color_attributes.active_color.domain == 'CORNER':
+                for f in ob.data.polygons:
+                    for v in f.vertices:
+                        gr = ob.data.vertices[v].groups
+                        if(self.red): gr[min(len(gr)-sub_red, id_red)].weight = \
+                            self.invert + mult * v_colors[i].color[0]
+                        if(self.green): gr[min(len(gr)-sub_green, id_green)].weight\
+                            = self.invert + mult * v_colors[i].color[1]
+                        if(self.blue): gr[min(len(gr)-sub_blue, id_blue)].weight = \
+                            self.invert + mult * v_colors[i].color[2]
+                        if(self.value):
+                            r = v_colors[i].color[0]
+                            g = v_colors[i].color[1]
+                            b = v_colors[i].color[2]
+                            gr[min(len(gr)-sub_value, id_value)].weight\
+                            = self.invert + mult * (0.2126*r + 0.7152*g + 0.0722*b)
+                        i+=1
+
             bpy.ops.paint.weight_paint_toggle()
         return {'FINISHED'}
 
@@ -2234,8 +2254,8 @@ class vertex_group_to_vertex_colors(Operator):
 
         bpy.ops.object.mode_set(mode='OBJECT')
         group_name = obj.vertex_groups[group_id].name
-        bpy.ops.mesh.vertex_color_add()
-        colors_id = obj.data.vertex_colors.active_index
+        bpy.ops.geometry.color_attribute_add()
+        active_color = obj.data.color_attributes.active_color
 
         colors_name = group_name
         if(self.channel == 'FALSE_COLORS'): colors_name += "_false_colors"
@@ -2243,9 +2263,9 @@ class vertex_group_to_vertex_colors(Operator):
         elif(self.channel == 'RED'):  colors_name += "_red"
         elif(self.channel == 'GREEN'):  colors_name += "_green"
         elif(self.channel == 'BLUE'):  colors_name += "_blue"
-        context.object.data.vertex_colors[colors_id].name = colors_name
+        active_color.name = colors_name
 
-        v_colors = obj.data.vertex_colors.active.data
+        v_colors = obj.data.color_attributes.active_color.data
 
         bm = bmesh.new()
         bm.from_mesh(me)
@@ -2254,9 +2274,7 @@ class vertex_group_to_vertex_colors(Operator):
         if self.invert: weight = 1-weight
         loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
         n_colors = np.sum(loops_size)
-        verts = np.ones(n_colors)
-        me.polygons.foreach_get('vertices',verts)
-        splitted_weight = weight[verts.astype(int)][:,None]
+        splitted_weight = weight[:,None]
         r = np.zeros(splitted_weight.shape)
         g = np.zeros(splitted_weight.shape)
         b = np.zeros(splitted_weight.shape)
@@ -2293,7 +2311,7 @@ class vertex_group_to_vertex_colors(Operator):
         v_colors.foreach_set('color',colors)
 
         bpy.ops.paint.vertex_paint_toggle()
-        context.object.data.vertex_colors[colors_id].active_render = True
+        bpy.ops.geometry.color_attribute_render_set(name=active_color.name)
         return {'FINISHED'}
 
 class vertex_group_to_uv(Operator):
@@ -2390,9 +2408,6 @@ class curvature_to_vertex_groups(Operator):
     bl_description = ("Generate a Vertex Group based on the curvature of the"
                       "mesh. Is based on Dirty Vertex Color.")
 
-    invert : BoolProperty(
-        name="invert", default=False, description="invert values")
-
     blur_strength : FloatProperty(
       name="Blur Strength", default=1, min=0.001,
       max=1, description="Blur strength per iteration")
@@ -2401,33 +2416,43 @@ class curvature_to_vertex_groups(Operator):
       name="Blur Iterations", default=1, min=0,
       max=40, description="Number of times to blur the values")
 
-    min_angle : FloatProperty(
-      name="Min Angle", default=0, min=0,
-      max=pi/2, subtype='ANGLE', description="Minimum angle")
-
-    max_angle : FloatProperty(
-      name="Max Angle", default=pi, min=pi/2,
-      max=pi, subtype='ANGLE', description="Maximum angle")
+    angle : FloatProperty(
+      name="Angle", default=5*pi/90, min=0,
+      max=pi/2, subtype='ANGLE', description="Angle")
 
     invert : BoolProperty(
         name="Invert", default=False,
         description="Invert the curvature map")
 
+    absolute : BoolProperty(
+        name="Absolute", default=False, description="Absolute values")
+
     def execute(self, context):
         bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.mesh.vertex_color_add()
-        vertex_colors = context.active_object.data.vertex_colors
-        vertex_colors[-1].active = True
-        vertex_colors[-1].active_render = True
-        vertex_colors[-1].name = "Curvature"
-        for c in vertex_colors[-1].data: c.color = (1,1,1,1)
+        bpy.ops.geometry.color_attribute_add()
+        color_attributes = context.active_object.data.color_attributes
+        color_attributes.active = color_attributes[-1]
+        color_attributes.active_color = color_attributes[-1]
+        color_attributes[-1].name = "Curvature"
+        bpy.ops.geometry.color_attribute_render_set(name=color_attributes[-1].name)
+        for c in color_attributes[-1].data: c.color = (1,1,1,1)
         bpy.ops.object.mode_set(mode='VERTEX_PAINT')
         bpy.ops.paint.vertex_color_dirt(
             blur_strength=self.blur_strength,
-            blur_iterations=self.blur_iterations, clean_angle=self.max_angle,
-            dirt_angle=self.min_angle)
+            blur_iterations=self.blur_iterations, clean_angle=pi/2 + self.angle,
+            dirt_angle=pi/2 - self.angle)
         bpy.ops.object.vertex_colors_to_vertex_groups(invert=self.invert)
-        bpy.ops.mesh.vertex_color_remove()
+        if self.absolute:
+            ob = context.object
+            weight = get_weight_numpy(ob.vertex_groups[-1], len(ob.data.vertices))
+            weight = np.abs(0.5-weight)*2
+            bm = bmesh.new()
+            bm.from_mesh(ob.data)
+            bmesh_set_weight_numpy(bm,len(ob.vertex_groups)-1,weight)
+            bm.to_mesh(ob.data)
+            ob.vertex_groups.update()
+            ob.data.update()
+        bpy.ops.geometry.color_attribute_remove()
         return {'FINISHED'}
 
 class face_area_to_vertex_groups(Operator):
