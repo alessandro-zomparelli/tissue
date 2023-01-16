@@ -165,7 +165,7 @@ def tessellate_patch(props):
     # Target mesh used for normals
     if normals_mode in ('SHAPEKEYS', 'OBJECT'):
         if fill_mode == 'PATCH':
-            ob0_sk = convert_object_to_mesh(target, True, True)
+            ob0_sk = convert_object_to_mesh(target, True, props.rotation_mode!='UV')
         else:
             use_modifiers = gen_modifiers
             if normals_mode == 'SHAPEKEYS' and not gen_modifiers:
@@ -186,7 +186,7 @@ def tessellate_patch(props):
             for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
     # Base mesh
     if fill_mode == 'PATCH':
-        ob0 = convert_object_to_mesh(_ob0)
+        ob0 = convert_object_to_mesh(_ob0, True, True, props.rotation_mode!='UV')
 
         if boundary_mat_offset != 0:
             bm=bmesh.new()
@@ -330,7 +330,10 @@ def tessellate_patch(props):
                 break
             else: before.modifiers.remove(m)
 
-        before_subsurf = simple_to_mesh_mirror(before)
+        if props.rotation_mode!='UV':
+            before_subsurf = simple_to_mesh_mirror(before)
+        else:
+            before_subsurf = simple_to_mesh(before)
 
         if boundary_mat_offset != 0:
             bm=bmesh.new()
@@ -1805,7 +1808,7 @@ class tissue_tessellate(Operator):
         bool_update = False
         if context.object == ob0:
             auto_layer_collection()
-            new_ob = convert_object_to_mesh(ob0,False,False)
+            new_ob = convert_object_to_mesh(ob0, False, True, props.rotation_mode!='UV') #///
             new_ob.data.name = self.object_name
             new_ob.name = self.object_name
         else:
@@ -2080,7 +2083,7 @@ class tissue_update_tessellate(Operator):
             components.append(ob1)
 
         if ob0.type == 'META':
-            base_ob = convert_object_to_mesh(ob0, False, True)
+            base_ob = convert_object_to_mesh(ob0, False, True, props.rotation_mode!='UV')
         else:
             base_ob = ob0.copy()
             base_ob.data = ob0.data
@@ -2201,7 +2204,11 @@ class tissue_update_tessellate(Operator):
                 # remove faces from last mesh
                 bm = bmesh.new()
                 if (fill_mode == 'PATCH' or gen_modifiers) and iter == 0:
-                    last_mesh = simple_to_mesh_mirror(base_ob)#(ob0)
+
+                    if props.rotation_mode!='UV':
+                        last_mesh = simple_to_mesh_mirror(base_ob)#(ob0)
+                    else:
+                        last_mesh = simple_to_mesh(base_ob)#(ob0)
                 else:
                     last_mesh = iter_objects[-1].data.copy()
                 bm.from_mesh(last_mesh)
@@ -2232,7 +2239,7 @@ class tissue_update_tessellate(Operator):
                     bpy.data.objects.remove(iter_objects[-1])
                     iter_objects = iter_objects[:-1]
                 # set new base object for next iteration
-                base_ob = convert_object_to_mesh(new_ob,True,True)
+                base_ob = convert_object_to_mesh(new_ob,True,True, props.rotation_mode!='UV')
                 if iter < iterations-1: new_ob.data = base_ob.data
                 # store new iteration and set transformations
                 iter_objects.append(new_ob)
@@ -2301,7 +2308,7 @@ class tissue_update_tessellate(Operator):
         # update data and preserve name
         if ob.type != 'MESH':
             loc, matr = ob.location, ob.matrix_world
-            ob = convert_object_to_mesh(ob,False,True)
+            ob = convert_object_to_mesh(ob,False,True,props.rotation_mode!='UV')
             ob.location, ob.matrix_world = loc, matr
         data_name = ob.data.name
         old_data = ob.data
@@ -3297,7 +3304,7 @@ class tissue_rotate_face_left(Operator):
         return {'FINISHED'}
 
 def convert_to_frame(ob, props, use_modifiers=True):
-    new_ob = convert_object_to_mesh(ob, use_modifiers, True)
+    new_ob = convert_object_to_mesh(ob, use_modifiers, True,props['rotation_mode']!='UV')
 
     # create bmesh
     bm = bmesh.new()
@@ -3565,7 +3572,7 @@ def reduce_to_quads(ob, props):
     '''
     Convert an input object to a mesh with polygons that have maximum 4 vertices
     '''
-    new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True)
+    new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True, props['rotation_mode']!='UV')
     me = new_ob.data
 
     # Check if there are polygons with more than 4 sides
@@ -3624,7 +3631,7 @@ def reduce_to_quads(ob, props):
     return new_ob
 
 def convert_to_fan(ob, props, add_id_layer=False):
-    new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True)
+    new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True, props['rotation_mode']!='UV')
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)
     if add_id_layer:
@@ -3643,7 +3650,7 @@ def convert_to_fan(ob, props, add_id_layer=False):
     return new_ob
 
 def convert_to_triangles(ob, props):
-    new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True)
+    new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True, props['rotation_mode']!='UV')
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)
     bmesh.ops.triangulate(bm, faces=bm.faces, quad_method='FIXED', ngon_method='BEAUTY')

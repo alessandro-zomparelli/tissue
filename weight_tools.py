@@ -2429,18 +2429,19 @@ class curvature_to_vertex_groups(Operator):
 
     def execute(self, context):
         bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.geometry.color_attribute_add()
+        bpy.ops.geometry.color_attribute_add(domain='CORNER', color = (1,1,1,1))
         color_attributes = context.active_object.data.color_attributes
         color_attributes.active = color_attributes[-1]
         color_attributes.active_color = color_attributes[-1]
         color_attributes[-1].name = "Curvature"
         bpy.ops.geometry.color_attribute_render_set(name=color_attributes[-1].name)
-        for c in color_attributes[-1].data: c.color = (1,1,1,1)
         bpy.ops.object.mode_set(mode='VERTEX_PAINT')
         bpy.ops.paint.vertex_color_dirt(
             blur_strength=self.blur_strength,
-            blur_iterations=self.blur_iterations, clean_angle=pi/2 + self.angle,
-            dirt_angle=pi/2 - self.angle)
+            blur_iterations=self.blur_iterations,
+            clean_angle=pi/2 + self.angle,
+            dirt_angle=pi/2 - self.angle,
+            normalize=False)
         bpy.ops.object.vertex_colors_to_vertex_groups(invert=self.invert)
         if self.absolute:
             ob = context.object
@@ -2452,7 +2453,7 @@ class curvature_to_vertex_groups(Operator):
             bm.to_mesh(ob.data)
             ob.vertex_groups.update()
             ob.data.update()
-        bpy.ops.geometry.color_attribute_remove()
+        #bpy.ops.geometry.color_attribute_remove()
         return {'FINISHED'}
 
 class face_area_to_vertex_groups(Operator):
