@@ -165,7 +165,7 @@ def tessellate_patch(props):
     # Target mesh used for normals
     if normals_mode in ('SHAPEKEYS', 'OBJECT'):
         if fill_mode == 'PATCH':
-            ob0_sk = convert_object_to_mesh(target, True, props.rotation_mode!='UV')
+            ob0_sk = convert_object_to_mesh(target, True, rotation_mode!='UV')
         else:
             use_modifiers = gen_modifiers
             if normals_mode == 'SHAPEKEYS' and not gen_modifiers:
@@ -186,7 +186,7 @@ def tessellate_patch(props):
             for sk in _ob0.data.shape_keys.key_blocks: sk.value = 0
     # Base mesh
     if fill_mode == 'PATCH':
-        ob0 = convert_object_to_mesh(_ob0, True, True, props.rotation_mode!='UV')
+        ob0 = convert_object_to_mesh(_ob0, True, True, rotation_mode!='UV')
 
         if boundary_mat_offset != 0:
             bm=bmesh.new()
@@ -330,7 +330,7 @@ def tessellate_patch(props):
                 break
             else: before.modifiers.remove(m)
 
-        if props.rotation_mode!='UV':
+        if rotation_mode!='UV':
             before_subsurf = simple_to_mesh_mirror(before)
         else:
             before_subsurf = simple_to_mesh(before)
@@ -1808,7 +1808,7 @@ class tissue_tessellate(Operator):
         bool_update = False
         if context.object == ob0:
             auto_layer_collection()
-            new_ob = convert_object_to_mesh(ob0, False, True, props.rotation_mode!='UV') #///
+            new_ob = convert_object_to_mesh(ob0, False, False, self.rotation_mode!='UV') #///
             new_ob.data.name = self.object_name
             new_ob.name = self.object_name
         else:
