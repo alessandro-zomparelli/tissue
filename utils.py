@@ -784,7 +784,6 @@ def tessellate_prepare_component(ob1, props):
                                 break
                         '''
                         e.seam = seam
-                        print("#")
 
                 if bound == 'CYCLIC':
                     geom_verts = []
