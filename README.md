@@ -1,7 +1,7 @@
 # Tissue
 ![cover](http://www.co-de-it.com/wordpress/wp-content/uploads/2015/07/tissue_graphics.jpg)
 Tissue - Blender's add-on for computational design by Co-de-iT
-http://www.co-de-it.com/wordpress/code/blender-tissue
+https://www.co-de-it.com/code/blender-tissue
 
 Tissue is already shipped with both Blender. However I recommend to update the default version downloading manually the most recent one, for more updated features and more stability.
 

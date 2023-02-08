@@ -234,8 +234,6 @@ def remove_temp_objects():
 
 def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True, mirror_correction = True):
     #mirror_correction = False
-    print(ob.name)
-    print(mirror_correction)
     try: ob.name
     except: return None
     if ob.type != 'MESH':
