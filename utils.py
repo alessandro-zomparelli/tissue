@@ -108,7 +108,7 @@ def calc_thickness(co2,n2,vz,a,weight):
             nw = weight.shape[1]-1
             co3 = np.empty((n_sk,n_patches,n_verts,3))
             for i in range(n_sk):
-                co3[i] = numba_calc_thickness_area_weight(co2[:,i],n2[:,i],vz[:,i],a[:,min(i,na)],weight)
+                co3[i] = numba_calc_thickness_area_weight(co2[:,i],n2[:,i],vz[:,i],a[:,min(i,na)],weight[:,min(i,nw)])
             co3 = co3.swapaxes(0,1)
     else:
         use_area = type(a) == np.ndarray

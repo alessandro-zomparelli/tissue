@@ -912,7 +912,7 @@ def tessellate_patch(props):
                 a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,-1,1))
                 # remapped z scale
                 a2 = np_lerp2(a00,a10,a01,a11,vx,vy,'verts')
-
+                
         store_coordinates = calc_thickness(co2,n2,vz,a2,weight_thickness)
         co2 = n2 = vz = a2 = None
 
