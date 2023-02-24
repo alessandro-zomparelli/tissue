@@ -204,7 +204,6 @@ class tissue_contour_curves_prop(PropertyGroup):
         update = anim_contour_curves
         )
 
-
     spiralized: BoolProperty(
         name='Spiralized', default=False,
         description='Create a Spiral Contour. Works better with dense meshes.',
@@ -264,6 +263,16 @@ class tissue_contour_curves_prop(PropertyGroup):
         description="Vertex Group used for computing the distance",
         update = anim_contour_curves
         )
+    spline_type : EnumProperty(
+        items=(
+            ('POLY', "Poly", "Generate Poly curves"),
+            ('NURBS', "NURBS", "Generate NURBS curves")
+            ),
+        default='POLY',
+        name="Spline type",
+        update = anim_contour_curves
+        )
+
 
 
 class tissue_weight_contour_curves_pattern(Operator):
@@ -418,6 +427,13 @@ class tissue_weight_contour_curves_pattern(Operator):
     vertex_group_seed : StringProperty(
         name="Seeds", default=vg_name,
         description="Vertex Group used for computing the distance")
+    spline_type : EnumProperty(
+        items=(
+            ('POLY', "Poly", "Generate Poly curves"),
+            ('NURBS', "NURBS", "Generate NURBS curves")
+            ),
+        default='POLY',
+        name="Spline type")
 
     #@classmethod
     #def poll(cls, context):
@@ -448,6 +464,11 @@ class tissue_weight_contour_curves_pattern(Operator):
         col.prop(self, "use_modifiers")
         col.label(text="Contour Curves:")
 
+        row = col.row()
+        row.prop(self, "spline_type", icon='NONE', expand=True,
+                 slider=True, toggle=False, icon_only=False, event=False,
+                 full_event=False, emboss=True, index=-1)
+        col.separator()
         col.prop(self, "contour_mode", text="Mode")
 
         if self.contour_mode == 'VECTOR':
@@ -556,7 +577,6 @@ class tissue_weight_contour_curves_pattern(Operator):
             bool_update = True
 
         # Store parameters
-        print(new_ob)
         props = new_ob.tissue_contour_curves
         new_ob.tissue.bool_hold = True
         if self.object in bpy.data.objects.keys():
@@ -594,6 +614,7 @@ class tissue_weight_contour_curves_pattern(Operator):
         props.contour_offset = self.contour_offset
         props.seeds_mode = self.seeds_mode
         props.vertex_group_seed = self.vertex_group_seed
+        props.spline_type = self.spline_type
         new_ob.tissue.bool_hold = False
 
         new_ob.tissue.tissue_type = 'CONTOUR_CURVES'
@@ -636,7 +657,7 @@ class tissue_update_contour_curves(Operator):
         tt1 = time.time()
         print("Tissue: Contour Curves...")
 
-        ob0 = convert_object_to_mesh(_ob0)
+        ob0 = convert_object_to_mesh(_ob0, apply_modifiers=props.use_modifiers)
         ob0.name = "_tissue_tmp_ob0"
         me0 = ob0.data
 
@@ -701,15 +722,15 @@ class tissue_update_contour_curves(Operator):
                         seed_verts.append(v)
                         weight[v.index] = 0
             if props.seeds_mode == 'SHARP':
-                for e in me0.edges:
-                    if e.use_edge_sharp:
-                        seed_verts.append(e.vertices[0])
-                        seed_verts.append(e.vertices[1])
+                for e in bm.edges:
+                    if not e.smooth:#use_edge_sharp:
+                        seed_verts.append(e.verts[0])
+                        seed_verts.append(e.verts[1])
                 seed_verts = list(set(seed_verts))
                 if len(seed_verts) == 0: cancel = True
-                for v in seed_verts:
-                    weight[v] = 0
-                seed_verts = [bm.verts[i] for i in seed_verts]
+                for i in [v.index for v in seed_verts]:
+                    weight[i] = 0
+                #seed_verts = [bm.verts[i] for i in seed_verts]
             if props.seeds_mode == 'WEIGHT':
                 try:
                     seeds = get_weight_numpy(ob0.vertex_groups[props.vertex_group_seed], len(me0.vertices))
@@ -746,6 +767,7 @@ class tissue_update_contour_curves(Operator):
                 bevel_weight = np.ones(len(me0.vertices))
         else:
             bevel_weight = np.ones(len(me0.vertices))
+        #edges_bevel = bevel_weight
 
         #filtered_edges = bm.edges
         total_verts = np.zeros((0,3))
@@ -773,14 +795,14 @@ class tissue_update_contour_curves(Operator):
         if props.contour_mode == 'TOPOLOGY':
             weight = weight/np.max(weight)
 
-        if True:
+        if False:
             edges_verts = get_attribute_numpy(me0.edges,"vertices",mult=2).astype('int')
-            #edges_vec = vertices[edges_verts[:,0]]-vertices[edges_verts[:,1]]
-            edges_vec = global_verts[edges_verts[:,0]]-global_verts[edges_verts[:,1]]
+            edges_vec = vertices[edges_verts[:,0]]-vertices[edges_verts[:,1]]
+            #edges_vec = global_verts[edges_verts[:,0]]-global_verts[edges_verts[:,1]]
             edges_length = np.linalg.norm(edges_vec,axis=1)
             edges_vec /= edges_length[:,np.newaxis]
             edges_dw = np.abs(weight[edges_verts[:,0]]-weight[edges_verts[:,1]])
-            edges_bevel = delta_iso*edges_length/edges_dw/2
+            edges_bevel = delta_iso*edges_length/edges_dw/2*0 + 1
 
         '''
         # numpy method
@@ -820,13 +842,17 @@ class tissue_update_contour_curves(Operator):
             count = len(total_verts)
 
             if not weight_bevel and props.variable_bevel:
-                bevel_weight = np.full(n_verts, c)
+                bevel_weight = np.full(n_verts, c/n_curves)
             new_filtered_edges, edges_index, verts, bevel = contour_edges_pattern(props, c, len(total_verts), iso_val, vertices, normals, filtered_edges, weight, pattern_weight, bevel_weight)
-            bevel = edges_bevel[edges_index][:,np.newaxis]
+            #bevel = edges_bevel[edges_index][:,np.newaxis]
 
             if len(edges_index) > 0:
-                if props.variable_bevel and weight_bevel and False:#props.max_bevel_depth != props.min_bevel_depth:
-                    min_radius = props.min_bevel_depth / max(0.0001,props.max_bevel_depth)
+                if props.variable_bevel and props.max_bevel_depth != props.min_bevel_depth and False:
+                    #min_radius = min(props.min_bevel_depth, props.max_bevel_depth)
+                    #max_radius = max(props.min_bevel_depth, props.max_bevel_depth)
+                    min_radius = props.min_bevel_depth
+                    max_radius = props.max_bevel_depth
+                    min_radius = min_radius / max(0.0001,max_radius)
                     radii = min_radius + bevel*(1 - min_radius)
                 else:
                     radii = bevel
@@ -860,6 +886,7 @@ class tissue_update_contour_curves(Operator):
         tt1 = tissue_time(tt1, "Compute curves", levels=1)
 
         if len(total_segments) > 0:
+            '''
             id0 = np.array(total_segments,dtype='int')[:,0]
             id1 = np.array(total_segments,dtype='int')[:,1]
             v0 = total_verts[id0]
@@ -878,7 +905,7 @@ class tissue_update_contour_curves(Operator):
             total_mult[id1] += mult # np.min((mult, total_mult[id1]))
 
             #total_radii *= total_mult/2
-
+            '''
 
             ordered_points, ordered_points_edge_id = find_curves_attribute(total_segments, len(total_verts), total_edges_index)
 
@@ -890,18 +917,19 @@ class tissue_update_contour_curves(Operator):
                 tangents /= np.linalg.norm(tangents,axis=1)[:,np.newaxis]
                 total_tangents[curve] = tangents
 
+            '''
             e_vec = edges_vec[total_edges_index]
             #e_vec /= np.linalg.norm(e_vec, axis=1)[:,np.newaxis]
             perp = np.cross(np.cross(total_tangents,e_vec),total_tangents) # vector perpendicular to the contour lines
             perp /= np.linalg.norm(perp,axis=1)[:,np.newaxis]
             mult = np.abs(np.sum(perp * e_vec,axis=1))[:,np.newaxis]
             total_radii = edges_bevel[total_edges_index,np.newaxis]#*mult
-
+            '''
             step_time = timeit.default_timer()
             ob.data.splines.clear()
-            if props.variable_bevel and not weight_bevel and False:
+            if props.variable_bevel:# and not weight_bevel:
                 total_radii = np.interp(total_radii, (total_radii.min(), total_radii.max()), (props.min_bevel_depth, props.max_bevel_depth))
-            ob.data = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', props.remove_open_curves, merge_distance=props.clean_distance, only_data=True, curve=ob.data)
+            ob.data = curve_from_pydata(total_verts, total_radii, ordered_points, ob0.name + '_ContourCurves', props.remove_open_curves, merge_distance=props.clean_distance, only_data=True, curve=ob.data, spline_type=props.spline_type)
             #context.view_layer.objects.active = crv
             if props.variable_bevel:
                 if not weight_bevel:
@@ -964,7 +992,11 @@ class TISSUE_PT_contour_curves(Panel):
         row.prop(props, "use_modifiers", icon='MODIFIER', text='')
         col.separator()
         col.label(text="Contour Curves:")
-
+        row = col.row()
+        row.prop(props, "spline_type", icon='NONE', expand=True,
+                 slider=True, toggle=False, icon_only=False, event=False,
+                 full_event=False, emboss=True, index=-1)
+        col.separator()
         col.prop(props, "contour_mode", text="Mode")
 
         if props.contour_mode == 'VECTOR':

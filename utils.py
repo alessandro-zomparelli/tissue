@@ -1180,7 +1180,7 @@ def curve_from_points(points, name='Curve'):
     ob_curve = bpy.data.objects.new(name,curve)
     return ob_curve
 
-def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True, only_data=False, curve=None):
+def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True, only_data=False, curve=None, spline_type='POLY'):
     if not curve:
         curve = bpy.data.curves.new(name,'CURVE')
     curve.dimensions = '3D'
@@ -1209,7 +1209,7 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             if use_rad: rad = rad[mask]
 
         if skip_open and not bool_cyclic: continue
-        s = curve.splines.new('POLY')
+        s = curve.splines.new(spline_type)
         n_pts = len(pts)
         s.points.add(n_pts-1)
         w = np.ones(n_pts).reshape((n_pts,1))
@@ -1226,7 +1226,7 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             bpy.context.view_layer.objects.active = ob_curve
         return ob_curve
 
-def update_curve_from_pydata_simple(curve, points, radii, indexes, skip_open=False, merge_distance=1, set_active=True, only_data=False):
+def update_curve_from_pydata_simple(curve, points, radii, indexes, skip_open=False, merge_distance=1, set_active=True, only_data=False, spline_type='POLY'):
     curve.splines.clear()
     curve.dimensions = '3D'
     use_rad = True
@@ -1254,7 +1254,7 @@ def update_curve_from_pydata_simple(curve, points, radii, indexes, skip_open=Fal
             if use_rad: rad = rad[mask]
 
         if skip_open and not bool_cyclic: continue
-        s = curve.splines.new('POLY')
+        s = curve.splines.new(spline_type)
         n_pts = len(pts)
         s.points.add(n_pts-1)
         w = np.ones(n_pts).reshape((n_pts,1))
