@@ -822,6 +822,8 @@ class TISSUE_PT_polyhedra_object(Panel):
             col2 = row.column(align=True)
             col2.prop(tissue_props, "bool_run", text="",icon='TIME')
             col2.enabled = not tissue_props.bool_lock
+            col2 = row.column(align=True)
+            col2.operator("mesh.tissue_remove", text="", icon='X')
             #layout.use_property_split = True
             #layout.use_property_decorate = False  # No animation.
             col = layout.column(align=True)

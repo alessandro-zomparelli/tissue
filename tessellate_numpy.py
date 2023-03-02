@@ -912,7 +912,7 @@ def tessellate_patch(props):
                 a11 = verts_area[:, np_u1, np_v1].reshape((n_patches,-1,1))
                 # remapped z scale
                 a2 = np_lerp2(a00,a10,a01,a11,vx,vy,'verts')
-                
+
         store_coordinates = calc_thickness(co2,n2,vz,a2,weight_thickness)
         co2 = n2 = vz = a2 = None
 
@@ -2489,8 +2489,10 @@ class TISSUE_PT_tessellate_object(Panel):
             row.prop(tissue_props, "bool_dependencies", text="", icon=deps_icon)
             row.prop(tissue_props, "bool_lock", text="", icon=lock_icon)
             col2 = row.column(align=True)
-            col2.prop(tissue_props, "bool_run", text="",icon='TIME')
+            col2.prop(tissue_props, "bool_run", text="", icon='TIME')
             col2.enabled = not tissue_props.bool_lock
+            col2 = row.column(align=True)
+            col2.operator("mesh.tissue_remove", text="", icon='X')
             #layout.use_property_split = True
             #layout.use_property_decorate = False  # No animation.
             col = layout.column(align=True)
@@ -2537,7 +2539,7 @@ class TISSUE_PT_tessellate_frame(Panel):
         try:
             bool_frame = context.object.tissue_tessellate.fill_mode == 'FRAME'
             bool_tessellated = context.object.tissue_tessellate.generator != None
-            return context.object.type == 'MESH' and bool_frame and bool_tessellated
+            return context.object.type == 'MESH' and bool_frame and bool_tessellated and context.object.tissue.tissue_type == 'TESSELLATE'
         except:
             return False
 
@@ -3138,6 +3140,26 @@ class TISSUE_PT_tessellate_iterations(Panel):
             props, "combine_mode", text="Combine:",icon='NONE', expand=True,
             slider=False, toggle=False, icon_only=False, event=False,
             full_event=False, emboss=True, index=-1)
+
+class tissue_remove(Operator):
+    bl_idname = "mesh.tissue_remove"
+    bl_label = "Tissue Remove"
+    bl_description = "Remove Tissue properties"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        ob = context.object
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(text='This is a destructive operation! Are you sure?', icon='ERROR')
+
+    def execute(self, context):
+        ob = context.active_object
+        ob.tissue.tissue_type = 'NONE'
+        return {'FINISHED'}
 
 class tissue_rotate_face_right(Operator):
     bl_idname = "mesh.tissue_rotate_face_right"

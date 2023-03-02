@@ -105,6 +105,7 @@ classes = (
     tessellate_numpy.TISSUE_PT_tessellate_morphing,
     tessellate_numpy.TISSUE_PT_tessellate_iterations,
     tessellate_numpy.tissue_render_animation,
+    tessellate_numpy.tissue_remove,
 
     weight_tools.face_area_to_vertex_groups,
     weight_tools.vertex_colors_to_vertex_groups,

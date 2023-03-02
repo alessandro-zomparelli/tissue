@@ -550,13 +550,6 @@ class tissue_weight_contour_curves_pattern(Operator):
                     break
                 count_name += 1
 
-        '''
-        if ob0.type not in ('MESH'):
-            message = "Source object must be a Mesh!"
-            self.report({'ERROR'}, message)
-            self.generator = ""
-        '''
-
         if bpy.ops.object.select_all.poll():
             bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -985,6 +978,8 @@ class TISSUE_PT_contour_curves(Panel):
         col2 = row.column(align=True)
         col2.prop(ob.tissue, "bool_run", text="",icon='TIME')
         col2.enabled = not ob.tissue.bool_lock
+        col2 = row.column(align=True)
+        col2.operator("mesh.tissue_remove", text="", icon='X')
 
         col.separator()
         row = col.row(align=True)
@@ -1059,16 +1054,6 @@ class TISSUE_PT_contour_curves(Panel):
             row.prop(props,'displace_z', text="Z", toggle=1)
         col.separator()
         row=col.row(align=True)
-        '''
-        row.prop(props,'spiralized')
-        row.label(icon='MOD_SCREW')
-        if props.spiralized:
-            #row=col.row(align=True)
-            #row.prop(self,'spiral_axis')
-            #col.separator()
-            col.prop(props,'spiral_rotation')
-        col.separator()
-        '''
 
         col.label(text='Clean Curves:')
         col.prop(props,'clean_distance')
@@ -1106,14 +1091,7 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
         bevel1 = bevel_weight[id1]
     except: pass
 
-    ### Spiral
-    #edge_nor = (n0+n1)/2
-    #shift = np.arctan2(edge_nor[:,0], edge_nor[:,1])/2/pi*delta_iso
-
-    #param = (iso_val + shift - w0)/(w1-w0)
     param = (iso_val - w0)/(w1-w0)
-    # pattern displace
-    #mult = 1 if c%2 == 0 else -1
     if c%(operator.in_steps + operator.out_steps) < operator.in_steps:
         mult = operator.in_displace
     else:
@@ -1132,8 +1110,6 @@ def contour_edges_pattern(operator, c, verts_count, iso_val, vertices, normals, 
     axis = np.array((operator.displace_x, operator.displace_y, operator.displace_z))
     norm[:] *= axis
     verts = verts + norm*disp
-    #verts = verts[np.flip(np.argsort(shift))]
-    #verts = verts[np.argsort(shift)]
 
     # indexes of edges with new vertices
     edges_index = filtered_edges[mask_new_verts][:,2]

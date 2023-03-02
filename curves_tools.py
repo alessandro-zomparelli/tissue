@@ -726,6 +726,8 @@ class TISSUE_PT_convert_to_curve(Panel):
         col2 = row.column(align=True)
         col2.prop(ob.tissue, "bool_run", text="",icon='TIME')
         col2.enabled = not ob.tissue.bool_lock
+        col2 = row.column(align=True)
+        col2.operator("mesh.tissue_remove", text="", icon='X')
 
         col.separator()
         row = col.row(align=True)
