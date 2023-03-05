@@ -996,12 +996,18 @@ def tessellate_patch(props):
                 except: pass
         tt = tissue_time(tt, "Inject coordinates", levels=2)
 
+
         # Vertex Group
         for vg in ob1.vertex_groups:
             vg_name = vg.name
             if vg_name in ob0.vertex_groups.keys():
-                vg_name = '_{}_'.format(vg_name)
-            new_patch.vertex_groups.new(name=vg_name)
+                if bool_vertex_group:
+                    vg_name = '{} (Component)'.format(vg_name)
+                else:
+                    vg_name = vg_name
+            #new_patch.vertex_groups.new(name=vg_name)
+            new_patch.vertex_groups[vg.name].name = vg_name
+
         if bool_vertex_group:
             new_groups = []
             for vg in ob0.vertex_groups:
@@ -2325,10 +2331,12 @@ class tissue_update_tessellate(Operator):
         ob.data.name = data_name
         bpy.data.meshes.remove(old_data)
 
+        '''
         # copy vertex group
         for vg in new_ob.vertex_groups:
             if not vg.name in ob.vertex_groups.keys():
                 ob.vertex_groups.new(name=vg.name)
+        '''
 
         selected_objects = [o for o in context.selected_objects]
         for o in selected_objects: o.select_set(False)

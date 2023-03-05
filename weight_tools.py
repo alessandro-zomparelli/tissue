@@ -2984,7 +2984,7 @@ def reaction_diffusion_def(ob, bake=False):
     if type(ob) == bpy.types.Scene: return None
     props = ob.reaction_diffusion_settings
 
-    if bake or props.bool_cache or True:
+    if bake or props.bool_cache:
         if props.cache_dir == '':
             letters = string.ascii_letters
             random_name = ''.join(rnd.choice(letters) for i in range(6))
@@ -3941,7 +3941,12 @@ class TISSUE_PT_reaction_diffusion(Panel):
             #col.prop(props, "bool_cache")
             col.prop(props, "cache_dir", text='')
             col.separator()
-            col.prop(props, "bake_geometry", icon="MESH_DATA")
+            row = col.row()
+            row.prop(props, "bake_geometry", icon="MESH_DATA")
+            file = bpy.context.blend_data.filepath
+            temp = bpy.context.preferences.filepaths.temporary_directory
+            if file == temp == props.cache_dir == '':
+                row.enabled = False
             col.separator()
             row = col.row(align=True)
             row.prop(props, "cache_frame_start")
