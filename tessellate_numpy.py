@@ -62,18 +62,18 @@ def allowed_objects():
     return ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META')
 
 def tessellated(ob):
-    tess_props = ob.tissue_tessellate
-    if tess_props.generator not in list(bpy.data.objects):
+    props = ob.tissue_tessellate
+    if props.generator not in list(bpy.data.objects):
         return False
-    elif tess_props.component_mode == 'OBJECT':
-        return tess_props.component in list(bpy.data.objects)
-    elif tess_props.component_mode == 'COLLECTION':
-        if tess_props.component_coll in list(bpy.data.collections):
-            for o in list(tess_props.component_coll.objects):
+    elif props.component_mode == 'OBJECT':
+        return props.component in list(bpy.data.objects)
+    elif props.component_mode == 'COLLECTION':
+        if props.component_coll in list(bpy.data.collections):
+            for o in list(props.component_coll.objects):
                 if o.type in allowed_objects():
                     return True
     else:
-        for mat in tess_props.generator.material_slots.keys():
+        for mat in props.generator.material_slots.keys():
             if mat in bpy.data.objects.keys():
                 if bpy.data.objects[mat].type in allowed_objects():
                     return True
@@ -887,7 +887,7 @@ def tessellate_patch(props):
         # thickness variation
         mean_area = []
         a2 = None
-        if scale_mode == 'ADAPTIVE' and normals_mode not in ('SHAPEKEYS','OBJECT'):
+        if scale_mode == 'ADAPTIVE':# and normals_mode not in ('SHAPEKEYS','OBJECT'):
             #com_area = bb[0]*bb[1]
             if mode != 'BOUNDS' or com_area == 0: com_area = 1
             if normals_mode == 'FACES':
@@ -902,6 +902,9 @@ def tessellate_patch(props):
                     verts_area = verts_area[masked_verts]
                     verts_area = verts_area.mean(axis=(1,2)).reshape((n_patches,1,1))
                     a2 = verts_area
+            if normals_mode in ('SHAPEKEYS','OBJECT'):
+                verts_area = np.ones(n_verts0)
+                verts_area = verts_area[masked_verts]
             else:
                 areas = calc_verts_area_bmesh(me0)
                 verts_area = np.sqrt(areas*patch_faces/com_area)
@@ -1939,7 +1942,7 @@ class tissue_update_tessellate(Operator):
 
 
         ob = context.object
-        tess_props = props_to_dict(ob)
+        props = props_to_dict(ob)
         if not self.go:
             generator = ob.tissue_tessellate.generator
             component = ob.tissue_tessellate.component
@@ -2030,7 +2033,7 @@ class tissue_update_tessellate(Operator):
         # reset messages
         ob.tissue_tessellate.warning_message_merge = ''
 
-        tess_props = props_to_dict(ob)
+        props = props_to_dict(ob)
 
         # Solve Local View issues
         local_spaces = []
@@ -2089,7 +2092,7 @@ class tissue_update_tessellate(Operator):
             components.append(ob1)
 
         if ob0.type == 'META':
-            base_ob = convert_object_to_mesh(ob0, False, True, props.rotation_mode!='UV')
+            base_ob = convert_object_to_mesh(ob0, False, True, props['rotation_mode']!='UV')
         else:
             base_ob = ob0.copy()
             base_ob.data = ob0.data
@@ -2136,11 +2139,11 @@ class tissue_update_tessellate(Operator):
         ob.data.clear_geometry()    # Faster with heavy geometries (from previous tessellations)
 
         for iter in range(iterations):
-            tess_props['generator'] = base_ob
+            props['generator'] = base_ob
 
             if iter > 0 and len(iter_objects) == 0: break
             if iter > 0 and normals_mode in ('SHAPEKEYS','OBJECT'):
-                tess_props['normals_mode'] = 'VERTS'
+                props['normals_mode'] = 'VERTS'
             same_iteration = []
             matched_materials = []
 
@@ -2158,7 +2161,7 @@ class tissue_update_tessellate(Operator):
                             components.append(None)
                     else:
                         components.append(None)
-            tess_props['component'] = components
+            props['component'] = components
             # patch subdivisions for additional iterations
             if iter > 0 and fill_mode == 'PATCH':
                 temp_mod = base_ob.modifiers.new('Tissue_Subsurf', type='SUBSURF')
@@ -2167,7 +2170,7 @@ class tissue_update_tessellate(Operator):
             # patch tessellation
             tissue_time(None,"Tessellate iteration...",levels=1)
             tt = time.time()
-            same_iteration = tessellate_patch(tess_props)
+            same_iteration = tessellate_patch(props)
             tissue_time(tt, "Tessellate iteration",levels=1)
 
             tt = time.time()
@@ -2211,7 +2214,7 @@ class tissue_update_tessellate(Operator):
                 bm = bmesh.new()
                 if (fill_mode == 'PATCH' or gen_modifiers) and iter == 0:
 
-                    if props.rotation_mode!='UV':
+                    if props['rotation_mode']!='UV':
                         last_mesh = simple_to_mesh_mirror(base_ob)#(ob0)
                     else:
                         last_mesh = simple_to_mesh(base_ob)#(ob0)
@@ -2245,7 +2248,7 @@ class tissue_update_tessellate(Operator):
                     bpy.data.objects.remove(iter_objects[-1])
                     iter_objects = iter_objects[:-1]
                 # set new base object for next iteration
-                base_ob = convert_object_to_mesh(new_ob,True,True, props.rotation_mode!='UV')
+                base_ob = convert_object_to_mesh(new_ob,True,True, props['rotation_mode']!='UV')
                 if iter < iterations-1: new_ob.data = base_ob.data
                 # store new iteration and set transformations
                 iter_objects.append(new_ob)
@@ -2301,8 +2304,8 @@ class tissue_update_tessellate(Operator):
             for o in iter_objects:
                 try: bpy.data.objects.remove(o)
                 except: pass
-            try: bpy.data.meshes.remove(data1)
-            except: pass
+            #try: bpy.data.meshes.remove(data1)
+            #except: pass
             context.view_layer.objects.active = ob
             ob.select_set(True)
             message = errors[new_ob]
@@ -2314,7 +2317,7 @@ class tissue_update_tessellate(Operator):
         # update data and preserve name
         if ob.type != 'MESH':
             loc, matr = ob.location, ob.matrix_world
-            ob = convert_object_to_mesh(ob,False,True,props.rotation_mode!='UV')
+            ob = convert_object_to_mesh(ob,False,True,props['rotation_mode']!='UV')
             ob.location, ob.matrix_world = loc, matr
         data_name = ob.data.name
         old_data = ob.data
@@ -2774,6 +2777,7 @@ class TISSUE_PT_tessellate_rotation(Panel):
             row.separator()
             row.separator()
             row.separator()
+            ob0 = props['generator']
             row.prop_search(props, 'vertex_group_rotation',
                 ob0, "vertex_groups", text='Vertex Group')
             col2 = row.column(align=True)
