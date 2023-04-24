@@ -404,7 +404,7 @@ class tissue_convert_to_curve(Operator):
                 col2.prop(self, "subdivision_mode", text='', icon='NONE', expand=False,
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
-                col2.enabled = False
+                #col2.enabled = False
             for m in bpy.data.objects[self.object].modifiers:
                 if m.type in ('SUBSURF','MULTIRES'): col2.enabled = True
             col.separator()
@@ -753,7 +753,7 @@ class TISSUE_PT_convert_to_curve(Panel):
                 col2.prop(props, "subdivision_mode", text='', icon='NONE', expand=False,
                          slider=True, toggle=False, icon_only=False, event=False,
                          full_event=False, emboss=True, index=-1)
-                col2.enabled = False
+                #col2.enabled = False
             for m in props.object.modifiers:
                 if m.type in ('SUBSURF','MULTIRES'): col2.enabled = True
             col.separator()
