@@ -123,6 +123,56 @@ class tissue_polyhedra_prop(PropertyGroup):
         update = anim_polyhedra_active
         )
 
+    selective_wireframe : EnumProperty(
+        name="Selective",
+        items=(
+                ('NONE', "None", "Apply wireframe to every cell"),
+                ('THICKNESS', "Thickness", "Wireframe only on bigger cells compared to the thickness"),
+                ('AREA', "Area", "Wireframe based on cells dimensions"),
+                ('WEIGHT', "Weight", "Wireframe based on vertex groups")
+                ),
+        default='NONE',
+        update = anim_polyhedra_active
+        )
+
+    thickness_threshold_correction : FloatProperty(
+        name="Correction", default=1, min=0, soft_max=2,
+        description="Adjust threshold based on thickness",
+        update = anim_polyhedra_active
+        )
+
+    area_threshold : FloatProperty(
+        name="Threshold", default=0, min=0, soft_max=10,
+        description="Use only faces with an area greater than the threshold",
+        update = anim_polyhedra_active
+        )
+
+    thicken_all : BoolProperty(
+        name="Thicken all",
+        description="Thicken original faces as well",
+        default=False,
+        update = anim_polyhedra_active
+        )
+
+    vertex_group_thickness : StringProperty(
+            name="Thickness weight", default='',
+            description="Vertex Group used for thickness",
+            update = anim_polyhedra_active
+            )
+    invert_vertex_group_thickness : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_polyhedra_active
+            )
+    vertex_group_thickness_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0,
+            max=1,
+            description="Thickness factor to use for zero vertex group influence",
+            update = anim_polyhedra_active
+            )
+
     error_message : StringProperty(
         name="Error Message",
         default=""
@@ -181,6 +231,52 @@ class polyhedral_wireframe(Operator):
         name="Dissolve"
         )
 
+    selective_wireframe : EnumProperty(
+        items=(
+                ('NONE', "None", "Apply wireframe to every cell"),
+                ('THICKNESS', "Thickness", "Wireframe only on bigger cells compared to the thickness"),
+                ('AREA', "Area", "Wireframe based on cells dimensions"),
+                ('WEIGHT', "Weight", "Wireframe based on vertex groups")
+                ),
+        default='NONE',
+        name="Selective"
+        )
+
+    thickness_threshold_correction : FloatProperty(
+        name="Correction", default=1, min=0, soft_max=2,
+        description="Adjust threshold based on thickness"
+        )
+
+    area_threshold : FloatProperty(
+        name="Threshold", default=0, min=0, soft_max=10,
+        description="Use only faces with an area greater than the threshold"
+        )
+
+    thicken_all : BoolProperty(
+        name="Thicken all",
+        description="Thicken original faces as well",
+        default=False
+        )
+
+    vertex_group_thickness : StringProperty(
+            name="Thickness weight", default='',
+            description="Vertex Group used for thickness",
+            update = anim_polyhedra_active
+            )
+    invert_vertex_group_thickness : BoolProperty(
+            name="Invert", default=False,
+            description="Invert the vertex group influence",
+            update = anim_polyhedra_active
+            )
+    vertex_group_thickness_factor : FloatProperty(
+            name="Factor",
+            default=0,
+            min=0,
+            max=1,
+            description="Thickness factor to use for zero vertex group influence",
+            update = anim_polyhedra_active
+                    )
+
     #regular_sections : BoolProperty(
     #    name="Regular Sections", default=False,
     #    description="Turn inner loops into polygons"
@@ -233,7 +329,7 @@ class polyhedral_wireframe(Operator):
         if ob0.type not in ('MESH'):
             message = "Source object must be a Mesh!"
             self.report({'ERROR'}, message)
-            self.generator = ""
+            self.object = ""
 
         if bpy.ops.object.select_all.poll():
             bpy.ops.object.select_all(action='TOGGLE')
@@ -301,6 +397,9 @@ class tissue_update_polyhedra(Operator):
         if props.mode == 'POLYHEDRA': subs = 1
 
         start_time = time.time()
+        begin_time = time.time()
+
+        # Source mesh
         ob0 = props.object
         if props.bool_modifiers:
             me = simple_to_mesh(ob0)
@@ -308,7 +407,6 @@ class tissue_update_polyhedra(Operator):
             me = ob0.data.copy()
         bm = bmesh.new()
         bm.from_mesh(me)
-
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
         bm.faces.ensure_lookup_table()
@@ -336,7 +434,7 @@ class tissue_update_polyhedra(Operator):
         double_layer_piece = []
         for f in bm.faces:
             verts0 = [v.co for v in f.verts]
-            verts1 = [v.co for v in f.verts]
+            verts1 = verts0.copy()
             verts1.reverse()
             double_faces.append(verts0)
             double_faces.append(verts1)
@@ -482,7 +580,7 @@ class tissue_update_polyhedra(Operator):
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, found {} polyhedra in {:.4f} sec'.format(len(polyhedra), end_time-start_time))
-
+        start_time = time.time()
 
         delete_faces = []
         wireframe_faces = []
@@ -495,9 +593,20 @@ class tissue_update_polyhedra(Operator):
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
+        start_time = time.time()
 
         bm1.faces.index_update()
         #merge_verts = []
+        if props.selective_wireframe == 'THICKNESS':
+            filter_faces = True
+            accurate = True
+            area_threshold = (thickness*props.thickness_threshold_correction)**2
+        elif props.selective_wireframe == 'AREA':
+            filter_faces = True
+            accurate = False
+            area_threshold = props.area_threshold
+        else:
+            filter_faces = False
         for p in polyhedra:
             delete_faces_poly = []
             wireframe_faces_poly = []
@@ -506,36 +615,26 @@ class tissue_update_polyhedra(Operator):
             merge_verts = []
             faces = [bm1.faces[f_id] for f_id in faces_id]
             for f in faces:
-                delete = False
                 if f.index in delete_faces: continue
-                '''
-                cen = f.calc_center_median()
-                for e in f.edges:
-                    mid = (e.verts[0].co + e.verts[1].co)/2
-                    vec1 = e.verts[0].co - e.verts[1].co
-                    vec2 = mid - cen
-                    ang = Vector.angle(vec1,vec2)
-                    length = vec2.length
-                    #length = sin(ang)*length
-                    if length < self.thickness/2:
-                        delete = True
-                '''
-                if False:
-                    sides = len(f.verts)
-                    for i in range(sides):
-                        v = f.verts[i].co
-                        v0 = f.verts[(i-1)%sides].co
-                        v1 = f.verts[(i+1)%sides].co
-                        vec0 = v0 - v
-                        vec1 = v1 - v
-                        ang = (pi - vec0.angle(vec1))/2
-                        length = min(vec0.length, vec1.length)*sin(ang)
-                        if length < props.thickness/2:
-                            delete = True
-                            break
-
+                delete = False
+                if filter_faces:
+                    if accurate:
+                        cen = f.calc_center_median()
+                        for e in f.edges:
+                            mid = (e.verts[0].co + e.verts[1].co)/2
+                            vec1 = e.verts[0].co - e.verts[1].co
+                            vec2 = mid - cen
+                            ang = Vector.angle(vec1,vec2)
+                            length = vec2.length
+                            length = sin(ang)*length
+                            if length < thickness/2*props.thickness_threshold_correction:
+                                delete = True
+                                break
+                    else:
+                        delete = f.calc_area() < area_threshold
                 if delete:
-                    delete_faces_poly.append(f.index)
+                    if props.thicken_all:
+                        delete_faces_poly.append(f.index)
                 else:
                     wireframe_faces_poly.append(f.index)
                 merge_verts += [v for v in f.verts]
@@ -546,12 +645,8 @@ class tissue_update_polyhedra(Operator):
                 wireframe_faces += wireframe_faces_poly
                 flat_faces += delete_faces_poly
 
-            #wireframe_faces = list(dict.fromkeys(wireframe_faces))
             bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=merge_dist)
-            bm1.edges.ensure_lookup_table()
             bm1.faces.ensure_lookup_table()
-            bm1.faces.index_update()
-
 
         wireframe_faces = [i for i in wireframe_faces if i not in not_wireframe_faces]
         wireframe_faces = list(dict.fromkeys(wireframe_faces))
@@ -560,6 +655,7 @@ class tissue_update_polyhedra(Operator):
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
+        start_time = time.time()
 
         poly_me = me.copy()
         bm1.to_mesh(poly_me)
@@ -675,6 +771,7 @@ class tissue_update_polyhedra(Operator):
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, frames in {:.4f} sec'.format(end_time-start_time))
+        start_time = time.time()
 
         bm1.verts.ensure_lookup_table()
         bm1.edges.ensure_lookup_table()
@@ -714,9 +811,9 @@ class tissue_update_polyhedra(Operator):
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
+        start_time = time.time()
 
         # Removing original flat faces
-
         flat_faces = [bm1.faces[i] for i in flat_faces]
         for f in flat_faces:
             f.material_index = subs+1
@@ -724,7 +821,7 @@ class tissue_update_polyhedra(Operator):
                 if smooth_corners[v.index]:
                     v.co += v.normal*props.thickness/2
                     smooth_corners[v.index] = False
-        delete_faces = delete_faces + [f.index for f in original_faces]
+        delete_faces += [f.index for f in original_faces]
         delete_faces = list(dict.fromkeys(delete_faces))
         delete_faces = [bm1.faces[i] for i in delete_faces]
         bmesh.ops.delete(bm1, geom=delete_faces, context='FACES')
@@ -778,7 +875,7 @@ class tissue_update_polyhedra(Operator):
         new_ob.matrix_world = ob.matrix_world
         '''
         end_time = time.time()
-        print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-start_time))
+        print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-begin_time))
         return {'FINISHED'}
 
 class TISSUE_PT_polyhedra_object(Panel):
@@ -838,6 +935,26 @@ class TISSUE_PT_polyhedra_object(Panel):
             if props.mode == 'WIREFRAME':
                 col.separator()
                 col.prop(props, 'thickness')
+                row = col.row(align=True)
+                ob0 = props.object
+                row.prop_search(props, 'vertex_group_thickness',
+                    ob0, "vertex_groups", text='')
+                col2 = row.column(align=True)
+                row2 = col2.row(align=True)
+                row2.prop(props, "invert_vertex_group_thickness", text="",
+                    toggle=True, icon='ARROW_LEFTRIGHT')
+                row2.prop(props, "vertex_group_thickness_factor")
+                row2.enabled = props.vertex_group_thickness in ob0.vertex_groups.keys()
+                col.separator()
+                col.label(text='Loops:')
+                col.prop(props, 'selective_wireframe')
+                col.separator()
+                if props.selective_wireframe == 'THICKNESS':
+                    col.prop(props, 'thickness_threshold_correction')
+                elif props.selective_wireframe == 'AREA':
+                    col.prop(props, 'area_threshold')
+                if props.selective_wireframe != 'NONE':
+                    col.prop(props, 'thicken_all')
                 col.separator()
                 col.label(text='Segments:')
                 row = col.row()

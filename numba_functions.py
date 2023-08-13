@@ -25,7 +25,7 @@ bool_numba = False
 try:
     from .utils_pip import Pip
     Pip._ensure_user_site_package()
-    from numba import jit, njit, guvectorize, float64, int32, prange, cuda, vectorize
+    from numba import jit, njit, guvectorize, float64, int32, prange
     from numba.typed import List
     bool_numba = True
 except:
@@ -67,35 +67,32 @@ if bool_numba:
                                (arr[i0, j0] + arr[i1, j1] - arr2[i,j])*diag + \
                                (arr[i1, j0] + arr[i0, j1] - arr2[i,j])*diag)*0.75
 
-    @njit(parallel=True, fastmath=True)
+    @njit(parallel=True)
     def tex_laplacian_ani(lap, arr, VF):
+        arr2 = arr*2
         nx = arr.shape[0]
         ny = arr.shape[1]
-        '''
+        i0 = np.arange(nx)-1
+        i0[0] = 1
+        i1 = np.arange(nx)+1
+        i1[nx-1] = nx-2
+        j0 = np.arange(ny)-1
+        j0[0] = 1
+        j1 = np.arange(ny)+1
+        j1[ny-1] = ny-2
         for i in prange(nx):
             for j in prange(ny):
-                lap[i,j] =  (arr[i0[i], j] + arr[i1[i], j] - arr2[i,j])*VF[0,i,j] + \
-                            (arr[i, j0[j]] + arr[i, j1[j]] - arr2[i,j])*VF[1,i,j] + \
-                            (arr[i0[i], j0[j]] + arr[i1[i], j1[j]] - arr2[i,j])*VF[2,i,j] + \
-                            (arr[i1[i], j0[j]] + arr[i0[i], j1[j]] - arr2[i,j])*VF[3,i,j]
-        '''
-        for i in prange(nx):
-            i0 = i-1
-            i1 = i+1
-            for j in prange(ny):
-                j0 = j-1
-                j1 = j+1
-                v2 = arr[i, j]*2
-                lap[i,j] =  (arr[i0, j] + arr[i1, j] - v2)*VF[0,i,j] + \
-                            (arr[i, j0] + arr[i, j1] - v2)*VF[1,i,j] + \
-                            (arr[i0, j0] + arr[i1, j1] - v2)*VF[2,i,j] + \
-                            (arr[i1, j0] + arr[i0, j1] - v2)*VF[3,i,j]
+                lap[i,j] = (arr[i0[i], j] + arr[i1[i], j] - arr2[i,j])*VF[0,i,j] + \
+                               (arr[i, j0[j]] + arr[i, j1[j]] - arr2[i,j])*VF[1,i,j] + \
+                               (arr[i0[i], j0[j]] + arr[i1[i], j1[j]] - arr2[i,j])*VF[2,i,j] + \
+                               (arr[i1[i], j0[j]] + arr[i0[i], j1[j]] - arr2[i,j])*VF[3,i,j]
         #lap[0,:] = lap[1,:]
         #lap[:,0] = lap[:,1]
         #lap[-1,:] = lap[-2,:]
         #lap[:,-1] = lap[:,-2]
 
-    @njit(parallel=True, fastmath=True)
+    #@cuda.jit(parallel=True)
+    @njit(parallel=True)
     def run_tex_rd(A, B, lap_A, lap_B, diff_A, diff_B, f, k, dt, steps, brush):
         for t in range(steps):
             tex_laplacian(lap_A, A)
@@ -109,40 +106,21 @@ if bool_numba:
                     A[i,j] += (lap_A[i,j]*diff_A - ab2 + f*(1-A[i,j]))*dt
                     B[i,j] += (lap_B[i,j]*diff_B + ab2 - (k+f)*B[i,j])*dt
 
-    @jit(parallel=True, fastmath=True)
-    def tex_laplacian_AB_ani(lap_A, lap_B, arr_A, arr_B, VF_A0, VF_A1, VF_A2, VF_A3, VF_B0, VF_B1, VF_B2, VF_B3):
-        nx = arr_A.shape[0]
-        ny = arr_A.shape[1]
-
-        for i in prange(nx):
-            i0 = max(i-1,0)
-            i1 = min(i+1,nx-1)
-            for j in prange(ny):
-                j0 = max(j-1,0)
-                j1 = min(j+1,ny-1)
-                v2_A = arr_A[i, j]*2
-                lap_A[i,j] =    (arr_A[i0, j] + arr_A[i1, j] - v2_A)*VF_A0[i,j] + \
-                                (arr_A[i, j0] + arr_A[i, j1] - v2_A)*VF_A1[i,j] + \
-                                (arr_A[i0, j0] + arr_A[i1, j1] - v2_A)*VF_A2[i,j] + \
-                                (arr_A[i1, j0] + arr_A[i0, j1] - v2_A)*VF_A3[i,j]
-                v2_B = arr_B[i, j]*2
-                lap_B[i,j] =    (arr_B[i0, j] + arr_B[i1, j] - v2_B)*VF_B0[i,j] + \
-                                (arr_B[i, j0] + arr_B[i, j1] - v2_B)*VF_B1[i,j] + \
-                                (arr_B[i0, j0] + arr_B[i1, j1] - v2_B)*VF_B2[i,j] + \
-                                (arr_B[i1, j0] + arr_B[i0, j1] - v2_B)*VF_B3[i,j]
-
-    @jit(parallel=True, fastmath=True)
+    @njit(parallel=True)
     def run_tex_rd_ani(A, B, lap_A, lap_B, diff_A, diff_B, f, k, dt, steps, vf1, vf2, brush):
         for t in range(steps):
+            tex_laplacian_ani(lap_A, A, vf2)
+            #laplacian(lap_A, A)
+            tex_laplacian_ani(lap_B, B, vf1)
             nx = A.shape[0]
             ny = A.shape[1]
-            tex_laplacian_AB_ani(lap_A, lap_B, A, B, vf1[0], vf1[1], vf1[2], vf1[3], vf2[0], vf2[1], vf2[2], vf2[3])
             for i in prange(nx):
                 for j in prange(ny):
                     B[i,j] += brush[i,j]
-                    ab2 =  A[i,j]*B[i,j]**2
+                    ab2 =  A[i ,j]*B[i,j]**2
                     A[i,j] += (lap_A[i,j]*diff_A[i,j] - ab2 + f[i,j]*(1-A[i,j]))*dt
                     B[i,j] += (lap_B[i,j]*diff_B[i,j] + ab2 - (k[i,j]+f[i,j])*B[i,j])*dt
+
 
     @njit(parallel=True)
     def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, brush, diff_a, diff_b, f, k, dt, time_steps):

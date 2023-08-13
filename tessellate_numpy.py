@@ -3903,6 +3903,7 @@ class tissue_render_animation(Operator):
             # set again the handler
             blender_handlers = bpy.app.handlers.frame_change_post
             blender_handlers.append(anim_tessellate)
+            blender_handlers.append(anim_polyhedra)
             blender_handlers.append(reaction_diffusion_scene)
             context.window_manager.event_timer_remove(self.timer)
             if event.type == 'ESC':

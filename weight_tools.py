@@ -151,14 +151,6 @@ class reaction_diffusion_prop(PropertyGroup):
         name="k", default='',
         description="Vertex Group used for Kill value (k)")
 
-    vertex_group_anisotropy : StringProperty(
-        name="Anisotropy", default='',
-        description="Vertex Group used for Vector Field's Anisotropy")
-
-    vertex_group_twist : StringProperty(
-        name="Twist", default='',
-        description="Vertex Group used for Vector Field's Twist")
-
     vertex_group_brush : StringProperty(
         name="Brush", default='',
         description="Vertex Group used for adding/removing B")
@@ -177,12 +169,6 @@ class reaction_diffusion_prop(PropertyGroup):
 
     invert_vertex_group_k : BoolProperty(default=False,
         description='Inverte the value of the Vertex Group k')
-
-    invert_vertex_group_anisotropy : BoolProperty(default=False,
-        description='Inverte the value of the Vertex Group Anisotropy')
-
-    invert_vertex_group_twist : BoolProperty(default=False,
-        description='Inverte the value of the Vertex Group Twist')
 
     min_diff_a : FloatProperty(
         name="Min Diff A", default=0.1, min=0, soft_max=2, precision=3,
@@ -223,22 +209,6 @@ class reaction_diffusion_prop(PropertyGroup):
     max_k : FloatProperty(
         name="Max k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4, step=0.05,
         description="Max Kill Rate")
-
-    min_anisotropy : FloatProperty(
-        name="Min Anisotropy", default=0, min=0, max=1, precision=2, step=0.5,
-        description="Min Anisotropy")
-
-    max_anisotropy : FloatProperty(
-        name="Max Anisotropy", default=1, min=0, max=1, precision=2, step=0.5,
-        description="Max Anisotropy")
-
-    min_twist : FloatProperty(
-        name="Min Twist", default=0, min=-1, max=1, precision=2, step=0.05,
-        description="Min Twist")
-
-    max_twist : FloatProperty(
-        name="Max Twist", default=1, min=-1, max=1, precision=2, step=0.05,
-        description="Max Twist")
 
     brush_mult : FloatProperty(
         name="Mult", default=0.5, min=-1, max=1, precision=3, step=0.05,
@@ -311,7 +281,7 @@ class reaction_diffusion_prop(PropertyGroup):
                 ('VECTOR', "Vector", "Uniform vector"),
                 ('OBJECT', "Object", "Orient the field with a target object's Z"),
                 ('GRADIENT', "Gradient", "Gradient vertex group"),
-                ('ATTRIBUTE', "Vector Attribute", "Vector field defined by a Vector Attribute")
+                ('XYZ', "x, y, z", "Vector field defined by vertex groups 'x', 'y' and 'z'")
                 ),
             default='NONE',
             name="Vector Field controlling the direction of the Reaction-Diffusion",
@@ -321,10 +291,6 @@ class reaction_diffusion_prop(PropertyGroup):
     anisotropy : FloatProperty(
         name="Anisotropy", default=0.5, min=0, max=1, precision=2,
         description="Influence of the Vector Field")
-
-    twist : FloatProperty(
-        name="Twist", default=0, min=-1, max=1, precision=2,
-        description="Twist the direction of the vector field on the surface")
 
     vector : FloatVectorProperty(
         name='Vector', description='Constant Vector', default=(0.0, 0.0, 1.0),
@@ -2424,8 +2390,7 @@ class vertex_group_to_uv(Operator):
 
         uv_layer = me.uv_layers.new(name='Weight_to_UV')
         loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
-        n_data = int(np.sum(loops_size))
-        print(n_data)
+        n_data = np.sum(loops_size)
         v_id = np.ones(n_data)
         me.polygons.foreach_get('vertices',v_id)
         v_id = v_id.astype(int)
@@ -3019,7 +2984,7 @@ def reaction_diffusion_def(ob, bake=False):
     if type(ob) == bpy.types.Scene: return None
     props = ob.reaction_diffusion_settings
 
-    if bake or props.bool_cache or props.bake_geometry:
+    if bake or props.bool_cache:
         if props.cache_dir == '':
             letters = string.ascii_letters
             random_name = ''.join(rnd.choice(letters) for i in range(6))
@@ -3052,23 +3017,18 @@ def reaction_diffusion_def(ob, bake=False):
                 if not mod_preserve_shape(m): m.show_viewport = False
 
             # evaluated mesh
-            # Get the evaluated object with modifiers applied
-            eval_ob = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
-            # Get the evaluated mesh with modifiers applied
-            eval_mesh = eval_ob.to_mesh()
-            # Get the evaluated object with geometry nodes applied
-            eval_geo_ob = eval_ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
-            # Get the evaluated mesh with geometry nodes applied
-            me = eval_geo_ob.to_mesh()
-
-            #dg = bpy.context.evaluated_depsgraph_get()
-            #ob_eval = ob.evaluated_get(dg)
-            #me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
+            dg = bpy.context.evaluated_depsgraph_get()
+            ob_eval = ob.evaluated_get(dg)
+            me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
 
             # set original visibility
             for v, m in zip(mod_visibility, ob.modifiers):
                 m.show_viewport = v
             ob.modifiers.update()
+
+        bm = bmesh.new()   # create an empty BMesh
+        bm.from_mesh(me)   # fill it in from a Mesh
+        dvert_lay = bm.verts.layers.deform.active
 
         dt = props.dt
         time_steps = props.time_steps
@@ -3077,8 +3037,6 @@ def reaction_diffusion_def(ob, bake=False):
         diff_a = props.diff_a
         diff_b = props.diff_b
         scale = props.diff_mult
-        anisotropy = props.anisotropy
-        twist = props.twist
 
         brush_mult = props.brush_mult
 
@@ -3091,27 +3049,13 @@ def reaction_diffusion_def(ob, bake=False):
         if props.vertex_group_scale != '': scale = np.zeros(n_verts)
         if props.vertex_group_f != '': f = np.zeros(n_verts)
         if props.vertex_group_k != '': k = np.zeros(n_verts)
-        if props.vertex_group_anisotropy != '': anisotropy = np.zeros(n_verts)
-        if props.vertex_group_twist != '': twist = np.zeros(n_verts)
         if props.vertex_group_brush != '': brush = np.zeros(n_verts)
         else: brush = 0
 
-        use_attributes = False
-        if use_attributes:
-            a = np.zeros(n_verts)
-            me.attributes['a'].data.foreach_get('value',a)
-            a = np.array(a)
-            b = np.zeros(n_verts)
-            me.attributes['b'].data.foreach_get('value',b)
-            b = np.array(b)
-        else:
-            bm = bmesh.new()   # create an empty BMesh
-            bm.from_mesh(me)   # fill it in from a Mesh
-            dvert_lay = bm.verts.layers.deform.active
-            group_index_a = ob.vertex_groups["A"].index
-            group_index_b = ob.vertex_groups["B"].index
-            a = bmesh_get_weight_numpy(group_index_a, dvert_lay, bm.verts)
-            b = bmesh_get_weight_numpy(group_index_b, dvert_lay, bm.verts)
+        group_index_a = ob.vertex_groups["A"].index
+        group_index_b = ob.vertex_groups["B"].index
+        a = bmesh_get_weight_numpy(group_index_a, dvert_lay, bm.verts)
+        b = bmesh_get_weight_numpy(group_index_b, dvert_lay, bm.verts)
 
         if props.vertex_group_diff_a != '':
             group_index = ob.vertex_groups[props.vertex_group_diff_a].index
@@ -3158,31 +3102,11 @@ def reaction_diffusion_def(ob, bake=False):
                 vg_bounds = (props.min_k, props.max_k)
             k = np.interp(k, (0,1), vg_bounds)
 
-        if props.vertex_group_anisotropy != '':
-            group_index = ob.vertex_groups[props.vertex_group_anisotropy].index
-            anisotropy = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
-            if props.invert_vertex_group_anisotropy:
-                vg_bounds = (props.max_anisotropy, props.min_anisotropy)
-            else:
-                vg_bounds = (props.min_anisotropy, props.max_anisotropy)
-            anisotropy = np.interp(anisotropy, (0,1), vg_bounds)
-            constant_ani = False
-        else:
-            constant_ani = True
-
-        if props.vertex_group_twist != '':
-            group_index = ob.vertex_groups[props.vertex_group_twist].index
-            twist = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
-            if props.invert_vertex_group_twist:
-                vg_bounds = (props.max_twist, props.min_twist)
-            else:
-                vg_bounds = (props.min_twist, props.max_twist)
-            twist = np.interp(twist, (0,1), vg_bounds)
-
         if props.vertex_group_brush != '':
             group_index = ob.vertex_groups[props.vertex_group_brush].index
             brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts, normalized=True)
             brush *= brush_mult
+
 
         #timeElapsed = time.time() - start
         #print('RD - Read Vertex Groups:',timeElapsed)
@@ -3222,16 +3146,21 @@ def reaction_diffusion_def(ob, bake=False):
                     vec = Vector((mat[0][2],mat[1][2],mat[2][2]))
                     vector_field = [vec]*n_edges
 
-                if props.vector_field_mode == 'ATTRIBUTE':
-                    attr = me.attributes.keys()
-
-                    if props.vertex_group_gradient in attr:
-                        xyz = [0]*n_verts*3
-                        me = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).data
-                        me.attributes[props.vertex_group_gradient].data.foreach_get('vector',xyz)
-                        vector_field = [0]*n_verts
-                        for i in range(n_verts):
-                            vector_field[i] = Vector((xyz[i*3], xyz[i*3+1], xyz[i*3+2]))
+                if props.vector_field_mode == 'XYZ':
+                    vgk = ob.vertex_groups.keys()
+                    if 'x' in vgk and 'y' in vgk and 'z' in vgk:
+                        group_index = ob.vertex_groups["x"].index
+                        field_x = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                        group_index = ob.vertex_groups["y"].index
+                        field_y = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                        group_index = ob.vertex_groups["z"].index
+                        field_z = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                        field_x = field_x*2-1
+                        field_y = field_y*2-1
+                        field_z = field_z*2-1
+                        vector_field = []
+                        for x,y,z in zip(field_x, field_y, field_z):
+                            vector_field.append(Vector((x,y,z)))
                     else:
                         is_vector_field = False
 
@@ -3259,33 +3188,16 @@ def reaction_diffusion_def(ob, bake=False):
                             is_vector_field = True
 
                 if is_vector_field:
-                    # Twist
-                    if props.vertex_group_twist == '':
-                        normals = get_normals_numpy(me)
-                        normals = [Vector(nor) for nor in normals]
-                        for index, nor, vec in zip(range(n_verts), normals, vector_field):
-                            perp = (vec.cross(nor)).normalized()
-                            vector_field[index] = (vec.normalized()*(1-abs(twist))+perp*twist).normalized()
-                    else:
-                        normals = get_normals_numpy(me)
-                        normals = [Vector(nor) for nor in normals]
-                        for index, nor, vec in zip(range(n_verts), normals, vector_field):
-                            perp = (vec.cross(nor)).normalized()
-                            vector_field[index] = (vec.normalized()*(1-abs(twist[index]))+perp*twist[index]).normalized()
-
                     edge_verts = []
                     field_mult = []
                     edge_verts_dict = {}
                     for p in me.polygons:
                         n_face_verts = len(p.vertices)
                         for i in range(n_face_verts-1):
-                            pair_weight = 1
                             for j in range(i+1, n_face_verts):
                                 pair = [p.vertices[i],p.vertices[j]]
                                 pair.sort()
-                                if i == 0 and j == n_face_verts: pair_weight = 1
-                                edge_verts_dict[str(pair[0]) + " " + str(pair[1]) + " " + str(pair_weight)] = 0
-                                pair_weight = 0.5
+                                edge_verts_dict[str(pair[0]) + " " + str(pair[1])] = 0
 
                     if props.perp_vector_field:
                         for i, vert in enumerate(bm.verts):
@@ -3293,21 +3205,16 @@ def reaction_diffusion_def(ob, bake=False):
 
                     for pair in edge_verts_dict.keys():
                         pair = pair.split()
-                        id0 = int(pair[0])
-                        id1 = int(pair[1])
-                        pair_weight = float(pair[2])
-                        field_dir = (vector_field[id0]+vector_field[id1]).normalized()
-                        edge_verts.append(id0)
-                        edge_verts.append(id1)
-                        v0 = me.vertices[id0].co
-                        v1 = me.vertices[id1].co
+                        v0 = int(pair[0])
+                        v1 = int(pair[1])
+                        field_dir = (vector_field[v0]+vector_field[v1]).normalized()
+                        edge_verts.append(v0)
+                        edge_verts.append(v1)
+                        v0 = me.vertices[v0].co
+                        v1 = me.vertices[v1].co
                         #dist = (v1-v0).length()
                         vec = (v1-v0).normalized()
-                        fmult = abs(vec.dot(field_dir))
-                        if not constant_ani:
-                            ani = (anisotropy[id0]+anisotropy[id1])/2
-                            fmult = fmult*ani+(1-ani)
-                        field_mult.append(fmult*pair_weight)
+                        field_mult.append(abs(vec.dot(field_dir)))
                     n_edges = len(edge_verts_dict.keys())-1
                     field_mult = np.array(field_mult)
             else:
@@ -3329,7 +3236,7 @@ def reaction_diffusion_def(ob, bake=False):
             field_mult.tofile(file_name)
             props.update_baked_geometry = False
 
-        if constant_ani: field_mult = field_mult*anisotropy + (1-anisotropy)
+        field_mult = field_mult*props.anisotropy + (1-props.anisotropy)
 
         #gradient = get_uv_edge_vectors(me)
         #uv_dir = Vector((0.5,0.5,0)).normalized()
@@ -3400,49 +3307,43 @@ def reaction_diffusion_def(ob, bake=False):
 
     if props.update_weight_a or props.update_weight_b:
         start = time.time()
-        if use_attributes:
-            ob.data.attributes['a'].data.foreach_set('value',a)
-            ob.data.attributes['b'].data.foreach_set('value',b)
-            ob.data.update()
+        if props.update_weight_a:
+            if 'A' in ob.vertex_groups.keys():
+                vg_a = ob.vertex_groups['A']
+            else:
+                vg_a = ob.vertex_groups.new(name='A')
         else:
-            if props.update_weight_a:
-                if 'A' in ob.vertex_groups.keys():
-                    vg_a = ob.vertex_groups['A']
-                else:
-                    vg_a = ob.vertex_groups.new(name='A')
+            vg_a = None
+        if props.update_weight_b:
+            if 'B' in ob.vertex_groups.keys():
+                vg_b = ob.vertex_groups['B']
             else:
-                vg_a = None
-            if props.update_weight_b:
-                if 'B' in ob.vertex_groups.keys():
-                    vg_b = ob.vertex_groups['B']
-                else:
-                    vg_b = ob.vertex_groups.new(name='B')
+                vg_b = ob.vertex_groups.new(name='B')
+        else:
+            vg_b = None
+        if vg_a == vg_b == None:
+            pass
+        else:
+            if ob.mode == 'WEIGHT_PAINT':# or props.bool_cache:
+                # slower, but prevent crashes
+                for i in range(n_verts):
+                    if vg_a: vg_a.add([i], a[i], 'REPLACE')
+                    if vg_b: vg_b.add([i], b[i], 'REPLACE')
             else:
-                vg_b = None
-            if vg_a == vg_b == None:
-                pass
-            else:
-                if ob.mode == 'WEIGHT_PAINT':# or props.bool_cache:
-                    # slower, but prevent crashes
-                    for i in range(n_verts):
-                        if vg_a: vg_a.add([i], a[i], 'REPLACE')
-                        if vg_b: vg_b.add([i], b[i], 'REPLACE')
-                else:
-                    if props.bool_mod or props.bool_cache:
-                        #bm.free()               # release old bmesh
-                        bm = bmesh.new()        # create an empty BMesh
-                        bm.from_mesh(ob.data)   # fill it in from a Mesh
-                        dvert_lay = bm.verts.layers.deform.active
-                    # faster, but can cause crashes while painting weight
-                    if vg_a: index_a = vg_a.index
-                    if vg_b: index_b = vg_b.index
-                    for i, v in enumerate(bm.verts):
-                        dvert = v[dvert_lay]
-                        if vg_a: dvert[index_a] = a[i]
-                        if vg_b: dvert[index_b] = b[i]
-                    bm.to_mesh(ob.data)
-                    bm.free()
-
+                if props.bool_mod or props.bool_cache:
+                    #bm.free()               # release old bmesh
+                    bm = bmesh.new()        # create an empty BMesh
+                    bm.from_mesh(ob.data)   # fill it in from a Mesh
+                    dvert_lay = bm.verts.layers.deform.active
+                # faster, but can cause crashes while painting weight
+                if vg_a: index_a = vg_a.index
+                if vg_b: index_b = vg_b.index
+                for i, v in enumerate(bm.verts):
+                    dvert = v[dvert_lay]
+                    if vg_a: dvert[index_a] = a[i]
+                    if vg_b: dvert[index_b] = b[i]
+                bm.to_mesh(ob.data)
+                bm.free()
         print('       Writing Vertex Groups Time:',time.time() - start)
     if props.normalize:
         min_a = np.min(a)
@@ -3519,11 +3420,7 @@ def reaction_diffusion_def(ob, bake=False):
             ps.invert_vertex_group_density = not ps.invert_vertex_group_density
             ps.invert_vertex_group_density = not ps.invert_vertex_group_density
 
-    if props.bool_mod and not props.bool_cache:
-        try:
-            bpy.data.meshes.remove(me)
-        except:
-            pass
+    if props.bool_mod and not props.bool_cache: bpy.data.meshes.remove(me)
 
 def fast_bake_def(ob, frame_start=1, frame_end=250):
     scene = bpy.context.scene
@@ -3582,8 +3479,6 @@ def fast_bake_def(ob, frame_start=1, frame_end=250):
     diff_a = props.diff_a
     diff_b = props.diff_b
     scale = props.diff_mult
-    anisotropy = props.anisotropy
-    twist = props.twist
 
     brush_mult = props.brush_mult
 
@@ -3596,8 +3491,6 @@ def fast_bake_def(ob, frame_start=1, frame_end=250):
     if props.vertex_group_scale != '': scale = np.zeros(n_verts)
     if props.vertex_group_f != '': f = np.zeros(n_verts)
     if props.vertex_group_k != '': k = np.zeros(n_verts)
-    if props.vertex_group_anisotropy != '': anisotropy = np.zeros(n_verts)
-    if props.vertex_group_twist != '': twist = np.zeros(n_verts)
     if props.vertex_group_brush != '': brush = np.zeros(n_verts)
     else: brush = 0
 
@@ -3649,24 +3542,6 @@ def fast_bake_def(ob, frame_start=1, frame_end=250):
             vg_bounds = (props.min_k, props.max_k)
         k = np.interp(k, (0,1), vg_bounds)
 
-    if props.vertex_group_anisotropy != '':
-        group_index = ob.vertex_groups[props.vertex_group_anisotropy].index
-        anisotropy = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-        if props.invert_vertex_group_anisotropy:
-            vg_bounds = (props.max_anisotropy, props.min_anisotropy)
-        else:
-            vg_bounds = (props.min_anisotropy, props.max_anisotropy)
-        anisotropy = np.interp(anisotropy, (0,1), vg_bounds)
-
-    if props.vertex_group_twist != '':
-        group_index = ob.vertex_groups[props.vertex_group_twist].index
-        twist = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-        if props.invert_vertex_group_twist:
-            vg_bounds = (props.max_twist, props.min_twist)
-        else:
-            vg_bounds = (props.min_twist, props.max_twist)
-        twist = np.interp(twist, (0,1), vg_bounds)
-
     if props.vertex_group_brush != '':
         group_index = ob.vertex_groups[props.vertex_group_brush].index
         brush = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
@@ -3675,7 +3550,8 @@ def fast_bake_def(ob, frame_start=1, frame_end=250):
     diff_a *= scale
     diff_b *= scale
 
-    if False:
+    if True:
+
         group_index = ob.vertex_groups["x"].index
         field_x = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
         group_index = ob.vertex_groups["y"].index
@@ -4043,8 +3919,14 @@ class TISSUE_PT_reaction_diffusion(Panel):
                 col.prop_search(props, "vector_field_object", context.scene, "objects", text='Object')
             if props.vector_field_mode == 'GRADIENT':
                 col.prop_search(props, 'vertex_group_gradient', ob, "vertex_groups")
-            if props.vector_field_mode == 'ATTRIBUTE':
-                col.prop_search(props, 'vertex_group_gradient', ob.data, "attributes")
+            if props.vector_field_mode == 'XYZ':
+                vgk = ob.vertex_groups.keys()
+                if 'x' not in vgk:
+                    col.label(text="Vertex Group 'x' is missing", icon='ERROR')
+                if 'y' not in vgk:
+                    col.label(text="Vertex Group 'y' is missing", icon='ERROR')
+                if 'z' not in vgk:
+                    col.label(text="Vertex Group 'z' is missing", icon='ERROR')
             if props.vector_field_mode == 'VECTOR':
                 row = col.row()
                 row.prop(props, "vector")
@@ -4052,12 +3934,8 @@ class TISSUE_PT_reaction_diffusion(Panel):
                 col.separator()
                 row = col.row()
                 #row.prop(props, 'perp_vector_field', icon='DRIVER_ROTATIONAL_DIFFERENCE', text='Perpendicular')
-                #row.prop(props, 'perp_vector_field', text='Perpendicular')
+                row.prop(props, 'perp_vector_field', text='Perpendicular')
                 row.prop(props, "anisotropy")
-                row.enabled = props.vertex_group_anisotropy == '' and not props.bool_cache
-                row = col.row()
-                row.prop(props, "twist")
-                row.enabled = props.vertex_group_twist == '' and not props.bool_cache
             col.separator()
             col.label(text='Cache:')
             #col.prop(props, "bool_cache")
@@ -4139,8 +4017,6 @@ class TISSUE_PT_reaction_diffusion_weight(Panel):
         insert_weight_parameter(col, ob, 'scale', text='Scale:')
         insert_weight_parameter(col, ob, 'f', text='f:')
         insert_weight_parameter(col, ob, 'k', text='k:')
-        insert_weight_parameter(col, ob, 'anisotropy', text='Anisotropy:')
-        insert_weight_parameter(col, ob, 'twist', text='Twist:')
         col.enabled = not props.bool_cache
 
 def insert_weight_parameter(col, ob, name, text=''):
@@ -4150,11 +4026,7 @@ def insert_weight_parameter(col, ob, name, text=''):
     col2.label(text=text)
     col2 = split.column(align=True)
     row2 = col2.row(align=True)
-    use_attributes = False
-    if use_attributes:
-        row2.prop_search(props, 'vertex_group_' + name, ob.data, "attributes", text='')
-    else:
-        row2.prop_search(props, 'vertex_group_' + name, ob, "vertex_groups", text='')
+    row2.prop_search(props, 'vertex_group_' + name, ob, "vertex_groups", text='')
     if name != 'brush':
         row2.prop(props, "invert_vertex_group_" + name, text="", toggle=True, icon='ARROW_LEFTRIGHT')
     if 'vertex_group_' + name in props:

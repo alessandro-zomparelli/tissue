@@ -199,12 +199,28 @@ def remove_tessellate_handler():
     for h in tissue_handlers: blender_handlers.remove(h)
 
 def set_tessellate_handler(self, context):
-
     remove_tessellate_handler()
     for o in context.scene.objects:
         if o.tissue.bool_run:
             blender_handlers = bpy.app.handlers.frame_change_post
             blender_handlers.append(anim_tessellate)
+            break
+    return
+
+def remove_polyhedra_handler():
+    tissue_handlers = []
+    blender_handlers = bpy.app.handlers.frame_change_post
+    for h in blender_handlers:
+        if "anim_polyhedra" in str(h):
+            tissue_handlers.append(h)
+    for h in tissue_handlers: blender_handlers.remove(h)
+
+def set_polyhedra_handler(self, context):
+    remove_polyhedra_handler()
+    for o in context.scene.objects:
+        if o.tissue.bool_run:
+            blender_handlers = bpy.app.handlers.frame_change_post
+            blender_handlers.append(anim_polyhedra)
             break
     return
 

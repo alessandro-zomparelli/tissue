@@ -131,7 +131,7 @@ class tex_reaction_diffusion_prop(PropertyGroup):
         description="Multiplier for the diffusion of both substances")
 
     anisotropy : FloatProperty(
-        name="Anisotropy", default=0.5, min=0, max=5, precision=2,
+        name="Anisotropy", default=0.5, min=0, max=1, precision=2,
         description="Influence of the Vector Field")
 
     img_vector_field : StringProperty(
@@ -284,8 +284,8 @@ def tex_reaction_diffusion_def(ob, bake=False):
     res_x = props.res_x #int(img_b.size[0])
     res_y = props.res_y #int(img_b.size[1])
 
-    min_scale = props.min_scale**2
-    max_scale = props.max_scale**2
+    min_scale = props.min_scale
+    max_scale = props.max_scale
 
     images = bpy.data.images.keys()
     rd_images = [img_a, img_b]
@@ -337,49 +337,35 @@ def tex_reaction_diffusion_def(ob, bake=False):
         vf_y = vf_y.reshape((nx,ny))
 
         # original field
-        if True:
-            factor = ob['prop']
-            a_mult = ob['a_mult']
-            a1 = ani*a_mult
-            a2 = (1 - min(ani,a1))#*a_mult
-            vf_x2 = vf_x**2
-            vf_y2 = vf_y**2
-            vf_xy = vf_x*vf_y
-            mult_d = (a2 - a1)*vf_xy
-            mult_h = (a2*vf_x2 + a1*vf_y2)
-            mult_v = (a1*vf_x2 + a2*vf_y2)
-            vf1 = np.concatenate((mult_h[np.newaxis,:,:], mult_v[np.newaxis,:,:], (1+mult_d[np.newaxis,:,:])/2, (1-mult_d[np.newaxis,:,:])/2), axis=0)
-            vf2 = vf1*factor+(1-factor) #np.concatenate((mult_v[np.newaxis,:,:], mult_h[np.newaxis,:,:], (1-mult_d[np.newaxis,:,:])/2, (1+mult_d[np.newaxis,:,:])/2), axis=0)
-            #vf2 = np.concatenate((mult_v[np.newaxis,:,:], mult_h[np.newaxis,:,:], (1-mult_d[np.newaxis,:,:])/2, (1+mult_d[np.newaxis,:,:])/2), axis=0)
-        else:
-            vf_x_ = sqrt(2)/2 * vf_x
-            vf_y_ = sqrt(2)/2 * vf_y
-            vf_xy1_ = abs(vf_x_ + vf_y_)
-            vf_xy2_ = abs(vf_x_ - vf_y_)
-            vf_xy1 = (vf_xy1_*ani + (1-ani)) * 0.5 #sqrt(2)/2
-            vf_xy2 = (vf_xy2_*ani + (1-ani)) * 0.5 #sqrt(2)/2
-            vf_x_ = abs(vf_x)*ani + (1-ani)
-            vf_y_ = abs(vf_y)*ani + (1-ani)
-            vf1 = np.concatenate((vf_x_[np.newaxis,:,:], vf_y_[np.newaxis,:,:], vf_xy1[np.newaxis,:,:], vf_xy2[np.newaxis,:,:]), axis=0)
-            # perpendicular field
-            vf_x, vf_y = -vf_y, vf_x
-            vf_x_ = sqrt(2)/2*vf_x
-            vf_y_ = sqrt(2)/2*vf_y
-            vf_xy1_ = abs(vf_x_ + vf_y_)
-            vf_xy2_ = abs(vf_x_ - vf_y_)
-            vf_xy1 = (vf_xy1_*ani + (1-ani)) * 0.5 #sqrt(2)/2
-            vf_xy2 = (vf_xy2_*ani + (1-ani)) * 0.5 #sqrt(2)/2
-            vf_x = abs(vf_x)*ani + (1-ani)
-            vf_y = abs(vf_y)*ani + (1-ani)
-            vf2 = np.concatenate((vf_x[np.newaxis,:,:], vf_y[np.newaxis,:,:], vf_xy1[np.newaxis,:,:], vf_xy2[np.newaxis,:,:]), axis=0)
+        vf_x_ = sqrt(2)/2*vf_x
+        vf_y_ = sqrt(2)/2*vf_y
+        vf_xy1_ = abs(vf_x_ + vf_y_)
+        vf_xy2_ = abs(vf_x_ - vf_y_)
+        vf_xy1 = (vf_xy1_*ani + (1-ani))*sqrt(2)/2
+        vf_xy2 = (vf_xy2_*ani + (1-ani))*sqrt(2)/2
+        vf_x_ = abs(vf_x)*ani + (1-ani)
+        vf_y_ = abs(vf_y)*ani + (1-ani)
+        vf1 = np.concatenate((vf_x_[np.newaxis,:,:], vf_y_[np.newaxis,:,:], vf_xy1[np.newaxis,:,:], vf_xy2[np.newaxis,:,:]), axis=0)
 
+        # perpendicular field
+        vf_x, vf_y = -vf_y, vf_x
+        vf_x_ = sqrt(2)/2*vf_x
+        vf_y_ = sqrt(2)/2*vf_y
+        vf_xy1_ = abs(vf_x_ + vf_y_)
+        vf_xy2_ = abs(vf_x_ - vf_y_)
+        vf_xy1 = (vf_xy1_*ani + (1-ani))*sqrt(2)/2
+        vf_xy2 = (vf_xy2_*ani + (1-ani))*sqrt(2)/2
+        vf_x = abs(vf_x)*ani + (1-ani)
+        vf_y = abs(vf_y)*ani + (1-ani)
+        vf2 = np.concatenate((vf_x[np.newaxis,:,:], vf_y[np.newaxis,:,:], vf_xy1[np.newaxis,:,:], vf_xy2[np.newaxis,:,:]), axis=0)
         if props.invert_img_vector_field:
             vf1, vf2 = vf2, vf1
     else:
         vf = np.ones((1,nx,ny))
-        vf_diag = np.ones((1,nx,ny)) * 0.5 #sqrt(2)/2
+        vf_diag = np.ones((1,nx,ny))*sqrt(2)/2
         vf1 = np.concatenate((vf, vf, vf_diag, vf_diag), axis=0)
         vf2 = vf1
+
 
     if img_diff_a:
         diff_a = np_remap_image_values(img_diff_a, channel=0, min=diff_a_min, max=diff_a_max, invert=props.invert_img_diff_a)
@@ -421,12 +407,12 @@ def tex_reaction_diffusion_def(ob, bake=False):
     a_px = np.array(a_px).reshape((-1,4))
     a = a_px[:,0]
     a = a.reshape((nx,ny))
-    lap_a = np.zeros((nx,ny), dtype=a.dtype)
+    lap_a = np.zeros((nx,ny))
 
     b_px = np.array(b_px).reshape((-1,4))
     b = b_px[:,0]
     b = b.reshape((nx,ny))
-    lap_b = np.zeros((nx,ny), dtype=b.dtype)
+    lap_b = np.zeros((nx,ny))
 
     print("Reshape data time: " + str(timeit.default_timer() - start_time) + " sec")
 
@@ -437,12 +423,6 @@ def tex_reaction_diffusion_def(ob, bake=False):
     start_time = timeit.default_timer()
     np.clip(a,0,1,out=a)
     np.clip(b,0,1,out=b)
-    if False:
-        j0 = np.arange(int(nx/2))
-        b[j0,:] = b[nx-j0-1,:]
-    if False:
-        j0 = np.arange(int(ny/2))
-        b[:,j0] = b[:,ny-j0-1]
     a = a.flatten()
     b = b.flatten()
     a_px[:,0] = a
@@ -457,19 +437,6 @@ def tex_reaction_diffusion_def(ob, bake=False):
     img_b.pixels.update()
     img_a.update()
     img_b.update()
-
-    # Export animation for image B
-    if False:
-        frame = "{:04d}".format(bpy.context.scene.frame_current)
-        # Save B images
-        filepath_b = img_b.filepath
-        if filepath_b != '':
-            folder_path = filepath_b.split(bpy.path.basename(filepath_b))[0]
-            filepath_b = folder_path + "B_" + frame + ".png"
-            img_b.filepath = filepath_b
-            img_b.save()
-        #bpy.ops.image.save_as(save_as_render=False, filepath=filepath_b, relative_path=True, show_multiview=False, use_multiview=False)
-
     print("Stored Images: " + str(timeit.default_timer() - start_time) + " sec")
 
 class reset_tex_reaction_diffusion(Operator):
