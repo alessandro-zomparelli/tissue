@@ -150,7 +150,7 @@ class tissue_polyhedra_prop(PropertyGroup):
     thicken_all : BoolProperty(
         name="Thicken all",
         description="Thicken original faces as well",
-        default=False,
+        default=True,
         update = anim_polyhedra_active
         )
 
@@ -170,6 +170,12 @@ class tissue_polyhedra_prop(PropertyGroup):
             min=0,
             max=1,
             description="Thickness factor to use for zero vertex group influence",
+            update = anim_polyhedra_active
+            )
+    bool_smooth : BoolProperty(
+            name="Smooth Shading",
+            default=False,
+            description="Output faces with smooth shading rather than flat shaded",
             update = anim_polyhedra_active
             )
 
@@ -255,27 +261,30 @@ class polyhedral_wireframe(Operator):
     thicken_all : BoolProperty(
         name="Thicken all",
         description="Thicken original faces as well",
-        default=False
+        default=True
         )
 
     vertex_group_thickness : StringProperty(
             name="Thickness weight", default='',
-            description="Vertex Group used for thickness",
-            update = anim_polyhedra_active
+            description="Vertex Group used for thickness"
             )
     invert_vertex_group_thickness : BoolProperty(
             name="Invert", default=False,
-            description="Invert the vertex group influence",
-            update = anim_polyhedra_active
+            description="Invert the vertex group influence"
             )
     vertex_group_thickness_factor : FloatProperty(
             name="Factor",
             default=0,
             min=0,
             max=1,
-            description="Thickness factor to use for zero vertex group influence",
-            update = anim_polyhedra_active
-                    )
+            description="Thickness factor to use for zero vertex group influence"
+            )
+
+    bool_smooth : BoolProperty(
+            name="Smooth Shading",
+            default=False,
+            description="Output faces with smooth shading rather than flat shaded"
+            )
 
     #regular_sections : BoolProperty(
     #    name="Regular Sections", default=False,
@@ -347,6 +356,11 @@ class polyhedral_wireframe(Operator):
 
         # Store parameters
         props = new_ob.tissue_polyhedra
+
+        # lock
+        lock_status = new_ob.tissue.bool_lock
+        new_ob.tissue.bool_lock = True
+
         if self.object in bpy.data.objects.keys():
             props.object = bpy.data.objects[self.object]
         props.mode = self.mode
@@ -378,6 +392,9 @@ class polyhedral_wireframe(Operator):
                 c.objects.link(new_ob)
         context.view_layer.objects.active = new_ob
 
+        # unlock
+        new_ob.tissue.bool_lock = lock_status
+
         return {'FINISHED'}
 
 class tissue_update_polyhedra(Operator):
@@ -391,7 +408,7 @@ class tissue_update_polyhedra(Operator):
         props = ob.tissue_polyhedra
         thickness = props.thickness
 
-        merge_dist = thickness*0.001
+        merge_dist = thickness*0.0001
 
         subs = props.segments
         if props.mode == 'POLYHEDRA': subs = 1
@@ -607,14 +624,20 @@ class tissue_update_polyhedra(Operator):
             area_threshold = props.area_threshold
         else:
             filter_faces = False
+
+        bm1.faces.ensure_lookup_table()
+        bm1.faces.index_update()
+
+        # merge polyhedra faces
         for p in polyhedra:
+            merge_verts = []
             delete_faces_poly = []
             wireframe_faces_poly = []
             faces_id = [(f-1)*2 if f > 0 else (-f-1)*2+1 for f in p]
             faces_id_neg = [(-f-1)*2 if -f > 0 else (f-1)*2+1 for f in p]
-            merge_verts = []
             faces = [bm1.faces[f_id] for f_id in faces_id]
             for f in faces:
+                merge_verts += [v for v in f.verts]
                 if f.index in delete_faces: continue
                 delete = False
                 if filter_faces:
@@ -637,7 +660,8 @@ class tissue_update_polyhedra(Operator):
                         delete_faces_poly.append(f.index)
                 else:
                     wireframe_faces_poly.append(f.index)
-                merge_verts += [v for v in f.verts]
+            #merge_verts = [v for v in f.verts for f in faces]
+
             if len(wireframe_faces_poly) < 2:
                 delete_faces += faces_id
                 not_wireframe_faces += faces_id_neg
@@ -645,11 +669,12 @@ class tissue_update_polyhedra(Operator):
                 wireframe_faces += wireframe_faces_poly
                 flat_faces += delete_faces_poly
 
-            bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=merge_dist)
+            bmesh.ops.remove_doubles(bm1, verts=list(set(merge_verts)), dist=merge_dist)
             bm1.faces.ensure_lookup_table()
+            bm1.faces.index_update()
 
         wireframe_faces = [i for i in wireframe_faces if i not in not_wireframe_faces]
-        wireframe_faces = list(dict.fromkeys(wireframe_faces))
+        wireframe_faces = list(set(wireframe_faces))
 
         flat_faces = list(dict.fromkeys(flat_faces))
 
@@ -661,7 +686,13 @@ class tissue_update_polyhedra(Operator):
         bm1.to_mesh(poly_me)
         poly_me.update()
         if props.mode == 'POLYHEDRA':
+            # clean meshes
+            old_me = ob.data
             ob.data = poly_me
+            mesh_name = old_me.name
+            bpy.data.meshes.remove(old_me)
+            bpy.data.meshes.remove(me)
+            ob.data.name = mesh_name
             end_time = time.time()
             print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-start_time))
             return {'FINISHED'}
@@ -672,6 +703,7 @@ class tissue_update_polyhedra(Operator):
         bm1.faces.index_update()
         wireframe_faces = [bm1.faces[i] for i in wireframe_faces]
         original_faces = wireframe_faces
+
         #bmesh.ops.remove_doubles(bm1, verts=merge_verts, dist=0.001)
 
         # detect edge loops
@@ -824,20 +856,29 @@ class tissue_update_polyhedra(Operator):
         delete_faces += [f.index for f in original_faces]
         delete_faces = list(dict.fromkeys(delete_faces))
         delete_faces = [bm1.faces[i] for i in delete_faces]
-        bmesh.ops.delete(bm1, geom=delete_faces, context='FACES')
 
+        bmesh.ops.delete(bm1, geom=delete_faces, context='FACES')
         bmesh.ops.remove_doubles(bm1, verts=bm1.verts, dist=merge_dist)
         bm1.faces.ensure_lookup_table()
         bm1.edges.ensure_lookup_table()
         bm1.verts.ensure_lookup_table()
 
+        # set crease values
+
         if props.crease > 0 and props.dissolve != 'INNER':
             creaseLayer = bm1.edges.layers.crease.verify()
             bm1.edges.index_update()
             crease_edges = []
-            for f in bm1.faces:
+            for f in new_faces:
+                #e = f.edges[0]
+                #e[creaseLayer] = props.crease
                 e = f.edges[2]
                 e[creaseLayer] = props.crease
+            #for f in flat_faces:
+                #for e in f.edges:
+                    #e[creaseLayer] = props.crease
+
+
 
         if props.dissolve != 'NONE':
             if props.dissolve == 'INNER': dissolve_id = 2
@@ -850,15 +891,25 @@ class tissue_update_polyhedra(Operator):
                     dissolve_edges.append(e)
             bmesh.ops.dissolve_edges(bm1, edges=dissolve_edges, use_verts=True, use_face_split=False)
 
-        all_lines = [[] for e in me.edges]
-        all_end_points = [[] for e in me.edges]
+
+        #all_lines = [[] for e in me.edges]
+        #all_end_points = [[] for e in me.edges]
         for v in bm1.verts: v.select_set(False)
         for f in bm1.faces: f.select_set(False)
 
-        _me = me.copy()
+        dissolve_verts = [v for v in bm1.verts if len(v.link_edges) == 2]
+        bmesh.ops.dissolve_verts(bm1, verts=dissolve_verts, use_face_split=False, use_boundary_tear=False)
+
+        # clean meshes
         bm1.to_mesh(me)
         me.update()
+        old_me = ob.data
         ob.data = me
+        mesh_name = old_me.name
+        bpy.data.meshes.remove(old_me)
+        bpy.data.meshes.remove(poly_me)
+        ob.data.name = mesh_name
+        if props.bool_smooth: bpy.ops.object.shade_smooth()
 
         '''
         new_ob = bpy.data.objects.new("Wireframe", me)
@@ -869,7 +920,7 @@ class tissue_update_polyhedra(Operator):
         me = _me
         '''
         bm1.free()
-        bpy.data.meshes.remove(_me)
+        #bpy.data.meshes.remove(_me)
         #new_ob.location = ob.location
         '''
         new_ob.matrix_world = ob.matrix_world
@@ -945,18 +996,19 @@ class TISSUE_PT_polyhedra_object(Panel):
                     toggle=True, icon='ARROW_LEFTRIGHT')
                 row2.prop(props, "vertex_group_thickness_factor")
                 row2.enabled = props.vertex_group_thickness in ob0.vertex_groups.keys()
+                col.prop(props, 'bool_smooth')
                 col.separator()
-                col.label(text='Loops:')
-                col.prop(props, 'selective_wireframe')
+                col.label(text='Selective Wireframe:')
+                col.prop(props, 'selective_wireframe', text='Mode')
                 col.separator()
                 if props.selective_wireframe == 'THICKNESS':
                     col.prop(props, 'thickness_threshold_correction')
                 elif props.selective_wireframe == 'AREA':
                     col.prop(props, 'area_threshold')
-                if props.selective_wireframe != 'NONE':
-                    col.prop(props, 'thicken_all')
+                #if props.selective_wireframe != 'NONE':
+                #    col.prop(props, 'thicken_all')
                 col.separator()
-                col.label(text='Segments:')
+                col.label(text='Subdivide edges:')
                 row = col.row()
                 row.prop(props, 'segments')
                 row.prop(props, 'proportional_segments', text='Proportional')
