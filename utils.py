@@ -181,6 +181,13 @@ def vector_rotation(vec):
     if ang < 0: ang = 2*pi + ang
     return ang
 
+def signed_angle_with_axis(va, vb, axis):
+    return atan2(va.cross(vb).dot(axis.normalized()), va.dot(vb))
+
+def round_angle_with_axis(va, vb, axis):
+    angle = signed_angle_with_axis(va, vb, axis)
+    return 2*pi + angle if angle < 0 else angle
+
 def incenter(vecs):
     lengths = x = y = z = 0
     mid = len(vecs)//2+1
