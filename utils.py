@@ -422,11 +422,9 @@ def join_objects(context, objects):
     return new_ob
 
 def join_objects(objects):
-    override = bpy.context.copy()
     new_ob = objects[0]
-    override['active_object'] = new_ob
-    override['selected_editable_objects'] = objects
-    with context.temp_override(**override):
+    override = {'active_object': new_ob, 'selected_editable_objects': objects}
+    with bpy.context.temp_override(**override):
         bpy.ops.object.join()
     return new_ob
 
