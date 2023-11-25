@@ -5,11 +5,11 @@ https://www.co-de-it.com/code/blender-tissue
 
 Tissue is already shipped with both Blender. However I recommend to update the default version downloading manually the most recent one, for more updated features and more stability.
 
-### Blender 3.3
+### Blender 3.6
 
-Tissue v0.3.54 for Blender 3.3.1 (latest stable release): https://github.com/alessandro-zomparelli/tissue/releases/tag/v0-3-54
+Tissue v0.3.58 for Blender 3.6.1 (latest stable version): https://github.com/alessandro-zomparelli/tissue
 
-Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b320-dev
+Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b360-dev
 
 
 ### Installation:
