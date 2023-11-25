@@ -127,14 +127,15 @@ def anim_tessellate(scene, depsgraph=None):
                         override['mode'] = 'OBJECT'
                         override['view_layer'] = scene.view_layers[0]
                         break
-            if ob.tissue.tissue_type == 'TESSELLATE':
-                bpy.ops.object.tissue_update_tessellate(override)
-            elif ob.tissue.tissue_type == 'TO_CURVE':
-                bpy.ops.object.tissue_convert_to_curve_update(override)
-            elif ob.tissue.tissue_type == 'POLYHEDRA':
-                bpy.ops.object.tissue_polyhedra_update(override)
-            elif ob.tissue.tissue_type == 'CONTOUR_CURVES':
-                bpy.ops.object.tissue_update_contour_curves(override)
+            with bpy.context.temp_override(**override):
+                if ob.tissue.tissue_type == 'TESSELLATE':
+                    bpy.ops.object.tissue_update_tessellate()
+                elif ob.tissue.tissue_type == 'TO_CURVE':
+                    bpy.ops.object.tissue_convert_to_curve_update()
+                elif ob.tissue.tissue_type == 'POLYHEDRA':
+                    bpy.ops.object.tissue_polyhedra_update()
+                elif ob.tissue.tissue_type == 'CONTOUR_CURVES':
+                    bpy.ops.object.tissue_update_contour_curves()
 
         if old_mode != None:
             objects = bpy.context.view_layer.objects
@@ -145,51 +146,7 @@ def anim_tessellate(scene, depsgraph=None):
     config.evaluatedDepsgraph = None
     print('end')
     return
-'''
-def OLD_anim_tessellate(scene, depsgraph):
-    print('Tissue: animating tessellations...')
 
-    #global evaluatedDepsgraph
-    #print(evaluatedDepsgraph)
-    print(config.evaluatedDepsgraph)
-    config.evaluatedDepsgraph = depsgraph
-    print(config.evaluatedDepsgraph)
-
-    try:
-        active_object = bpy.context.object
-        old_mode = bpy.context.object.mode
-        selected_objects = bpy.context.selected_objects
-    except: active_object = old_mode = selected_objects = None
-
-    if old_mode in ('OBJECT', 'PAINT_WEIGHT') or True:
-        update_objects = []
-        for ob in scene.objects:
-            if ob.tissue.bool_run and not ob.tissue.bool_lock:
-                if ob not in update_objects: update_objects.append(ob)
-                update_objects = list(reversed(update_dependencies(ob, update_objects)))
-        for ob in update_objects:
-            for window in bpy.context.window_manager.windows:
-                screen = window.screen
-                for area in screen.areas:
-                    if area.type == 'VIEW_3D':
-                        override = bpy.context.copy()
-                        override['window'] = window
-                        override['screen'] = screen
-                        override['area'] = area
-                        override['selected_objects'] = [ob]
-                        override['object'] = ob
-                        override['active_object'] = ob
-                        override['selected_editable_objects'] = [ob]
-                        override['mode'] = 'OBJECT'
-                        override['view_layer'] = scene.view_layers[0]
-                        break
-            bpy.ops.object.tissue_update_tessellate(override)
-
-    config.evaluatedDepsgraph = None
-    print('end')
-    print(config.evaluatedDepsgraph)
-    return
-'''
 def remove_tessellate_handler():
     tissue_handlers = []
     blender_handlers = bpy.app.handlers.frame_change_post
@@ -199,12 +156,28 @@ def remove_tessellate_handler():
     for h in tissue_handlers: blender_handlers.remove(h)
 
 def set_tessellate_handler(self, context):
-
     remove_tessellate_handler()
     for o in context.scene.objects:
         if o.tissue.bool_run:
             blender_handlers = bpy.app.handlers.frame_change_post
             blender_handlers.append(anim_tessellate)
+            break
+    return
+
+def remove_polyhedra_handler():
+    tissue_handlers = []
+    blender_handlers = bpy.app.handlers.frame_change_post
+    for h in blender_handlers:
+        if "anim_polyhedra" in str(h):
+            tissue_handlers.append(h)
+    for h in tissue_handlers: blender_handlers.remove(h)
+
+def set_polyhedra_handler(self, context):
+    remove_polyhedra_handler()
+    for o in context.scene.objects:
+        if o.tissue.bool_run:
+            blender_handlers = bpy.app.handlers.frame_change_post
+            blender_handlers.append(anim_polyhedra)
             break
     return
 

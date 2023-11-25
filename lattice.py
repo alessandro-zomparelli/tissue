@@ -340,7 +340,7 @@ class lattice_along_surface(Operator):
         grid_mesh = temp_grid_obj.data
         for v in grid_mesh.vertices:
             v.co = grid_obj.matrix_world @ v.co
-        grid_mesh.calc_normals()
+        #grid_mesh.calc_normals()
 
         if len(grid_mesh.polygons) > 64 * 64:
             bpy.data.objects.remove(temp_grid_obj)
@@ -391,8 +391,11 @@ class lattice_along_surface(Operator):
 
         # set as parent
         if self.set_parent:
-            override = {'active_object': obj, 'selected_objects' : [lattice,obj]}
-            bpy.ops.object.parent_set(override, type='OBJECT', keep_transform=False)
+            override = context.copy()
+            override['active_object'] = obj
+            override['selected_objects'] = [lattice,obj]
+            with context.temp_override(**override):
+                bpy.ops.object.parent_set(type='OBJECT', keep_transform=False)
 
         # reading grid structure
         verts_grid, edges_grid, faces_grid = grid_from_mesh(

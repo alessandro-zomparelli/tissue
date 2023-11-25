@@ -181,6 +181,13 @@ def vector_rotation(vec):
     if ang < 0: ang = 2*pi + ang
     return ang
 
+def signed_angle_with_axis(va, vb, axis):
+    return atan2(va.cross(vb).dot(axis.normalized()), va.dot(vb))
+
+def round_angle_with_axis(va, vb, axis):
+    angle = signed_angle_with_axis(va, vb, axis)
+    return 2*pi + angle if angle < 0 else angle
+
 def incenter(vecs):
     lengths = x = y = z = 0
     mid = len(vecs)//2+1
@@ -357,7 +364,7 @@ def simple_to_mesh(ob, depsgraph=None):
         dg = depsgraph
     ob_eval = ob.evaluated_get(dg)
     me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-    me.calc_normals()
+    #me.calc_normals()
     return me
 
 def _join_objects(context, objects, link_to_scene=True, make_active=True):
@@ -419,7 +426,8 @@ def join_objects(objects):
     new_ob = objects[0]
     override['active_object'] = new_ob
     override['selected_editable_objects'] = objects
-    bpy.ops.object.join(override)
+    with context.temp_override(**override):
+        bpy.ops.object.join()
     return new_ob
 
 def repeat_mesh(me, n):
@@ -460,7 +468,8 @@ def array_mesh_object(ob, n):
     override = bpy.context.copy()
     override['active_object'] = ob
     override = {'active_object': ob}
-    bpy.ops.object.modifier_apply(override, modifier=arr.name)
+    with bpy.context.temp_override(**override):
+        bpy.ops.object.modifier_apply(modifier=arr.name)
     return ob
 
 

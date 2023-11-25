@@ -1884,32 +1884,30 @@ class tissue_update_tessellate_deps(Operator):
             update_objects = list(reversed(update_dependencies(ob, update_objects)))
             #update_objects = list(reversed(update_dependencies(ob, [ob])))
         for o in update_objects:
-            override = {
-                'object': o,
-                'selected_objects' : [o]
-                }
-            if o.type == 'MESH':
-                if o.tissue.tissue_type == 'TESSELLATE':
-                    try:
-                        bpy.ops.object.tissue_update_tessellate(override)
-                    except:
-                        self.report({'ERROR'}, "Can't Tessellate :-(")
-                if o.tissue.tissue_type == 'POLYHEDRA':
-                    try:
-                        bpy.ops.object.tissue_update_polyhedra(override)
-                    except:
-                        self.report({'ERROR'}, "Can't compute Polyhedra :-(")
-            else:
-                if o.tissue.tissue_type == 'TO_CURVE':
-                    try:
-                        bpy.ops.object.tissue_convert_to_curve_update(override)
-                    except:
-                        self.report({'ERROR'}, "Can't compute Curve :-(")
-                if o.tissue.tissue_type == 'CONTOUR_CURVES':
-                    try:
-                        bpy.ops.object.tissue_update_contour_curves(override)
-                    except:
-                        self.report({'ERROR'}, "Can't compute Contour Curves :-(")
+            override = {'object': o, 'selected_objects': [o]}
+            with context.temp_override(**override):
+                if o.type == 'MESH':
+                    if o.tissue.tissue_type == 'TESSELLATE':
+                        try:
+                            bpy.ops.object.tissue_update_tessellate()
+                        except:
+                            self.report({'ERROR'}, "Can't Tessellate :-(")
+                    if o.tissue.tissue_type == 'POLYHEDRA':
+                        try:
+                            bpy.ops.object.tissue_update_polyhedra()
+                        except:
+                            self.report({'ERROR'}, "Can't compute Polyhedra :-(")
+                else:
+                    if o.tissue.tissue_type == 'TO_CURVE':
+                        try:
+                            bpy.ops.object.tissue_convert_to_curve_update()
+                        except:
+                            self.report({'ERROR'}, "Can't compute Curve :-(")
+                    if o.tissue.tissue_type == 'CONTOUR_CURVES':
+                        try:
+                            bpy.ops.object.tissue_update_contour_curves()
+                        except:
+                            self.report({'ERROR'}, "Can't compute Contour Curves :-(")
 
         context.view_layer.objects.active = active_ob
         for o in context.view_layer.objects:
@@ -2110,7 +2108,8 @@ class tissue_update_tessellate(Operator):
             for mod in base_ob.modifiers:
                 if mod.type == 'CLOTH':
                     override = {'scene': scene, 'active_object': base_ob, 'point_cache': mod.point_cache}
-                    bpy.ops.ptcache.bake(override, bake=True)
+                    with context.temp_override(**override):
+                        bpy.ops.ptcache.bake(bake=True)
                     break
         base_ob.modifiers.update()
 
@@ -3808,6 +3807,8 @@ def merge_components(ob, props, use_bmesh):
                     bpy.ops.object.mode_set(mode='OBJECT')
                 except: pass
     else:
+        if(props.bridge_edges_crease>0 or props.open_edges_crease>0):
+            ob.data.edge_creases_ensure()
         bm = bmesh.new()
         bm.from_mesh(ob.data.copy())
         if props.merge_open_edges_only:
@@ -3822,14 +3823,17 @@ def merge_components(ob, props, use_bmesh):
         if props.close_mesh != 'NONE':
             bm.edges.ensure_lookup_table()
             # set crease
-            crease_layer = bm.edges.layers.crease.verify()
+            crease_layer = bm.edges.layers.float['crease_edge']
             boundary_edges = [e for e in bm.edges if e.is_boundary or e.is_wire]
+            n_materials = len(ob.material_slots)-1
             if props.close_mesh == 'BRIDGE':
                 try:
                     for e in boundary_edges:
                         e[crease_layer] = props.bridge_edges_crease
                     closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
-                    for f in closed['faces']: f.material_index += props.bridge_material_offset
+                    if n_materials >= 0:
+                        for f in closed['faces']:
+                            f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
                 except:
                     bm.to_mesh(ob.data)
                     return 'bridge_error'
@@ -3837,7 +3841,8 @@ def merge_components(ob, props, use_bmesh):
                 for e in boundary_edges:
                     e[crease_layer] = props.open_edges_crease
                 closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
-                for f in closed['faces']: f.material_index += props.cap_material_offset
+                for f in closed['faces']:
+                    f.material_index = min(f.material_index + props.cap_material_offset, n_materials)
             elif props.close_mesh == 'BRIDGE_CAP':
                 # BRIDGE
                 dvert_lay = bm.verts.layers.deform.active
@@ -3850,7 +3855,8 @@ def merge_components(ob, props, use_bmesh):
                     for e in bridge_edges:
                         e[crease_layer] = props.bridge_edges_crease
                     closed = bmesh.ops.bridge_loops(bm, edges=bridge_edges, use_pairs=True)
-                    for f in closed['faces']: f.material_index += props.bridge_material_offset
+                    for f in closed['faces']:
+                        f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
                     boundary_edges = [e for e in bm.edges if e.is_boundary]
                 except: pass
                 # CAP
@@ -3863,7 +3869,8 @@ def merge_components(ob, props, use_bmesh):
                     for e in cap_edges:
                         e[crease_layer] = props.open_edges_crease
                     closed = bmesh.ops.holes_fill(bm, edges=cap_edges)
-                    for f in closed['faces']: f.material_index += props.cap_material_offset
+                    for f in closed['faces']:
+                        f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
                 except: pass
         bm.to_mesh(ob.data)
 
@@ -3903,6 +3910,7 @@ class tissue_render_animation(Operator):
             # set again the handler
             blender_handlers = bpy.app.handlers.frame_change_post
             blender_handlers.append(anim_tessellate)
+            blender_handlers.append(anim_polyhedra)
             blender_handlers.append(reaction_diffusion_scene)
             context.window_manager.event_timer_remove(self.timer)
             if event.type == 'ESC':

@@ -96,12 +96,12 @@ class tissue_contour_curves_prop(PropertyGroup):
         update = anim_contour_curves
         )
     range_value : FloatProperty(
-        name="Range Values", default=1, #soft_min=0, soft_max=1,
+        name="Range Values", default=100, #soft_min=0, soft_max=1,
         description="Maximum range of contouring values",
         update = anim_contour_curves
         )
     n_curves : IntProperty(
-        name="Curves", default=50, soft_min=1, soft_max=200,
+        name="Curves", default=1000, soft_min=1, soft_max=200,
         description="Number of Contour Curves",
         update = anim_contour_curves
         )
@@ -299,10 +299,10 @@ class tissue_weight_contour_curves_pattern(Operator):
         name="Offset Value", default=0., #soft_min=0, soft_max=1,
         description="Offset contouring values")
     range_value : FloatProperty(
-        name="Range Values", default=1, #soft_min=0, soft_max=1,
+        name="Range Values", default=100, #soft_min=0, soft_max=1,
         description="Maximum range of contouring values")
     n_curves : IntProperty(
-        name="Curves", default=50, soft_min=1, soft_max=200,
+        name="Curves", default=1000, soft_min=1, soft_max=200,
         description="Number of Contour Curves")
     min_rad = 1
     max_rad = 1
