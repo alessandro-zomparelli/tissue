@@ -552,7 +552,6 @@ class tissue_update_polyhedra(Operator):
             bm1.faces.ensure_lookup_table()
             bm1.faces.index_update()
 
-
         wireframe_faces = [i for i in wireframe_faces if i not in not_wireframe_faces]
         wireframe_faces = list(dict.fromkeys(wireframe_faces))
 
@@ -735,7 +734,7 @@ class tissue_update_polyhedra(Operator):
         bm1.verts.ensure_lookup_table()
 
         if props.crease > 0 and props.dissolve != 'INNER':
-            creaseLayer = bm1.edges.layers.crease.verify()
+            creaseLayer = bm1.edges.layers.float.new('crease_edge')
             bm1.edges.index_update()
             crease_edges = []
             for f in bm1.faces:
