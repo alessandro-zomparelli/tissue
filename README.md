@@ -5,11 +5,11 @@ https://www.co-de-it.com/code/blender-tissue
 
 Tissue is already shipped with both Blender. However I recommend to update the default version downloading manually the most recent one, for more updated features and more stability.
 
-### Blender 3.6
+### Blender 4.0.1
 
-Tissue v0.3.58 for Blender 3.6.1 (latest stable version): https://github.com/alessandro-zomparelli/tissue
+Tissue v0.3.61 for Blender 4.0.1 (latest stable version): https://github.com/alessandro-zomparelli/tissue
 
-Development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b360-dev
+Current development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b401-dev
 
 
 ### Installation:
@@ -33,7 +33,7 @@ If you like my work and you want to help me, please consider to support me on **
 
 [![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
 
-A special thanks to all my patrons, in particular to my active **Tissue Supporters**: *Scott Shorter*, *Avi Briant*, *Beili Wang*, *Chris Costanzi*, *Justin Davis*, *MutableHurdle*, *Stefano Giovacchini*, *Tomek Zamojski*, *Chengyuan Wei*, *Kenned Doll*.
+A special thanks to all my patrons, in particular to my active **Tissue Supporters**: *Scott Shorter*, *MutableHurdle*, *K*, *Happy Person*, *Dream H*, *Chris Costanzi*, *Chengyuan Wei*, *Avi Bryant*.
 
 If that is too much for you or you are just passing by, then you can also **buy me a coffee**:
 

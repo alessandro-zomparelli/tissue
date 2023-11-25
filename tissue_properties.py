@@ -127,7 +127,7 @@ def anim_tessellate(scene, depsgraph=None):
                         override['mode'] = 'OBJECT'
                         override['view_layer'] = scene.view_layers[0]
                         break
-            with context.temp_override(**override):
+            with bpy.context.temp_override(**override):
                 if ob.tissue.tissue_type == 'TESSELLATE':
                     bpy.ops.object.tissue_update_tessellate()
                 elif ob.tissue.tissue_type == 'TO_CURVE':
