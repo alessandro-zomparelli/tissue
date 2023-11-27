@@ -34,7 +34,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli",
-    "version": (0, 3, 61),
+    "version": (0, 3, 62),
     "blender": (4, 0, 1),
     "location": "",
     "description": "Tools for Computational Design",
