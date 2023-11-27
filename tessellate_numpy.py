@@ -3823,7 +3823,7 @@ def merge_components(ob, props, use_bmesh):
         if props.close_mesh != 'NONE':
             bm.edges.ensure_lookup_table()
             # set crease
-            crease_layer = bm.edges.layers.float['crease_edge']
+            crease_layer = bm.edges.layers.float.new('crease_edge')
             boundary_edges = [e for e in bm.edges if e.is_boundary or e.is_wire]
             n_materials = len(ob.material_slots)-1
             if props.close_mesh == 'BRIDGE':
@@ -3841,8 +3841,9 @@ def merge_components(ob, props, use_bmesh):
                 for e in boundary_edges:
                     e[crease_layer] = props.open_edges_crease
                 closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
-                for f in closed['faces']:
-                    f.material_index = min(f.material_index + props.cap_material_offset, n_materials)
+                if n_materials >= 0:
+                    for f in closed['faces']:
+                        f.material_index = min(f.material_index + props.cap_material_offset, n_materials)
             elif props.close_mesh == 'BRIDGE_CAP':
                 # BRIDGE
                 dvert_lay = bm.verts.layers.deform.active
@@ -3855,8 +3856,9 @@ def merge_components(ob, props, use_bmesh):
                     for e in bridge_edges:
                         e[crease_layer] = props.bridge_edges_crease
                     closed = bmesh.ops.bridge_loops(bm, edges=bridge_edges, use_pairs=True)
-                    for f in closed['faces']:
-                        f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
+                    if n_materials >= 0:
+                        for f in closed['faces']:
+                            f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
                     boundary_edges = [e for e in bm.edges if e.is_boundary]
                 except: pass
                 # CAP
@@ -3869,8 +3871,9 @@ def merge_components(ob, props, use_bmesh):
                     for e in cap_edges:
                         e[crease_layer] = props.open_edges_crease
                     closed = bmesh.ops.holes_fill(bm, edges=cap_edges)
-                    for f in closed['faces']:
-                        f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
+                    if n_materials >= 0:
+                        for f in closed['faces']:
+                            f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
                 except: pass
         bm.to_mesh(ob.data)
 

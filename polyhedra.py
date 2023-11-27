@@ -658,14 +658,14 @@ class tissue_update_polyhedra(Operator):
         # set crease values
 
         if props.crease > 0 and props.dissolve != 'INNER':
-            creaseLayer = bm1.edges.layers.float.new('crease_edge')
+            crease_layer = bm1.edges.layers.float.new('crease_edge')
             bm1.edges.index_update()
             crease_edges = []
             for f in new_faces:
                 #e = f.edges[0]
                 #e[creaseLayer] = props.crease
                 e = f.edges[2]
-                e[creaseLayer] = props.crease
+                e[crease_layer] = props.crease
             #for f in flat_faces:
                 #for e in f.edges:
                     #e[creaseLayer] = props.crease
@@ -760,7 +760,7 @@ def polyhedral_subdivide_edges(bm, subs, proportional_segments):
             for i in range(1,subs):
                 bmesh.ops.bisect_edges(bm, edges=split_edges[i], cuts=i)
         else:
-            bmesh.ops.bisect_edges(bm, edges=bm.edges, cuts=subs)
+            bmesh.ops.bisect_edges(bm, edges=bm.edges, cuts=subs-1)
 
 def get_double_faces_bmesh(bm):
     double_faces = []
