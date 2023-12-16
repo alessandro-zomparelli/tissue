@@ -689,13 +689,13 @@ class tissue_update_polyhedra(Operator):
 
         # clean meshes
         bm1.to_mesh(me)
+        if props.bool_smooth: me.shade_smooth()
         me.update()
         old_me = ob.data
         ob.data = me
         mesh_name = old_me.name
         bpy.data.meshes.remove(old_me)
         ob.data.name = mesh_name
-        if props.bool_smooth: bpy.ops.object.shade_smooth()
         bm1.free()
 
         end_time = time.time()
@@ -724,7 +724,7 @@ def create_frame_faces(bm, wireframe_faces, wireframe_faces_id, polyhedra_faces_
             tangents = []
             nor = wireframe_faces[loops_index].normal
             for loop in loops:
-                tan = nor.cross(loop.calc_tangent().cross(nor)).normalized()
+                tan = loop.calc_tangent() #nor.cross(loop.calc_tangent().cross(nor)).normalized()
                 thickness = thickness_dict[tuple(loop.vert.co)]
                 tangents.append(tan/sin(loop.calc_angle()/2)*thickness)
             for i in range(n_loop):
@@ -781,11 +781,12 @@ def get_double_faces_bmesh(bm):
 def get_decomposed_polyhedra(bm):
     polyhedra_from_facekey = {}
     count = 0
+    to_merge = []
     for e in bm.edges:
         done = []
         # ERROR: Naked edges
-        n_radial_faces = len(e.link_faces)
         link_faces = e.link_faces
+        n_radial_faces = len(link_faces)
         if n_radial_faces < 2:
             return "Naked edges are not allowed"
         vert0 = e.verts[0]
@@ -804,115 +805,139 @@ def get_decomposed_polyhedra(bm):
             tan1 = f1.normal.cross(edge_vec1)
 
             # faces to compare with
-            face_list = [link_faces[id2] for id2 in range(n_radial_faces) if id1 != id2]
-            faceskeys2, normals2 = get_second_faces(face_list, vert0, vert1, ref_loop_dir)
+            faceskeys2, normals2 = get_second_faces(
+                link_faces,
+                vert0.index,
+                vert1.index,
+                ref_loop_dir,
+                f1
+            )
+
+            tangents2 = [nor.cross(-edge_vec1) for nor in normals2]
 
             # positive side
             facekey2_pos = get_closest_face(
                 faceskeys2,
-                normals2,
+                tangents2,
                 tan1,
                 edge_vec1,
                 True
             )
-            polyhedra_from_facekey, count = store_neighbor_faces(
+            polyhedra_from_facekey, count, to_merge = store_neighbor_faces(
                 facekey1,
                 facekey2_pos,
                 polyhedra_from_facekey,
-                count
+                count,
+                to_merge
             )
             # negative side
             facekey2_neg = get_closest_face(
                 faceskeys2,
-                normals2,
+                tangents2,
                 tan1,
                 edge_vec1,
                 False
             )
-            polyhedra_from_facekey, count = store_neighbor_faces(
+            polyhedra_from_facekey, count, to_merge = store_neighbor_faces(
                 -facekey1,
                 facekey2_neg,
                 polyhedra_from_facekey,
-                count
+                count,
+                to_merge
             )
 
     polyhedra = [ [] for i in range(count)]
-    for key in polyhedra_from_facekey:
-        poly_id = polyhedra_from_facekey[key]
-        polyhedra[poly_id].append(key)
-    polyhedra = list(set(tuple(i) for i in polyhedra))
+    unique_index = get_unique_polyhedra_index(count, to_merge)
+    for key, val in polyhedra_from_facekey.items():
+        polyhedra[unique_index[val]].append(key)
+    polyhedra = list(set(tuple(i) for i in polyhedra if i))
     return polyhedra
 
-def get_closest_face(faces, normals, ref_vector, axis, is_positive):
+def get_unique_polyhedra_index(count, to_merge):
+    out = list(range(count))
+    keep_going = True
+    while keep_going:
+        keep_going = False
+        for pair in to_merge:
+            if out[pair[1]] != out[pair[0]]:
+                out[pair[0]] = out[pair[1]] = min(out[pair[0]], out[pair[1]])
+                keep_going = True
+    return out
+
+def get_closest_face(faces, tangents, ref_vector, axis, is_positive):
     facekey = None
     min_angle = 1000000
-    for fk, nor in zip(faces, normals):
+    for fk, tangent in zip(faces, tangents):
         rot_axis = -axis if is_positive else axis
-        tangent = nor.cross(-axis)
         angle = round_angle_with_axis(ref_vector, tangent, rot_axis)
         if angle < min_angle:
             facekey = fk
             min_angle = angle
     return facekey if is_positive else -facekey
 
-def get_second_faces(face_list, edge_v0, edge_v1, reference_loop_dir):
-    facekeys = []
-    normals = []
+def get_second_faces(face_list, edge_v0, edge_v1, reference_loop_dir, self):
+    nFaces = len(face_list)-1
+    facekeys = [None]*nFaces
+    normals = [None]*nFaces
+    count = 0
     for face in face_list:
+        if(face == self): continue
         verts = [v.index for v in face.verts]
-        v0_index = verts.index(edge_v0.index)
-        v1_index = verts.index(edge_v1.index)
+        v0_index = verts.index(edge_v0)
+        v1_index = verts.index(edge_v1)
         loop_dir = v0_index == (v1_index+1)%len(verts)
         if reference_loop_dir != loop_dir:
-            facekeys.append(face.index+1)
-            normals.append(face.normal)
+            facekeys[count] = face.index+1
+            normals[count] = face.normal
         else:
-            facekeys.append(-(face.index+1))
-            normals.append(-face.normal)
+            facekeys[count] = -(face.index+1)
+            normals[count] = -face.normal
+        count+=1
     return facekeys, normals
 
 def store_neighbor_faces(
     key1,
     key2,
     polyhedra,
-    polyhedra_count
+    polyhedra_count,
+    to_merge
 ):
-    if key1 in polyhedra and key2 in polyhedra:
-        if polyhedra[key1] != polyhedra[key2]:
-            old_id = polyhedra[key1]
-            new_id = polyhedra[key2]
-            for key in polyhedra:
-                if polyhedra[key] == old_id:
-                    polyhedra[key] = new_id
-    elif key1 in polyhedra:
-        polyhedra[key2] = polyhedra[key1]
-    elif key2 in polyhedra:
-        polyhedra[key1] = polyhedra[key2]
+    poly1 = polyhedra.get(key1)
+    poly2 = polyhedra.get(key2)
+    if poly1 and poly2:
+        if poly1 != poly2:
+            to_merge.append((poly1, poly2))
+    elif poly1:
+        polyhedra[key2] = poly1
+    elif poly2:
+        polyhedra[key1] = poly2
     else:
-        polyhedra[key1] = polyhedra_count
-        polyhedra[key2] = polyhedra_count
+        polyhedra[key1] = polyhedra[key2] = polyhedra_count
         polyhedra_count += 1
-    return polyhedra, polyhedra_count
+    return polyhedra, polyhedra_count, to_merge
 
 def add_polyhedron(bm,source_faces):
     faces_verts_key = [[tuple(v.co) for v in f.verts] for f in source_faces]
     polyhedron_verts_key = [key for face_key in faces_verts_key for key in face_key]
     polyhedron_verts = [bm.verts.new(co) for co in polyhedron_verts_key]
     polyhedron_verts_dict = dict(zip(polyhedron_verts_key, polyhedron_verts))
-    new_faces = []
+    new_faces = [None]*len(faces_verts_key)
+    count = 0
     for verts_keys in faces_verts_key:
-        new_faces.append(bm.faces.new([polyhedron_verts_dict.get(key) for key in verts_keys]))
+        new_faces[count] = bm.faces.new([polyhedron_verts_dict.get(key) for key in verts_keys])
+        count+=1
     bm.faces.ensure_lookup_table()
     bm.faces.index_update()
     return new_faces
 
 def combine_polyhedra_faces(bm,polyhedra):
     new_bm = bmesh.new()
-    polyhedra_faces_id = []
+    polyhedra_faces_id = [None]*len(polyhedra)
     all_faces_dict = {}
     #polyhedra_faces_pos = {}
     polyhedra_faces_id_neg = {}
     vertices_key = [tuple(v.co) for v in bm.verts]
+    count = 0
     for p in polyhedra:
         faces_id = [(f-1)*2 if f > 0 else (-f-1)*2+1 for f in p]
         faces_id_neg = [(-f-1)*2 if f < 0 else (f-1)*2+1 for f in p]
@@ -924,7 +949,8 @@ def combine_polyhedra_faces(bm,polyhedra):
             id_neg = faces_id_neg[i]
             polyhedra_faces_id_neg[id] = id_neg
             all_faces_dict[id] = face
-        polyhedra_faces_id.append(faces_id)
+        polyhedra_faces_id[count] = faces_id
+        count+=1
     return new_bm, all_faces_dict, polyhedra_faces_id, polyhedra_faces_id_neg
 
 class TISSUE_PT_polyhedra_object(Panel):
