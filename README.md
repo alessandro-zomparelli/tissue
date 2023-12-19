@@ -7,7 +7,7 @@ Tissue is already shipped with both Blender. However I recommend to update the d
 
 ### Blender 4.0.2
 
-Tissue v0.3.63 for Blender 4.0.2 (latest stable version): https://github.com/alessandro-zomparelli/tissue
+Tissue v0.3.64 for Blender 4.0.2 (latest stable version): https://github.com/alessandro-zomparelli/tissue
 
 Current development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b401-dev
 
