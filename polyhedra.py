@@ -459,6 +459,7 @@ class tissue_update_polyhedra(Operator):
         bm = bmesh.new()
         bm.from_mesh(me)
 
+        pre_processing(bm)
         polyhedral_subdivide_edges(bm, subs, props.proportional_segments)
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
@@ -548,8 +549,9 @@ class tissue_update_polyhedra(Operator):
         delete_faces = set({})
         wireframe_faces = []
         not_wireframe_faces = []
-        flat_faces = []
+        #flat_faces = []
         count = 0
+        outer_faces = get_outer_faces(bm1)
         for faces_id in polyhedra_faces_id:
             delete_faces_poly = []
             wireframe_faces_poly = []
@@ -593,11 +595,11 @@ class tissue_update_polyhedra(Operator):
                 not_wireframe_faces += [polyhedra_faces_id_neg[id] for id in faces_id]
             else:
                 wireframe_faces += wireframe_faces_poly
-                flat_faces += delete_faces_poly
+                #flat_faces += delete_faces_poly
         wireframe_faces_id = [i for i in wireframe_faces if i not in not_wireframe_faces]
         wireframe_faces = [all_faces_dict[i] for i in wireframe_faces_id]
-        flat_faces = [all_faces_dict[i] for i in flat_faces]
-        delete_faces = [all_faces_dict[i] for i in delete_faces]
+        #flat_faces = [all_faces_dict[i] for i in flat_faces]
+        delete_faces = [all_faces_dict[i] for i in delete_faces if all_faces_dict[i] not in outer_faces]
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
@@ -611,6 +613,7 @@ class tissue_update_polyhedra(Operator):
             polyhedra_faces_id_neg,
             thickness_dict
         )
+        bmesh.ops.delete(bm1, geom=wireframe_faces+delete_faces, context='FACES')
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, frames in {:.4f} sec'.format(end_time-start_time))
@@ -626,7 +629,7 @@ class tissue_update_polyhedra(Operator):
         normals = [0]*len(bm1.verts)
         vertices = [0]*len(bm1.verts)
         # Define vectors direction
-        for f in new_faces:
+        for f in bm1.faces:
             v0 = f.verts[0]
             v1 = f.verts[1]
             id = v0.index
@@ -651,10 +654,6 @@ class tissue_update_polyhedra(Operator):
         print('Tissue: Polyhedral wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
         start_time = time.time()
 
-        bmesh.ops.delete(bm1, geom=wireframe_faces+delete_faces, context='FACES')
-        bm1.faces.ensure_lookup_table()
-        bm1.edges.ensure_lookup_table()
-        bm1.verts.ensure_lookup_table()
         # set crease values
 
         if props.crease > 0 and props.dissolve != 'INNER':
@@ -667,8 +666,8 @@ class tissue_update_polyhedra(Operator):
                 e = f.edges[2]
                 e[crease_layer] = props.crease
             #for f in flat_faces:
-                #for e in f.edges:
-                    #e[creaseLayer] = props.crease
+            #    for e in f.edges:
+            #        e[crease_layer] = props.crease
 
         if props.dissolve != 'NONE':
             if props.dissolve == 'INNER': dissolve_id = 2
@@ -705,6 +704,26 @@ class tissue_update_polyhedra(Operator):
         end_time = time.time()
         print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-begin_time))
         return {'FINISHED'}
+
+def pre_processing(bm):
+    delete = [e for e in bm.edges if len(e.link_faces) < 2]
+    while len(delete) > 0:
+        bmesh.ops.delete(bm, geom=delete, context='EDGES')
+        bm.faces.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.verts.ensure_lookup_table()
+        delete = [e for e in bm.edges if len(e.link_faces) < 2]
+    return bm
+
+def get_outer_faces(bm):
+    bm_copy = bm.copy()
+    bmesh.ops.recalc_face_normals(bm_copy, faces=bm_copy.faces)
+    outer = []
+    for f1, f2 in zip(bm.faces, bm_copy.faces):
+        f1.normal_update()
+        if f1.normal == f2.normal:
+            outer.append(f1)
+    return outer
 
 def create_frame_faces(bm, wireframe_faces, wireframe_faces_id, polyhedra_faces_id_neg, thickness_dict):
     new_faces = []
