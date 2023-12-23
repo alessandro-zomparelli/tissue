@@ -456,6 +456,7 @@ class tissue_update_polyhedra(Operator):
             me = simple_to_mesh(ob0)
         else:
             me = ob0.data.copy()
+
         bm = bmesh.new()
         bm.from_mesh(me)
 
@@ -503,7 +504,7 @@ class tissue_update_polyhedra(Operator):
             if(props.vertex_group_selective in ob.vertex_groups.keys()):
                 dvert_lay = bm.verts.layers.deform.active
                 group_index_selective = ob.vertex_groups[props.vertex_group_selective].index
-                thresh = props['vertex_group_selective_threshold']
+                thresh = props.vertex_group_selective_threshold
                 selective_weight = bmesh_get_weight_numpy(group_index_selective, dvert_lay, bm.verts)
                 selective_weight = selective_weight >= thresh
                 invert = False
@@ -559,6 +560,7 @@ class tissue_update_polyhedra(Operator):
                 if id in delete_faces: continue
                 delete = False
                 cen = None
+                f = None
                 if filter_faces:
                     f = all_faces_dict[id]
                     if selective_dict:
@@ -606,23 +608,35 @@ class tissue_update_polyhedra(Operator):
         start_time = time.time()
 
         ############# FRAME #############
-        new_faces = create_frame_faces(
+        new_faces, outer_wireframe_faces = create_frame_faces(
             bm1,
             wireframe_faces,
             wireframe_faces_id,
             polyhedra_faces_id_neg,
-            thickness_dict
+            thickness_dict,
+            outer_faces
         )
-        bmesh.ops.delete(bm1, geom=wireframe_faces+delete_faces, context='FACES')
-
-        end_time = time.time()
-        print('Tissue: Polyhedral wireframe, frames in {:.4f} sec'.format(end_time-start_time))
-        start_time = time.time()
+        faces_to_delete = wireframe_faces+delete_faces
+        outer_wireframe_faces += [f for f in outer_faces if not f in faces_to_delete]
+        bmesh.ops.delete(bm1, geom=faces_to_delete, context='FACES')
 
         bm1.verts.ensure_lookup_table()
         bm1.edges.ensure_lookup_table()
         bm1.faces.ensure_lookup_table()
         bm1.verts.index_update()
+
+        wireframe_indexes = [f.index for f in new_faces]
+        outer_indexes = [f.index for f in outer_wireframe_faces]
+        layer_is_wireframe = bm1.faces.layers.int.new('tissue_is_wireframe')
+        for id in wireframe_indexes:
+            bm1.faces[id][layer_is_wireframe] = 1
+        layer_is_outer = bm1.faces.layers.int.new('tissue_is_outer')
+        for id in outer_indexes:
+            bm1.faces[id][layer_is_outer] = 1
+
+        end_time = time.time()
+        print('Tissue: Polyhedral wireframe, frames in {:.4f} sec'.format(end_time-start_time))
+        start_time = time.time()
 
         ### Displace vertices ###
         corners = [[] for i in range(len(bm1.verts))]
@@ -644,6 +658,7 @@ class tissue_update_polyhedra(Operator):
                 nor = normals[i]
                 ang = 0
                 for vec in vecs:
+                    if nor == Vector((0,0,0)): continue
                     ang += nor.angle(vec)
                 ang /= len(vecs)
                 div = sin(ang)
@@ -655,7 +670,6 @@ class tissue_update_polyhedra(Operator):
         start_time = time.time()
 
         # set crease values
-
         if props.crease > 0 and props.dissolve != 'INNER':
             crease_layer = bm1.edges.layers.float.new('crease_edge')
             bm1.edges.index_update()
@@ -725,11 +739,20 @@ def get_outer_faces(bm):
             outer.append(f1)
     return outer
 
-def create_frame_faces(bm, wireframe_faces, wireframe_faces_id, polyhedra_faces_id_neg, thickness_dict):
+def create_frame_faces(
+    bm,
+    wireframe_faces,
+    wireframe_faces_id,
+    polyhedra_faces_id_neg,
+    thickness_dict,
+    outer_faces
+):
     new_faces = []
     for f in wireframe_faces:
         f.normal_update()
     all_loops = [[loop for loop in f.loops] for f in wireframe_faces]
+    is_outer = [f in outer_faces for f in wireframe_faces]
+    outer_wireframe_faces = []
     frames_verts_dict = {}
     for loops_index, loops in enumerate(all_loops):
         n_loop = len(loops)
@@ -764,8 +787,10 @@ def create_frame_faces(bm, wireframe_faces, wireframe_faces_id, polyhedra_faces_
             new_face = bm.faces.new(face_verts)
             new_face.select = True
             new_faces.append(new_face)
+            if is_outer[loops_index]:
+                outer_wireframe_faces.append(new_face)
             new_face.normal_update()
-    return new_faces
+    return new_faces, outer_wireframe_faces
 
 def polyhedral_subdivide_edges(bm, subs, proportional_segments):
     if subs > 1:
