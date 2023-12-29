@@ -627,12 +627,19 @@ class tissue_update_polyhedra(Operator):
 
         wireframe_indexes = [f.index for f in new_faces]
         outer_indexes = [f.index for f in outer_wireframe_faces]
+        edges_to_crease = [f.edges[2].index for f in new_faces]
         layer_is_wireframe = bm1.faces.layers.int.new('tissue_is_wireframe')
         for id in wireframe_indexes:
             bm1.faces[id][layer_is_wireframe] = 1
         layer_is_outer = bm1.faces.layers.int.new('tissue_is_outer')
         for id in outer_indexes:
             bm1.faces[id][layer_is_outer] = 1
+        if props.crease > 0 and props.dissolve != 'INNER':
+            crease_layer = bm1.edges.layers.float.new('crease_edge')
+            bm1.edges.index_update()
+            crease_edges = []
+            for edge_index in edges_to_crease:
+                bm1.edges[edge_index][crease_layer] = props.crease
 
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, frames in {:.4f} sec'.format(end_time-start_time))
@@ -668,20 +675,6 @@ class tissue_update_polyhedra(Operator):
         end_time = time.time()
         print('Tissue: Polyhedral wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
         start_time = time.time()
-
-        # set crease values
-        if props.crease > 0 and props.dissolve != 'INNER':
-            crease_layer = bm1.edges.layers.float.new('crease_edge')
-            bm1.edges.index_update()
-            crease_edges = []
-            for f in new_faces:
-                #e = f.edges[0]
-                #e[creaseLayer] = props.crease
-                e = f.edges[2]
-                e[crease_layer] = props.crease
-            #for f in flat_faces:
-            #    for e in f.edges:
-            #        e[crease_layer] = props.crease
 
         if props.dissolve != 'NONE':
             if props.dissolve == 'INNER': dissolve_id = 2
@@ -895,7 +888,15 @@ def get_decomposed_polyhedra(bm):
     for key, val in polyhedra_from_facekey.items():
         polyhedra[unique_index[val]].append(key)
     polyhedra = list(set(tuple(i) for i in polyhedra if i))
+    polyhedra = remove_double_faces_from_polyhedra(polyhedra)
     return polyhedra
+
+def remove_double_faces_from_polyhedra(polyhedra):
+    new_polyhedra = []
+    for polyhedron in polyhedra:
+        new_polyhedron = [key for key in polyhedron if not -key in polyhedron]
+        new_polyhedra.append(new_polyhedron)
+    return new_polyhedra
 
 def get_unique_polyhedra_index(count, to_merge):
     out = list(range(count))
@@ -970,6 +971,7 @@ def add_polyhedron(bm,source_faces):
     for verts_keys in faces_verts_key:
         new_faces[count] = bm.faces.new([polyhedron_verts_dict.get(key) for key in verts_keys])
         count+=1
+
     bm.faces.ensure_lookup_table()
     bm.faces.index_update()
     return new_faces
