@@ -838,6 +838,12 @@ class tissue_tessellate_prop(PropertyGroup):
             description="Automatically rotate the boundary faces",
             update = anim_tessellate_active
             )
+    preserve_quads : BoolProperty(
+            name="Preserve Quads",
+            default=False,
+            description="Quad faces are tessellated using QUAD mode",
+            update = anim_tessellate_active
+            )
 
 def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = True
@@ -929,6 +935,7 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.invert_vertex_group_scale_normals = operator.invert_vertex_group_scale_normals
     ob.tissue_tessellate.boundary_variable_offset = operator.boundary_variable_offset
     ob.tissue_tessellate.auto_rotate_boundary = operator.auto_rotate_boundary
+    ob.tissue_tessellate.preserve_quads = operator.preserve_quads
     ob.tissue_tessellate.bool_hold = False
     return ob
 
@@ -1014,6 +1021,7 @@ def load_parameters(operator, ob):
     operator.invert_vertex_group_scale_normals = ob.tissue_tessellate.invert_vertex_group_scale_normals
     operator.boundary_variable_offset = ob.tissue_tessellate.boundary_variable_offset
     operator.auto_rotate_boundary = ob.tissue_tessellate.auto_rotate_boundary
+    operator.preserve_quads = ob.tissue_tessellate.preserve_quads
     return ob
 
 def props_to_dict(ob):
@@ -1090,6 +1098,7 @@ def props_to_dict(ob):
     tessellate_dict["merge"] = props.merge
     tessellate_dict["merge_thres"] = props.merge_thres
     tessellate_dict["merge_open_edges_only"] = props.merge_open_edges_only
+    tessellate_dict["preserve_quads"] = props.preserve_quads
     return tessellate_dict
 
 def copy_tessellate_props(source_ob, target_ob):

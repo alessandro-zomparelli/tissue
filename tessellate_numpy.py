@@ -139,6 +139,7 @@ def tessellate_patch(props):
     vertex_group_scale_normals = props['vertex_group_scale_normals']
     invert_vertex_group_scale_normals = props['invert_vertex_group_scale_normals']
     boundary_mat_offset = props['boundary_mat_offset']
+    preserve_quads = props['preserve_quads']
 
     _props = props.copy()
 
@@ -1581,6 +1582,11 @@ class tissue_tessellate(Operator):
             name="Automatic Rotation", default=False,
             description="Automatically rotate the boundary faces"
             )
+    preserve_quads : BoolProperty(
+            name="Preserve Quads",
+            default=False,
+            description="Quad faces are tessellated using QUAD mode"
+            )
 
     working_on = ""
 
@@ -1707,6 +1713,8 @@ class tissue_tessellate(Operator):
         if self.fill_mode == 'FRAME':
             col.separator()
             col.label(text="Frame Settings:")
+            col.prop(self, "preserve_quads", expand=True)
+            col.separator()
             row = col.row(align=True)
             row.prop(self, "frame_mode", expand=True)
             col.prop(self, "frame_thickness", text='Thickness', icon='NONE')
@@ -2558,6 +2566,8 @@ class TISSUE_PT_tessellate_frame(Panel):
         props = ob.tissue_tessellate
         layout = self.layout
         col = layout.column(align=True)
+        col.prop(props, "preserve_quads")
+        col.separator()
         row = col.row(align=True)
         row.prop(props, "frame_mode", expand=True)
         row = col.row(align=True)
@@ -3347,8 +3357,11 @@ def convert_to_frame(ob, props, use_modifiers=True):
     bm.faces.ensure_lookup_table()
     if props['bool_selection']:
         original_faces = [f for f in bm.faces if f.select]
+    elif props['preserve_quads']:
+        original_faces = [f for f in bm.faces if len(f.verts)!=4]
     else:
         original_faces = list(bm.faces)
+
     # detect edge loops
 
     loops = []
