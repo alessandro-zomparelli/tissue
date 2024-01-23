@@ -27,14 +27,14 @@
 #                                   (2017)                                     #
 #                                                                              #
 # http://www.co-de-it.com/                                                     #
-# http://wiki.blender.org/index.php/Extensions:2.6/Py/Scripts/Mesh/Tissue      #
+# https://docs.blender.org/manual/en/latest/addons/mesh/tissue.html            #
 #                                                                              #
 # ############################################################################ #
 
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli",
-    "version": (0, 3, 66),
+    "version": (0, 3, 67),
     "blender": (4, 0, 2),
     "location": "",
     "description": "Tools for Computational Design",
@@ -113,7 +113,6 @@ classes = (
     weight_tools.vertex_group_to_uv,
     weight_tools.TISSUE_PT_weight,
     weight_tools.TISSUE_PT_color,
-    #weight_tools.weight_contour_curves,
     weight_tools.weight_contour_mask,
     weight_tools.weight_contour_displace,
     weight_tools.harmonic_weight,
