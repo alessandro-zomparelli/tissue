@@ -113,7 +113,6 @@ classes = (
     weight_tools.vertex_group_to_uv,
     weight_tools.TISSUE_PT_weight,
     weight_tools.TISSUE_PT_color,
-    #weight_tools.weight_contour_curves,
     weight_tools.weight_contour_mask,
     weight_tools.weight_contour_displace,
     weight_tools.harmonic_weight,

@@ -2738,7 +2738,7 @@ def reaction_diffusion_def(ob, bake=False):
     if type(ob) == bpy.types.Scene: return None
     props = ob.reaction_diffusion_settings
 
-    if bake or props.bool_cache:
+    if bake or props.bool_cache or props.bake_geometry:
         if props.cache_dir == '':
             letters = string.ascii_letters
             random_name = ''.join(rnd.choice(letters) for i in range(6))
@@ -2762,7 +2762,6 @@ def reaction_diffusion_def(ob, bake=False):
     print("{:6d} Reaction-Diffusion: {}".format(scene.frame_current, ob.name))
 
     if not props.bool_cache:
-
         if props.bool_mod:
             # hide deforming modifiers
             mod_visibility = []
@@ -2909,7 +2908,7 @@ def reaction_diffusion_def(ob, bake=False):
                         field_z = field_z*2-1
                         vector_field = []
                         for x,y,z in zip(field_x, field_y, field_z):
-                            vector_field.append(Vector((x,y,z)))
+                            vector_field.append(Vector((x,y,z)).normalized())
                     else:
                         is_vector_field = False
 
@@ -2954,15 +2953,16 @@ def reaction_diffusion_def(ob, bake=False):
 
                     for pair in edge_verts_dict.keys():
                         pair = pair.split()
-                        v0 = int(pair[0])
-                        v1 = int(pair[1])
-                        field_dir = (vector_field[v0]+vector_field[v1]).normalized()
-                        edge_verts.append(v0)
-                        edge_verts.append(v1)
-                        v0 = me.vertices[v0].co
-                        v1 = me.vertices[v1].co
+                        id0 = int(pair[0])
+                        id1 = int(pair[1])
+                        edge_verts.append(id0)
+                        edge_verts.append(id1)
+                        v0 = me.vertices[id0].co
+                        v1 = me.vertices[id1].co
                         vec = (v1-v0).normalized()
-                        field_mult.append(abs(vec.dot(field_dir)))
+                        mult0 = abs(vec.dot(vector_field[id0]))
+                        mult1 = abs(vec.dot(vector_field[id1]))
+                        field_mult.append((mult0 + mult1)/2)
                     n_edges = len(edge_verts_dict.keys())-1
                     field_mult = np.array(field_mult)
             else:
