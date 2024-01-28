@@ -53,7 +53,8 @@ from .utils import (
         convert_object_to_mesh,
         get_weight_numpy,
         loops_from_bmesh,
-        get_mesh_before_subs
+        get_mesh_before_subs,
+        tissue_time
         )
 import time
 
@@ -64,7 +65,7 @@ def anim_curve_active(self, context):
     try:
         props.object.name
         if not ob.tissue.bool_lock:
-            bpy.ops.object.tissue_convert_to_curve_update()
+            bpy.ops.object.tissue_update_convert_to_curve()
     except: pass
 
 
@@ -496,12 +497,12 @@ class tissue_convert_to_curve(Operator):
 
         new_ob.tissue.bool_lock = False
 
-        bpy.ops.object.tissue_convert_to_curve_update()
+        bpy.ops.object.tissue_update_convert_to_curve()
 
         return {'FINISHED'}
 
-class tissue_convert_to_curve_update(Operator):
-    bl_idname = "object.tissue_convert_to_curve_update"
+class tissue_update_convert_to_curve(Operator):
+    bl_idname = "object.tissue_update_convert_to_curve"
     bl_label = "Tissue Update Curve"
     bl_description = "Update Curve object"
     bl_options = {'REGISTER', 'UNDO'}
@@ -516,9 +517,10 @@ class tissue_convert_to_curve_update(Operator):
             return False
 
     def execute(self, context):
+        ob = context.object
+        tissue_time(None,'Tissue: Convert to Curve of "{}"...'.format(ob.name), levels=0)
         start_time = time.time()
 
-        ob = context.object
         props = ob.tissue_to_curve
         ob0 = props.object
         if props.mode == 'PARTICLES':
@@ -685,8 +687,7 @@ class tissue_convert_to_curve_update(Operator):
         ob.data.splines.update()
         if not props.bool_smooth: bpy.ops.object.shade_flat()
 
-        end_time = time.time()
-        print('Tissue: object "{}" converted to Curve in {:.4f} sec'.format(ob.name, end_time-start_time))
+        tissue_time(start_time,'Convert to Curve',levels=0)
 
         return {'FINISHED'}
 
@@ -716,7 +717,7 @@ class TISSUE_PT_convert_to_curve(Panel):
         #layout.use_property_decorate = False
         col = layout.column(align=True)
         row = col.row(align=True)
-        #col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
+        #col.operator("object.tissue_update_convert_to_curve", icon='FILE_REFRESH', text='Refresh')
         row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
         lock_icon = 'LOCKED' if ob.tissue.bool_lock else 'UNLOCKED'
         #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'

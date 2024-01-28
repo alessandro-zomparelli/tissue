@@ -281,7 +281,8 @@ class reaction_diffusion_prop(PropertyGroup):
                 ('VECTOR', "Vector", "Uniform vector"),
                 ('OBJECT', "Object", "Orient the field with a target object's Z"),
                 ('GRADIENT', "Gradient", "Gradient vertex group"),
-                ('XYZ', "x, y, z", "Vector field defined by vertex groups 'x', 'y' and 'z'")
+                ('XYZ', "x, y, z", "Vector field defined by vertex groups 'x', 'y' and 'z'"),
+                ('VECTOR_ATTRIBUTE', "Vector Field", "'VectorField' attribute (Vertex > Vector)")
                 ),
             default='NONE',
             name="Vector Field controlling the direction of the Reaction-Diffusion",
@@ -2935,10 +2936,28 @@ def reaction_diffusion_def(ob, bake=False):
                                 vector_field.append(vec)
                             is_vector_field = True
 
+                if props.vector_field_mode == 'VECTOR_ATTRIBUTE':
+                    if 'VectorField' in ob.data.attributes:
+                        vectors_components = [0]*n_verts*3
+                        ob.data.attributes['VectorField'].data.foreach_get('vector', vectors_components)
+                        vector_field = []
+                        for i in range(n_verts):
+                            x = vectors_components[i*3]
+                            y = vectors_components[i*3+1]
+                            z = vectors_components[i*3+2]
+                            vector_field.append(Vector((x,y,z)).normalized())
+                    else:
+                        is_vector_field = False
+
                 if is_vector_field:
                     edge_verts = []
                     field_mult = []
                     edge_verts_dict = {}
+                    for e in me.edges:
+                        pair = [e.vertices[0],e.vertices[1]]
+                        pair.sort()
+                        edge_verts_dict[str(pair[0]) + " " + str(pair[1])] = 0
+                    '''
                     for p in me.polygons:
                         n_face_verts = len(p.vertices)
                         for i in range(n_face_verts-1):
@@ -2946,11 +2965,11 @@ def reaction_diffusion_def(ob, bake=False):
                                 pair = [p.vertices[i],p.vertices[j]]
                                 pair.sort()
                                 edge_verts_dict[str(pair[0]) + " " + str(pair[1])] = 0
+                    '''
 
                     if props.perp_vector_field:
                         for i, vert in enumerate(bm.verts):
                             vector_field[i] = vector_field[i].cross(vert.normal)
-
                     for pair in edge_verts_dict.keys():
                         pair = pair.split()
                         id0 = int(pair[0])
@@ -3612,6 +3631,10 @@ class TISSUE_PT_reaction_diffusion(Panel):
                     col.label(text="Vertex Group 'y' is missing", icon='ERROR')
                 if 'z' not in vgk:
                     col.label(text="Vertex Group 'z' is missing", icon='ERROR')
+            if props.vector_field_mode == 'VECTOR_ATTRIBUTE':
+                vgk = ob.vertex_groups.keys()
+                if 'VectorField' not in ob.data.attributes:
+                    col.label(text="Vector Attribute 'VectorField' is missing", icon='ERROR')
             if props.vector_field_mode == 'VECTOR':
                 row = col.row()
                 row.prop(props, "vector")

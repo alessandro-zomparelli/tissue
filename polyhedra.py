@@ -54,11 +54,9 @@ from .utils import *
 def anim_polyhedra_active(self, context):
     ob = context.object
     props = ob.tissue_polyhedra
-    if not (ob.tissue.bool_lock):
-        try:
-            props.object.name
-            bpy.ops.object.tissue_update_polyhedra()
-        except: pass
+    if ob.tissue.tissue_type=='POLYHEDRA' and not ob.tissue.bool_lock and ob.tissue.bool_run:
+        props.object.name
+        bpy.ops.object.tissue_update_polyhedra()
 
 class tissue_polyhedra_prop(PropertyGroup):
     object : PointerProperty(
@@ -439,6 +437,9 @@ class tissue_update_polyhedra(Operator):
 
     def execute(self, context):
         ob = context.object
+        tissue_time(None,'Tissue: Polyhedral Wireframe of "{}"...'.format(ob.name), levels=0)
+        start_time = time.time()
+        begin_time = time.time()
         props = ob.tissue_polyhedra
         thickness = props.thickness
 
@@ -447,8 +448,6 @@ class tissue_update_polyhedra(Operator):
         subs = props.segments
         if props.mode == 'POLYHEDRA': subs = 1
 
-        start_time = time.time()
-        begin_time = time.time()
 
         # Source mesh
         ob0 = props.object
@@ -462,8 +461,7 @@ class tissue_update_polyhedra(Operator):
 
         pre_processing(bm)
         polyhedral_subdivide_edges(bm, subs, props.proportional_segments)
-        end_time = time.time()
-        print('Tissue: Polyhedral wireframe, subdivide edges in {:.4f} sec'.format(end_time-start_time))
+        tissue_time(start_time,'Subdivide edges',levels=1)
         start_time = time.time()
 
         thickness = np.ones(len(bm.verts))*props.thickness
@@ -524,7 +522,7 @@ class tissue_update_polyhedra(Operator):
         bm.free()
 
         end_time = time.time()
-        print('Tissue: Polyhedral wireframe, found {} polyhedra in {:.4f} sec'.format(len(polyhedra), end_time-start_time))
+        tissue_time(start_time,'Found {} polyhedra'.format(len(polyhedra)),levels=1)
         start_time = time.time()
 
         bm1.faces.ensure_lookup_table()
@@ -603,8 +601,7 @@ class tissue_update_polyhedra(Operator):
         #flat_faces = [all_faces_dict[i] for i in flat_faces]
         delete_faces = [all_faces_dict[i] for i in delete_faces if all_faces_dict[i] not in outer_faces]
 
-        end_time = time.time()
-        print('Tissue: Polyhedral wireframe, merge and delete in {:.4f} sec'.format(end_time-start_time))
+        tissue_time(start_time,'Merge and delete',levels=1)
         start_time = time.time()
 
         ############# FRAME #############
@@ -641,8 +638,7 @@ class tissue_update_polyhedra(Operator):
             for edge_index in edges_to_crease:
                 bm1.edges[edge_index][crease_layer] = props.crease
 
-        end_time = time.time()
-        print('Tissue: Polyhedral wireframe, frames in {:.4f} sec'.format(end_time-start_time))
+        tissue_time(start_time,'Generate frames',levels=1)
         start_time = time.time()
 
         ### Displace vertices ###
@@ -672,8 +668,7 @@ class tissue_update_polyhedra(Operator):
                 if div == 0: div = 1
                 v.co += nor*thickness_dict[tuple(v.co)]/div
 
-        end_time = time.time()
-        print('Tissue: Polyhedral wireframe, corners displace in {:.4f} sec'.format(end_time-start_time))
+        tissue_time(start_time,'Corners displace',levels=1)
         start_time = time.time()
 
         if props.dissolve != 'NONE':
@@ -704,12 +699,10 @@ class tissue_update_polyhedra(Operator):
         ob.data.name = mesh_name
         bm1.free()
 
-        end_time = time.time()
-        print('Tissue: Polyhedral wireframe, clean mesh {:.4f} sec'.format(end_time-start_time))
+        tissue_time(start_time,'Clean mesh',levels=1)
         start_time = time.time()
 
-        end_time = time.time()
-        print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-begin_time))
+        tissue_time(begin_time,'Polyhedral Wireframe',levels=0)
         return {'FINISHED'}
 
 def pre_processing(bm):

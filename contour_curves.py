@@ -648,7 +648,7 @@ class tissue_update_contour_curves(Operator):
         n_curves = props.n_curves
         tt0 = time.time()
         tt1 = time.time()
-        print("Tissue: Contour Curves...")
+        tissue_time(None,'Tissue: Contour Curves of "{}"...'.format(ob.name), levels=0)
 
         ob0 = convert_object_to_mesh(_ob0, apply_modifiers=props.use_modifiers)
         ob0.name = "_tissue_tmp_ob0"
@@ -938,7 +938,7 @@ class tissue_update_contour_curves(Operator):
             if '_tissue_tmp_' in o.name:
                 bpy.data.objects.remove(o)
 
-        tt0 = tissue_time(tt0, "Contour Curves, total time", levels=0)
+        tt0 = tissue_time(tt0, "Contour Curves", levels=0)
         return {'FINISHED'}
 
 
@@ -968,7 +968,7 @@ class TISSUE_PT_contour_curves(Panel):
         #layout.use_property_decorate = False
         col = layout.column(align=True)
         row = col.row(align=True)
-        #col.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='Refresh')
+        #col.operator("object.tissue_update_convert_to_curve", icon='FILE_REFRESH', text='Refresh')
         row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
         lock_icon = 'LOCKED' if ob.tissue.bool_lock else 'UNLOCKED'
         #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'

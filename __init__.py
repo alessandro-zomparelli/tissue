@@ -151,7 +151,7 @@ classes = (
 
     curves_tools.tissue_to_curve_prop,
     curves_tools.tissue_convert_to_curve,
-    curves_tools.tissue_convert_to_curve_update,
+    curves_tools.tissue_update_convert_to_curve,
     curves_tools.TISSUE_PT_convert_to_curve,
 
     uv_to_mesh.uv_to_mesh,
@@ -200,7 +200,6 @@ def register():
     # weight_tools
     bpy.app.handlers.frame_change_post.append(weight_tools.reaction_diffusion_def)
     bpy.app.handlers.frame_change_post.append(texture_reaction_diffusion.tex_reaction_diffusion_def)
-    #bpy.app.handlers.frame_change_post.append(tessellate_numpy.anim_tessellate)
 
 def unregister():
     from bpy.utils import unregister_class
