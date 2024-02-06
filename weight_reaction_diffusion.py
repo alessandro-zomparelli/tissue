@@ -92,6 +92,115 @@ def reaction_diffusion_remove_handler(self, context):
             old_handlers.append(h)
     for h in old_handlers: bpy.app.handlers.frame_change_post.remove(h)
 
+class start_reaction_diffusion(Operator):
+    bl_idname = "object.start_reaction_diffusion"
+    bl_label = "Start Reaction Diffusion"
+    bl_description = ("Run a Reaction-Diffusion based on existing Vertex Groups: A and B")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    run : BoolProperty(
+        name="Run Reaction-Diffusion", default=True, description="Compute a new iteration on frame changes")
+
+    time_steps : IntProperty(
+        name="Steps", default=10, min=0, soft_max=50,
+        description="Number of Steps")
+
+    dt : FloatProperty(
+        name="dt", default=0.5, min=0, soft_max=1,
+        description="Time Step")
+
+    diff_a : FloatProperty(
+        name="Diff A", default=0.18, min=0, soft_max=2,
+        description="Diffusion A")
+
+    diff_b : FloatProperty(
+        name="Diff B", default=0.09, min=0, soft_max=2,
+        description="Diffusion B")
+
+    f : FloatProperty(
+        name="f", default=0.055, min=0, soft_min=0.01, soft_max=0.06, max=0.1, precision=4,
+        description="Feed Rate")
+
+    k : FloatProperty(
+        name="k", default=0.062, min=0, soft_min=0.035, soft_max=0.065, max=0.1, precision=4,
+        description="Kill Rate")
+
+    @classmethod
+    def poll(cls, context):
+        return context.object.type == 'MESH' and context.mode != 'EDIT_MESH'
+
+    def execute(self, context):
+        reaction_diffusion_add_handler(self, context)
+        set_animatable_fix_handler(self, context)
+
+        ob = context.object
+
+        ob.reaction_diffusion_settings.run = self.run
+        ob.reaction_diffusion_settings.dt = self.dt
+        ob.reaction_diffusion_settings.time_steps = self.time_steps
+        ob.reaction_diffusion_settings.f = self.f
+        ob.reaction_diffusion_settings.k = self.k
+        ob.reaction_diffusion_settings.diff_a = self.diff_a
+        ob.reaction_diffusion_settings.diff_b = self.diff_b
+
+        # check vertex group A
+        try:
+            vg = ob.vertex_groups['A']
+        except:
+            ob.vertex_groups.new(name='A')
+        # check vertex group B
+        try:
+            vg = ob.vertex_groups['B']
+        except:
+            ob.vertex_groups.new(name='B')
+
+        for v in ob.data.vertices:
+            ob.vertex_groups['A'].add([v.index], 1, 'REPLACE')
+            ob.vertex_groups['B'].add([v.index], 0, 'REPLACE')
+
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+
+        return {'FINISHED'}
+
+class reset_reaction_diffusion_weight(Operator):
+    bl_idname = "object.reset_reaction_diffusion_weight"
+    bl_label = "Reset Reaction Diffusion Weight"
+    bl_description = ("Set A and B weight to default values")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.object.type == 'MESH' and context.mode != 'EDIT_MESH'
+
+    def execute(self, context):
+        reaction_diffusion_add_handler(self, context)
+        set_animatable_fix_handler(self, context)
+
+        ob = context.object
+
+        # check vertex group A
+        try:
+            vg = ob.vertex_groups['A']
+        except:
+            ob.vertex_groups.new(name='A')
+        # check vertex group B
+        try:
+            vg = ob.vertex_groups['B']
+        except:
+            ob.vertex_groups.new(name='B')
+
+        for v in ob.data.vertices:
+            ob.vertex_groups['A'].add([v.index], 1, 'REPLACE')
+            ob.vertex_groups['B'].add([v.index], 0, 'REPLACE')
+
+        ob.vertex_groups.update()
+        ob.data.update()
+        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
+
+        return {'FINISHED'}
+
 class reaction_diffusion_prop(PropertyGroup):
     run : BoolProperty(default=False, update = reaction_diffusion_add_handler,
         description='Compute a new iteration on frame changes. Currently is not working during  Render Animation')
