@@ -121,7 +121,6 @@ classes = (
     weight_tools.edges_deformation,
     weight_tools.edges_bending,
     weight_tools.weight_laplacian,
-    weight_reaction_diffusion.reaction_diffusion,
     weight_reaction_diffusion.start_reaction_diffusion,
     weight_reaction_diffusion.TISSUE_PT_reaction_diffusion,
     weight_reaction_diffusion.TISSUE_PT_reaction_diffusion_performance,
