@@ -643,9 +643,6 @@ def get_patches____(me_low, me_high, sides, subs, bool_selection, bool_material_
             # fill inners
             patches[:,1:-1,1:-1] = inners[None,:,:] + ips[:,None,None]
 
-    #end_time = time.time()
-    #print('Tissue: Got Patches in {:.4f} sec'.format(end_time-start_time))
-
     return patches, mask
 
 def tessellate_prepare_component(ob1, props):
@@ -1015,6 +1012,26 @@ def get_edges_id_numpy(mesh):
     edges = np.concatenate((edges,indexes), axis=1)
     return edges
 
+def get_edges_numpy_ex(mesh):
+    '''
+    Create a numpy array with the edges of a given mesh, or all the possible
+    between the vertices of a same face
+    '''
+    edges_verts = get_edges_numpy(mesh)
+    polygons_diag = []
+    for f in mesh.polygons:
+        sides = len(f.vertices)
+        if sides < 4: continue
+        for i in range(sides-2):
+            v0 = f.vertices[i]
+            for j in range(i+2, sides-1 if i == 0 else sides):
+                v1 = f.vertices[j]
+                polygons_diag.append((v0,v1))
+    if len(polygons_diag) == 0:
+        return edges_verts
+    polygons_diag = np.array(polygons_diag,dtype=np.int32)
+    return np.concatenate((edges_verts, polygons_diag), axis=0)
+
 def get_polygons_select_numpy(mesh):
     n_polys = len(mesh.polygons)
     selections = [0]*n_polys*2
@@ -1175,7 +1192,8 @@ def find_curves_attribute(edges, n_verts, attribute):
             if curve[0] == curve[-1]:
                 verts_dict.pop(new_point)
                 break
-        curves.append(curve)
+        if(len(curve)>0):
+            curves.append(curve)
     return curves, ordered_attr
 
 def curve_from_points(points, name='Curve'):
@@ -1204,7 +1222,7 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             rad = 1
         if merge_distance > 0:
             pts1 = np.roll(pts,1,axis=0)
-            dist = np.linalg.norm(pts1-pts, axis=1)
+            dist = np.linalg.norm(np.array(pts1-pts, dtype=np.float64), axis=1)
             count = 0
             n = len(dist)
             mask = np.ones(n).astype('bool')
