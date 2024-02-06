@@ -563,6 +563,7 @@ def reaction_diffusion_def(ob, bake=False):
         diff_b = props.diff_b
         scale = props.diff_mult
         brush_mult = props.brush_mult
+        brush = 0
 
         if is_static or props.input_data == 'ATTRIBUTES':
             if not 'RD_A' in me.attributes:
@@ -575,12 +576,18 @@ def reaction_diffusion_def(ob, bake=False):
             me.attributes['RD_B'].data.foreach_get('value', b)
             a = load_attribute_parameter(me, 'RD_A', np.zeros((n_verts)), 'POINT', 'FLOAT')
             b = load_attribute_parameter(me, 'RD_B', np.zeros((n_verts)), 'POINT', 'FLOAT')
-            brush = load_attribute_parameter(me, 'RD_brush', 0, 'POINT', 'FLOAT')
-            diff_a = load_attribute_parameter(me, 'RD_diff_a', diff_a, 'POINT', 'FLOAT')
-            diff_b = load_attribute_parameter(me, 'RD_diff_b', diff_b, 'POINT', 'FLOAT')
-            scale = load_attribute_parameter(me, 'RD_scale', scale, 'POINT', 'FLOAT')
-            f = load_attribute_parameter(me, 'RD_f', f, 'POINT', 'FLOAT')
-            k = load_attribute_parameter(me, 'RD_k', k, 'POINT', 'FLOAT')
+            if not (props.input_data == 'WEIGHT' and not props.vertex_group_brush in ob.vertex_groups):
+                brush = load_attribute_parameter(me, 'RD_brush', 0, 'POINT', 'FLOAT')
+            if not (props.input_data == 'WEIGHT' and not props.vertex_group_diff_a in ob.vertex_groups):
+                diff_a = load_attribute_parameter(me, 'RD_diff_a', diff_a, 'POINT', 'FLOAT')
+            if not (props.input_data == 'WEIGHT' and not props.vertex_group_diff_b in ob.vertex_groups):
+                diff_b = load_attribute_parameter(me, 'RD_diff_b', diff_b, 'POINT', 'FLOAT')
+            if not (props.input_data == 'WEIGHT' and not props.vertex_group_scale in ob.vertex_groups):
+                scale = load_attribute_parameter(me, 'RD_scale', scale, 'POINT', 'FLOAT')
+            if not (props.input_data == 'WEIGHT' and not props.vertex_group_f in ob.vertex_groups):
+                f = load_attribute_parameter(me, 'RD_f', f, 'POINT', 'FLOAT')
+            if not (props.input_data == 'WEIGHT' and not props.vertex_group_k in ob.vertex_groups):
+                k = load_attribute_parameter(me, 'RD_k', k, 'POINT', 'FLOAT')
         else:
             if props.vertex_group_diff_a != '':
                 diff_a = np.zeros(n_verts)
