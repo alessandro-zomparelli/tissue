@@ -1327,13 +1327,14 @@ def update_curve_from_pydata(curve, points, normals, radii, indexes, merge_dista
         #if skip_open and not bool_cyclic: continue
         n_pts = len(pts)
         series = np.arange(n_pts)
-        patt1 = series + (series-series%pattern[1])/pattern[1]*pattern[0]+pattern[0]
-        patt1 = patt1[patt1<n_pts].astype('int')
-        patt0 = series + (series-series%pattern[0])/pattern[0]*pattern[1]
-        patt0 = patt0[patt0<n_pts].astype('int')
-        nor[patt0] *= 0.5*depth*(1 + offset)
-        nor[patt1] *= 0.5*depth*(-1 + offset)
-        if pattern[0]*pattern[1] != 0: pts += nor
+        if pattern[0]*pattern[1] != 0:
+            patt1 = series + (series-series%pattern[1])/pattern[1]*pattern[0]+pattern[0]
+            patt1 = patt1[patt1<n_pts].astype('int')
+            patt0 = series + (series-series%pattern[0])/pattern[0]*pattern[1]
+            patt0 = patt0[patt0<n_pts].astype('int')
+            nor[patt0] *= 0.5*depth*(1 + offset)
+            nor[patt1] *= 0.5*depth*(-1 + offset)
+            pts += nor
         s = curve.splines.new('POLY')
         s.points.add(n_pts-1)
         w = np.ones(n_pts).reshape((n_pts,1))
