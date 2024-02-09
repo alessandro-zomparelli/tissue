@@ -45,7 +45,9 @@ from bpy.props import (
     StringProperty,
     PointerProperty
 )
+from .utils import tissue_time
 from . import config
+import time
 
 
 def update_dependencies(ob, objects):
@@ -93,10 +95,9 @@ def anim_tessellate_object(ob):
 #from bpy.app.handlers import persistent
 
 
-def anim_tessellate(scene, depsgraph=None):
-    print('Tissue: animating generated objects...')
-
-    #config.evaluatedDepsgraph = depsgraph
+def anim_tissue(scene, depsgraph=None):
+    tissue_time(None,'Tissue: Animating Tissue objects at frame {}...'.format(scene.frame_current), levels=0)
+    start_time = time.time()
 
     try:
         active_object = bpy.context.object
@@ -131,9 +132,9 @@ def anim_tessellate(scene, depsgraph=None):
                 if ob.tissue.tissue_type == 'TESSELLATE':
                     bpy.ops.object.tissue_update_tessellate()
                 elif ob.tissue.tissue_type == 'TO_CURVE':
-                    bpy.ops.object.tissue_convert_to_curve_update()
+                    bpy.ops.object.tissue_update_convert_to_curve()
                 elif ob.tissue.tissue_type == 'POLYHEDRA':
-                    bpy.ops.object.tissue_polyhedra_update()
+                    bpy.ops.object.tissue_update_polyhedra()
                 elif ob.tissue.tissue_type == 'CONTOUR_CURVES':
                     bpy.ops.object.tissue_update_contour_curves()
 
@@ -144,23 +145,23 @@ def anim_tessellate(scene, depsgraph=None):
             bpy.ops.object.mode_set(mode=old_mode)
 
     config.evaluatedDepsgraph = None
-    print('end')
+    tissue_time(start_time,'Animated Tissue objects at frame {}'.format(scene.frame_current), levels=0)
     return
 
-def remove_tessellate_handler():
+def remove_tissue_handler():
     tissue_handlers = []
     blender_handlers = bpy.app.handlers.frame_change_post
     for h in blender_handlers:
-        if "anim_tessellate" in str(h):
+        if "anim_tissue" in str(h):
             tissue_handlers.append(h)
     for h in tissue_handlers: blender_handlers.remove(h)
 
-def set_tessellate_handler(self, context):
-    remove_tessellate_handler()
+def set_tissue_handler(self, context):
+    remove_tissue_handler()
     for o in context.scene.objects:
         if o.tissue.bool_run:
             blender_handlers = bpy.app.handlers.frame_change_post
-            blender_handlers.append(anim_tessellate)
+            blender_handlers.append(anim_tissue)
             break
     return
 
@@ -197,7 +198,7 @@ class tissue_prop(PropertyGroup):
         name="Animatable",
         description="Automatically recompute the geometry when the frame is changed. Tessellations may not work using the default Render Animation",
         default = False,
-        update = set_tessellate_handler
+        update = set_tissue_handler
         )
     tissue_type : EnumProperty(
         items=(

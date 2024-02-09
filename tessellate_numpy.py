@@ -1908,7 +1908,7 @@ class tissue_update_tessellate_deps(Operator):
                 else:
                     if o.tissue.tissue_type == 'TO_CURVE':
                         try:
-                            bpy.ops.object.tissue_convert_to_curve_update()
+                            bpy.ops.object.tissue_update_convert_to_curve()
                         except:
                             self.report({'ERROR'}, "Can't compute Curve :-(")
                     if o.tissue.tissue_type == 'CONTOUR_CURVES':
@@ -1942,12 +1942,10 @@ class tissue_update_tessellate(Operator):
             return False
 
     def execute(self, context):
-
-        tissue_time(None,'Tissue: Tessellating...', levels=0)
+        ob = context.object
+        tissue_time(None,'Tissue: Tessellate of "{}"...'.format(ob.name), levels=0)
         start_time = time.time()
 
-
-        ob = context.object
         props = props_to_dict(ob)
         if not self.go:
             generator = ob.tissue_tessellate.generator
@@ -2179,7 +2177,6 @@ class tissue_update_tessellate(Operator):
             tt = time.time()
             same_iteration = tessellate_patch(props)
             tissue_time(tt, "Tessellate iteration",levels=1)
-
             tt = time.time()
 
             # if empty or error, continue
@@ -2390,7 +2387,7 @@ class tissue_update_tessellate(Operator):
 
         tissue_time(tt, "Closing tessellation", levels=1)
 
-        tissue_time(start_time,'Tessellation of "{}"'.format(ob.name),levels=0)
+        tissue_time(start_time,'Tessellate',levels=0)
         return {'FINISHED'}
 
     def check(self, context):
@@ -2432,7 +2429,7 @@ class TISSUE_PT_tessellate(Panel):
         col.operator("object.tissue_convert_to_curve", icon='OUTLINER_OB_CURVE', text="Convert to Curve")
         col.operator("object.tissue_weight_contour_curves_pattern", icon='FORCE_TURBULENCE', text="Contour Curves")
 
-        #row.operator("object.tissue_convert_to_curve_update", icon='FILE_REFRESH', text='')
+        #row.operator("object.tissue_update_convert_to_curve", icon='FILE_REFRESH', text='')
 
         col.separator()
         col.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') #####
@@ -2498,7 +2495,7 @@ class TISSUE_PT_tessellate_object(Panel):
             col = layout.column(align=True)
             row = col.row(align=True)
 
-            set_tessellate_handler(self,context)
+            set_tissue_handler(self,context)
             ###### set_animatable_fix_handler(self,context)
             row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
             lock_icon = 'LOCKED' if tissue_props.bool_lock else 'UNLOCKED'
@@ -2519,14 +2516,6 @@ class TISSUE_PT_tessellate_object(Panel):
             row.prop_search(props, "generator", context.scene, "objects")
             col2 = row.column(align=True)
             col2.prop(props, "gen_modifiers", text='Use Modifiers',icon='MODIFIER')
-            '''
-            try:
-                if not (props.generator.modifiers or props.generator.data.shape_keys):
-                    col2.enabled = False
-            except:
-                    col2.enabled = False
-            '''
-            #col.separator()
 
             layout.use_property_split = False
             # Fill
@@ -2640,13 +2629,6 @@ class TISSUE_PT_tessellate_component(Panel):
             row.prop_search(props, "component", context.scene, "objects")
             col2 = row.column(align=True)
             col2.prop(props, "com_modifiers", text='Use Modifiers',icon='MODIFIER')
-            '''
-            try:
-                if not (props.component.modifiers or props.component.data.shape_keys):
-                    col2.enabled = False
-            except:
-                    col2.enabled = False
-            '''
         elif props.component_mode == 'COLLECTION':
             col.separator()
 
@@ -3919,14 +3901,13 @@ class tissue_render_animation(Operator):
             self.report({'ERROR'}, message)
             return {'CANCELLED'}
         '''
-        remove_tessellate_handler()
+        remove_tissue_handler()
         scene = context.scene
         if event.type == 'ESC' or scene.frame_current >= scene.frame_end:
             scene.render.filepath = self.path
             # set again the handler
             blender_handlers = bpy.app.handlers.frame_change_post
-            blender_handlers.append(anim_tessellate)
-            blender_handlers.append(anim_polyhedra)
+            blender_handlers.append(anim_tissue)
             blender_handlers.append(reaction_diffusion_scene)
             context.window_manager.event_timer_remove(self.timer)
             if event.type == 'ESC':
@@ -3949,7 +3930,7 @@ class tissue_render_animation(Operator):
 
         scene = context.scene
         if self.start:
-            remove_tessellate_handler()
+            remove_tissue_handler()
             reaction_diffusion_remove_handler(self, context)
             scene = context.scene
             scene.frame_current = scene.frame_start
@@ -3959,7 +3940,7 @@ class tissue_render_animation(Operator):
             self.start = False
         else:
             scene.frame_current += scene.frame_step
-        anim_tessellate(scene)
+        anim_tissue(scene)
         reaction_diffusion_scene(scene)
         scene.render.filepath = "{}{:04d}".format(self.path,scene.frame_current)
         bpy.ops.render.render(write_still=True)

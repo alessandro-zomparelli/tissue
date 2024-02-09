@@ -34,7 +34,7 @@
 bl_info = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli",
-    "version": (0, 3, 67),
+    "version": (0, 3, 68),
     "blender": (4, 0, 2),
     "location": "",
     "description": "Tools for Computational Design",
@@ -50,6 +50,7 @@ if "bpy" in locals():
     importlib.reload(tessellate_numpy)
     importlib.reload(tissue_properties)
     importlib.reload(weight_tools)
+    importlib.reload(weight_reaction_diffusion)
     importlib.reload(dual_mesh)
     importlib.reload(lattice)
     importlib.reload(uv_to_mesh)
@@ -65,6 +66,7 @@ else:
     from . import tessellate_numpy
     from . import tissue_properties
     from . import weight_tools
+    from . import weight_reaction_diffusion
     from . import dual_mesh
     from . import lattice
     from . import uv_to_mesh
@@ -119,21 +121,23 @@ classes = (
     weight_tools.edges_deformation,
     weight_tools.edges_bending,
     weight_tools.weight_laplacian,
-    weight_tools.reaction_diffusion,
-    weight_tools.start_reaction_diffusion,
-    weight_tools.TISSUE_PT_reaction_diffusion,
-    weight_tools.TISSUE_PT_reaction_diffusion_weight,
-    weight_tools.reset_reaction_diffusion_weight,
+    weight_reaction_diffusion.start_reaction_diffusion,
+    weight_reaction_diffusion.TISSUE_PT_reaction_diffusion,
+    weight_reaction_diffusion.TISSUE_PT_reaction_diffusion_performance,
+    weight_reaction_diffusion.TISSUE_PT_reaction_diffusion_vector_field,
+    weight_reaction_diffusion.TISSUE_PT_reaction_diffusion_weight,
+    weight_reaction_diffusion.TISSUE_PT_reaction_diffusion_cache,
+    weight_reaction_diffusion.reset_reaction_diffusion_weight,
     weight_tools.formula_prop,
-    weight_tools.reaction_diffusion_prop,
+    weight_reaction_diffusion.reaction_diffusion_prop,
     weight_tools.weight_formula,
     weight_tools.update_weight_formula,
     weight_tools.curvature_to_vertex_groups,
     weight_tools.weight_formula_wiki,
     weight_tools.tissue_weight_distance,
     weight_tools.random_weight,
-    weight_tools.bake_reaction_diffusion,
-    weight_tools.reaction_diffusion_free_data,
+    weight_reaction_diffusion.bake_reaction_diffusion,
+    weight_reaction_diffusion.reaction_diffusion_free_data,
     weight_tools.tissue_weight_streamlines,
 
     contour_curves.tissue_weight_contour_curves_pattern,
@@ -151,7 +155,7 @@ classes = (
 
     curves_tools.tissue_to_curve_prop,
     curves_tools.tissue_convert_to_curve,
-    curves_tools.tissue_convert_to_curve_update,
+    curves_tools.tissue_update_convert_to_curve,
     curves_tools.TISSUE_PT_convert_to_curve,
 
     uv_to_mesh.uv_to_mesh,
@@ -192,15 +196,14 @@ def register():
                                             type=weight_tools.formula_prop
                                             )
     bpy.types.Object.reaction_diffusion_settings = PointerProperty(
-                        type=weight_tools.reaction_diffusion_prop
+                        type=weight_reaction_diffusion.reaction_diffusion_prop
                         )
     bpy.types.Object.tex_reaction_diffusion_settings = PointerProperty(
         type=texture_reaction_diffusion.tex_reaction_diffusion_prop
         )
     # weight_tools
-    bpy.app.handlers.frame_change_post.append(weight_tools.reaction_diffusion_def)
+    bpy.app.handlers.frame_change_post.append(weight_reaction_diffusion.reaction_diffusion_def)
     bpy.app.handlers.frame_change_post.append(texture_reaction_diffusion.tex_reaction_diffusion_def)
-    #bpy.app.handlers.frame_change_post.append(tessellate_numpy.anim_tessellate)
 
 def unregister():
     from bpy.utils import unregister_class
