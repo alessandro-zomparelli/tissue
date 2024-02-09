@@ -2516,14 +2516,6 @@ class TISSUE_PT_tessellate_object(Panel):
             row.prop_search(props, "generator", context.scene, "objects")
             col2 = row.column(align=True)
             col2.prop(props, "gen_modifiers", text='Use Modifiers',icon='MODIFIER')
-            '''
-            try:
-                if not (props.generator.modifiers or props.generator.data.shape_keys):
-                    col2.enabled = False
-            except:
-                    col2.enabled = False
-            '''
-            #col.separator()
 
             layout.use_property_split = False
             # Fill
@@ -2637,13 +2629,6 @@ class TISSUE_PT_tessellate_component(Panel):
             row.prop_search(props, "component", context.scene, "objects")
             col2 = row.column(align=True)
             col2.prop(props, "com_modifiers", text='Use Modifiers',icon='MODIFIER')
-            '''
-            try:
-                if not (props.component.modifiers or props.component.data.shape_keys):
-                    col2.enabled = False
-            except:
-                    col2.enabled = False
-            '''
         elif props.component_mode == 'COLLECTION':
             col.separator()
 

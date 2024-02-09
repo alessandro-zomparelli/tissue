@@ -95,11 +95,13 @@ class tissue_contour_curves_prop(PropertyGroup):
         description="Offset contouring values",
         update = anim_contour_curves
         )
+
     range_value : FloatProperty(
         name="Range Values", default=100, #soft_min=0, soft_max=1,
         description="Maximum range of contouring values",
         update = anim_contour_curves
         )
+
     n_curves : IntProperty(
         name="Curves", default=1000, soft_min=1, soft_max=200,
         description="Number of Contour Curves",
@@ -111,6 +113,7 @@ class tissue_contour_curves_prop(PropertyGroup):
         description="Pattern displace strength",
         update = anim_contour_curves
         )
+
     out_displace : FloatProperty(
         name="Displace B", default=2, soft_min=-10, soft_max=10,
         description="Pattern displace strength",
@@ -122,21 +125,25 @@ class tissue_contour_curves_prop(PropertyGroup):
         description="Number of layers to move inwards",
         update = anim_contour_curves
         )
+
     out_steps : IntProperty(
         name="Steps B", default=1, min=0, soft_max=10,
         description="Number of layers to move outwards",
         update = anim_contour_curves
         )
+
     displace_x : BoolProperty(
         name="Use X", default=True,
         description="Displace along X axis",
         update = anim_contour_curves
         )
+
     displace_y : BoolProperty(
         name="Use Y", default=True,
         description="Displace along Y axis",
         update = anim_contour_curves
         )
+
     displace_z : BoolProperty(
         name="Use Z", default=True,
         description="Displace along Z axis",
@@ -148,6 +155,7 @@ class tissue_contour_curves_prop(PropertyGroup):
         description="Merge points",
         update = anim_contour_curves
         )
+
     merge_thres : FloatProperty(
         name="Merge Threshold", default=0.01, min=0, soft_max=1,
         description="Minimum Curve Radius",
@@ -159,16 +167,19 @@ class tissue_contour_curves_prop(PropertyGroup):
         description="",
         update = anim_contour_curves
         )
+
     min_bevel_depth : FloatProperty(
         name="Min Bevel Depth", default=0.05, min=0, soft_max=1,
         description="",
         update = anim_contour_curves
         )
+
     max_bevel_depth : FloatProperty(
         name="Max Bevel Depth", default=0.20, min=0, soft_max=1,
         description="",
         update = anim_contour_curves
         )
+
     remove_open_curves : BoolProperty(
         name="Remove Open Curves", default=False,
         description="Remove Open Curves",
@@ -198,6 +209,7 @@ class tissue_contour_curves_prop(PropertyGroup):
         description="Vertex Group used for contouring",
         update = anim_contour_curves
         )
+
     clean_distance : FloatProperty(
         name="Clean Distance", default=0.005, min=0, soft_max=10,
         description="Remove short segments",
@@ -209,11 +221,13 @@ class tissue_contour_curves_prop(PropertyGroup):
         description='Create a Spiral Contour. Works better with dense meshes.',
         update = anim_contour_curves
         )
+
     spiral_axis: FloatVectorProperty(
         name="Spiral Axis", default=(0,0,1),
         description="Axis of the Spiral (in local coordinates)",
         update = anim_contour_curves
         )
+
     spiral_rotation : FloatProperty(
         name="Spiral Rotation", default=0, min=0, max=2*pi,
         description="",
@@ -225,6 +239,7 @@ class tissue_contour_curves_prop(PropertyGroup):
             ('VECTOR', "Vector", "Orient the Contour to a given vector starting from the origin of the object"),
             ('OBJECT', "Object", "Orient the Contour to a target object's Z"),
             ('WEIGHT', "Weight", "Contour based on a Vertex Group"),
+            ('ATTRIBUTE', "Attribute", "Contour based on an Attribute (Vertex > Float)"),
             ('GEODESIC', "Geodesic Distance", "Contour based on the geodesic distance from the chosen vertices"),
             ('TOPOLOGY', "Topology Distance", "Contour based on the topology distance from the chosen vertices")
             ),
@@ -237,17 +252,20 @@ class tissue_contour_curves_prop(PropertyGroup):
         name='Vector', description='Constant Vector', default=(0.0, 0.0, 1.0),
         update = anim_contour_curves
         )
+
     contour_vector_object : PointerProperty(
         type=bpy.types.Object,
         name="",
         description="Target Object",
         update = anim_contour_curves
         )
+
     contour_offset : FloatProperty(
         name="Offset", default=0.05, min=0.000001, soft_min=0.01, soft_max=10,
         description="Contour offset along the Vector",
         update = anim_contour_curves
         )
+
     seeds_mode : EnumProperty(
         items=(
             ('BOUND', "Boundary Edges", "Compute the distance starting from the boundary edges"),
@@ -258,11 +276,13 @@ class tissue_contour_curves_prop(PropertyGroup):
         name="Seeds used for computing the distance",
         update = anim_contour_curves
         )
+
     vertex_group_seed : StringProperty(
         name="Seeds", default="",
         description="Vertex Group used for computing the distance",
         update = anim_contour_curves
         )
+
     spline_type : EnumProperty(
         items=(
             ('POLY', "Poly", "Generate Poly curves"),
@@ -273,6 +293,11 @@ class tissue_contour_curves_prop(PropertyGroup):
         update = anim_contour_curves
         )
 
+    contour_attribute : StringProperty(
+        name="Contour Attribute", default='',
+        description="Vertex > Float attribute used for contouring",
+        update = anim_contour_curves
+        )
 
 
 class tissue_weight_contour_curves_pattern(Operator):
@@ -289,106 +314,149 @@ class tissue_weight_contour_curves_pattern(Operator):
 
     use_modifiers : BoolProperty(
         name="Use Modifiers", default=True,
-        description="Apply all the modifiers")
+        description="Apply all the modifiers"
+        )
 
     variable_bevel : BoolProperty(
         name="Variable Bevel", default=False,
-        description="Variable Bevel")
+        description="Variable Bevel"
+        )
 
     min_value : FloatProperty(
-        name="Offset Value", default=0., #soft_min=0, soft_max=1,
-        description="Offset contouring values")
+        name="Offset Value", default=0.,
+        description="Offset contouring values"
+        )
+
     range_value : FloatProperty(
-        name="Range Values", default=100, #soft_min=0, soft_max=1,
-        description="Maximum range of contouring values")
+        name="Range Values", default=100,
+        description="Maximum range of contouring values"
+        )
+
     n_curves : IntProperty(
         name="Curves", default=1000, soft_min=1, soft_max=200,
-        description="Number of Contour Curves")
+        description="Number of Contour Curves"
+        )
+
     min_rad = 1
     max_rad = 1
 
     in_displace : FloatProperty(
         name="Displace A", default=0, soft_min=-10, soft_max=10,
-        description="Pattern displace strength")
+        description="Pattern displace strength"
+        )
+
     out_displace : FloatProperty(
         name="Displace B", default=2, soft_min=-10, soft_max=10,
-        description="Pattern displace strength")
+        description="Pattern displace strength"
+        )
 
     in_steps : IntProperty(
         name="Steps A", default=1, min=0, soft_max=10,
-        description="Number of layers to move inwards")
+        description="Number of layers to move inwards"
+        )
+
     out_steps : IntProperty(
         name="Steps B", default=1, min=0, soft_max=10,
-        description="Number of layers to move outwards")
+        description="Number of layers to move outwards"
+        )
+
     displace_x : BoolProperty(
         name="Use X", default=True,
-        description="Displace along X axis")
+        description="Displace along X axis"
+        )
+
     displace_y : BoolProperty(
         name="Use Y", default=True,
-        description="Displace along Y axis")
+        description="Displace along Y axis"
+        )
+
     displace_z : BoolProperty(
         name="Use Z", default=True,
-        description="Displace along Z axis")
+        description="Displace along Z axis"
+        )
 
     merge : BoolProperty(
         name="Merge Vertices", default=True,
-        description="Merge points")
+        description="Merge points"
+        )
+
     merge_thres : FloatProperty(
         name="Merge Threshold", default=0.01, min=0, soft_max=1,
-        description="Minimum Curve Radius")
+        description="Minimum Curve Radius"
+        )
 
     bevel_depth : FloatProperty(
         name="Bevel Depth", default=0, min=0, soft_max=1,
-        description="")
+        description=""
+        )
+
     min_bevel_depth : FloatProperty(
         name="Min Bevel Depth", default=0.05, min=0, soft_max=1,
-        description="")
+        description=""
+        )
+
     max_bevel_depth : FloatProperty(
         name="Max Bevel Depth", default=0.20, min=0, soft_max=1,
-        description="")
+        description=""
+        )
+
     remove_open_curves : BoolProperty(
         name="Remove Open Curves", default=False,
-        description="Remove Open Curves")
+        description="Remove Open Curves"
+        )
 
     vertex_group_pattern : StringProperty(
         name="Displace", default='',
-        description="Vertex Group used for pattern displace")
+        description="Vertex Group used for pattern displace"
+        )
 
     vertex_group_bevel : StringProperty(
         name="Bevel", default='',
-        description="Variable Bevel depth")
+        description="Variable Bevel depth"
+        )
 
     object_name : StringProperty(
         name="Active Object", default='',
-        description="")
+        description=""
+        )
+
+    contour_attribute : StringProperty(
+        name="Contour Attribute", default='',
+        description="Vertex > Float attribute used for contouring"
+        )
 
     try: vg_name = bpy.context.object.vertex_groups.active.name
     except: vg_name = ''
 
     vertex_group_contour : StringProperty(
         name="Contour", default=vg_name,
-        description="Vertex Group used for contouring")
+        description="Vertex Group used for contouring"
+        )
+
     clean_distance : FloatProperty(
         name="Clean Distance", default=0.005, min=0, soft_max=10,
-        description="Remove short segments")
-
+        description="Remove short segments"
+        )
 
     spiralized: BoolProperty(
         name='Spiralized', default=False,
         description='Create a Spiral Contour. Works better with dense meshes.'
-    )
+        )
+
     spiral_axis: FloatVectorProperty(
         name="Spiral Axis", default=(0,0,1),
         description="Axis of the Spiral (in local coordinates)"
-    )
+        )
+
     spiral_rotation : FloatProperty(
         name="Spiral Rotation", default=0, min=0, max=2*pi,
         description=""
-    )
+        )
+
     bool_hold : BoolProperty(
-            name="Hold",
-            description="Wait...",
-            default=False
+        name="Hold",
+        description="Wait...",
+        default=False
         )
 
     contour_mode : EnumProperty(
@@ -396,6 +464,7 @@ class tissue_weight_contour_curves_pattern(Operator):
             ('VECTOR', "Vector", "Orient the Contour to a given vector starting from the origin of the object"),
             ('OBJECT', "Object", "Orient the Contour to a target object's Z"),
             ('WEIGHT', "Weight", "Contour based on a Vertex Group"),
+            ('ATTRIBUTE', "Attribute", "Contour based on an Attribute (Vertex > Float)"),
             ('GEODESIC', "Geodesic Distance", "Contour based on the geodesic distance from the chosen vertices"),
             ('TOPOLOGY', "Topology Distance", "Contour based on the topology distance from the chosen vertices")
             ),
@@ -406,15 +475,18 @@ class tissue_weight_contour_curves_pattern(Operator):
     contour_vector : FloatVectorProperty(
         name='Vector', description='Constant Vector', default=(0.0, 0.0, 1.0)
         )
+
     contour_vector_object : StringProperty(
         name="Object",
         description="Target object",
         default = ""
         )
+
     contour_offset : FloatProperty(
         name="Offset", default=0.05, min=0.000001, soft_min=0.01, soft_max=10,
         description="Contour offset along the Vector"
         )
+
     seeds_mode : EnumProperty(
         items=(
             ('BOUND', "Boundary Edges", "Compute the distance starting from the boundary edges"),
@@ -424,21 +496,20 @@ class tissue_weight_contour_curves_pattern(Operator):
         default='BOUND',
         name="Seeds used for computing the distance"
         )
+
     vertex_group_seed : StringProperty(
         name="Seeds", default=vg_name,
-        description="Vertex Group used for computing the distance")
+        description="Vertex Group used for computing the distance"
+        )
+
     spline_type : EnumProperty(
         items=(
             ('POLY', "Poly", "Generate Poly curves"),
             ('NURBS', "NURBS", "Generate NURBS curves")
             ),
         default='POLY',
-        name="Spline type")
-
-    #@classmethod
-    #def poll(cls, context):
-    #    ob = context.object
-    #    return ob and len(ob.vertex_groups) > 0 or ob.type == 'CURVE'
+        name="Spline type"
+        )
 
     def invoke(self, context, event):
         self.object = context.object.name
@@ -476,11 +547,19 @@ class tissue_weight_contour_curves_pattern(Operator):
             row.prop(self,'contour_vector')
         elif self.contour_mode == 'WEIGHT':
             col.prop_search(self, 'vertex_group_contour', ob, "vertex_groups", text='Group')
+        elif self.contour_mode == 'ATTRIBUTE':
+            col.prop_search(self, 'contour_attribute', ob0.data, "attributes", text='Attribute')
+            is_attribute = True
+            if self.contour_attribute in ob0.data.attributes:
+                attr = ob0.data.attributes[self.contour_attribute]
+                is_attribute = attr.data_type == 'FLOAT' and attr.domain == 'POINT'
+            else:
+                is_attribute = False
+            if not is_attribute:
+                 col.label(text="Please select a (Vertex > Float) Attribute for contouring.", icon='ERROR')
         elif self.contour_mode in ('TOPOLOGY','GEODESIC'):
             col.prop(self, "seeds_mode", text="Seeds")
             if self.seeds_mode == 'WEIGHT':
-                #row = col.row()
-                #row.label(text='')
                 col.prop_search(self, 'vertex_group_seed', ob, "vertex_groups", text='Group')
         elif self.contour_mode == 'OBJECT':
             col.prop_search(self, "contour_vector_object", context.scene, "objects", text='Object')
@@ -489,7 +568,7 @@ class tissue_weight_contour_curves_pattern(Operator):
         if self.contour_mode == 'OBJECT':
             col.prop(self,'contour_offset')
             col.prop(self,'n_curves', text='Max Curves')
-        elif self.contour_mode in ('VECTOR', 'GEODESIC'):
+        elif self.contour_mode in ('VECTOR', 'GEODESIC', 'ATTRIBUTE'):
             col.prop(self,'contour_offset')
             row = col.row(align=True)
             row.prop(self,'min_value')
@@ -608,6 +687,7 @@ class tissue_weight_contour_curves_pattern(Operator):
         props.seeds_mode = self.seeds_mode
         props.vertex_group_seed = self.vertex_group_seed
         props.spline_type = self.spline_type
+        props.contour_attribute = self.contour_attribute
         new_ob.tissue.bool_hold = False
 
         new_ob.tissue.tissue_type = 'CONTOUR_CURVES'
@@ -704,6 +784,16 @@ class tissue_update_contour_curves(Operator):
                 bpy.data.objects.remove(ob0)
                 self.report({'ERROR'}, "Please select a Vertex Group for contouring")
                 return {'CANCELLED'}
+        elif props.contour_mode == 'ATTRIBUTE':
+            if props.contour_attribute in me0.attributes:
+                weight = [0]*n_verts
+                me0.attributes[props.contour_attribute].data.foreach_get('value',weight)
+                weight = np.array(weight)
+            else:
+                bm.free()
+                bpy.data.objects.remove(ob0)
+                self.report({'ERROR'}, "Please select a (Vertex > Float) Attribute for contouring")
+                return {'CANCELLED'}
         elif props.contour_mode in ('GEODESIC','TOPOLOGY'):
             cancel = False
             weight = [None]*n_verts
@@ -716,7 +806,6 @@ class tissue_update_contour_curves(Operator):
                         weight[v.index] = 0
             if props.seeds_mode == 'SHARP':
                 for e, bme in zip(me0.edges, bm.edges):
-                    #if not e.smooth:#use_edge_sharp:
                     if e.use_edge_sharp:
                         seed_verts.append(bme.verts[0])
                         seed_verts.append(bme.verts[1])
@@ -724,7 +813,6 @@ class tissue_update_contour_curves(Operator):
                 if len(seed_verts) == 0: cancel = True
                 for i in [v.index for v in seed_verts]:
                     weight[i] = 0
-                #seed_verts = [bm.verts[i] for i in seed_verts]
             if props.seeds_mode == 'WEIGHT':
                 try:
                     seeds = get_weight_numpy(ob0.vertex_groups[props.vertex_group_seed], len(me0.vertices))
@@ -764,9 +852,7 @@ class tissue_update_contour_curves(Operator):
                 bevel_weight = np.ones(len(me0.vertices))
         else:
             bevel_weight = np.ones(len(me0.vertices))
-        #edges_bevel = bevel_weight
 
-        #filtered_edges = bm.edges
         total_verts = np.zeros((0,3))
         total_radii = np.zeros((0,1))
         total_edges_index = np.zeros((0)).astype('int')
@@ -781,7 +867,7 @@ class tissue_update_contour_curves(Operator):
         min_value = props.min_value
         max_value = props.min_value + props.range_value
 
-        if props.contour_mode in ('VECTOR','OBJECT','GEODESIC'):
+        if props.contour_mode in ('VECTOR','OBJECT','GEODESIC','ATTRIBUTE'):
             delta_iso = props.contour_offset
             n_curves = min(int((np.max(weight)-props.min_value)/delta_iso)+1, props.n_curves)
         else:
@@ -974,11 +1060,19 @@ class TISSUE_PT_contour_curves(Panel):
             row.prop(props,'contour_vector')
         elif props.contour_mode == 'WEIGHT':
             col.prop_search(props, 'vertex_group_contour', ob0, "vertex_groups", text='Group')
+        elif props.contour_mode == 'ATTRIBUTE':
+            col.prop_search(props, 'contour_attribute', ob0.data, "attributes", text='Attribute')
+            is_attribute = True
+            if props.contour_attribute in ob0.data.attributes:
+                attr = ob0.data.attributes[props.contour_attribute]
+                is_attribute = attr.data_type == 'FLOAT' and attr.domain == 'POINT'
+            else:
+                is_attribute = False
+            if not is_attribute:
+                 col.label(text="Please select a (Vertex > Float) Attribute for contouring.", icon='ERROR')
         elif props.contour_mode in ('TOPOLOGY','GEODESIC'):
             col.prop(props, "seeds_mode", text="Seeds")
             if props.seeds_mode == 'WEIGHT':
-                #row = col.row()
-                #row.label(text='')
                 col.prop_search(props, 'vertex_group_seed', ob0, "vertex_groups", text='Group')
         elif props.contour_mode == 'OBJECT':
             col.prop_search(props, "contour_vector_object", context.scene, "objects", text='Object')
@@ -987,7 +1081,7 @@ class TISSUE_PT_contour_curves(Panel):
         if props.contour_mode == 'OBJECT':
             col.prop(props,'contour_offset')
             col.prop(props,'n_curves', text='Max Curves')
-        elif props.contour_mode in ('VECTOR','GEODESIC'):
+        elif props.contour_mode in ('VECTOR','GEODESIC','ATTRIBUTE'):
             col.prop(props,'contour_offset')
             row = col.row(align=True)
             row.prop(props,'min_value')
