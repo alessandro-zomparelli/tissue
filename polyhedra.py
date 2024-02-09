@@ -54,7 +54,7 @@ from .utils import *
 def anim_polyhedra_active(self, context):
     ob = context.object
     props = ob.tissue_polyhedra
-    if ob.tissue.tissue_type=='POLYHEDRA' and not ob.tissue.bool_lock and ob.tissue.bool_run:
+    if ob.tissue.tissue_type=='POLYHEDRA' and not ob.tissue.bool_lock:
         props.object.name
         bpy.ops.object.tissue_update_polyhedra()
 
