@@ -209,12 +209,6 @@ class polyhedral_wireframe(Operator):
                       \n(Experimental)"
     bl_options = {'REGISTER', 'UNDO'}
 
-    object : StringProperty(
-        name="Object",
-        description="Source object",
-        default = ""
-        )
-
     thickness : FloatProperty(
         name="Thickness", default=0.1, min=0.001, soft_max=200,
         description="Wireframe thickness"
@@ -282,46 +276,46 @@ class polyhedral_wireframe(Operator):
         )
 
     vertex_group_thickness : StringProperty(
-            name="Thickness weight", default='',
-            description="Vertex Group used for thickness"
-            )
+        name="Thickness weight", default='',
+        description="Vertex Group used for thickness"
+        )
+
     invert_vertex_group_thickness : BoolProperty(
-            name="Invert", default=False,
-            description="Invert the vertex group influence"
-            )
+        name="Invert", default=False,
+        description="Invert the vertex group influence"
+        )
+
     vertex_group_thickness_factor : FloatProperty(
-            name="Factor",
-            default=0,
-            min=0,
-            max=1,
-            description="Thickness factor to use for zero vertex group influence"
-            )
+        name="Factor",
+        default=0,
+        min=0,
+        max=1,
+        description="Thickness factor to use for zero vertex group influence"
+        )
 
     vertex_group_selective : StringProperty(
-            name="Thickness weight", default='',
-            description="Vertex Group used for thickness"
-            )
-    invert_vertex_group_selective : BoolProperty(
-            name="Invert", default=False,
-            description="Invert the vertex group influence"
-            )
-    vertex_group_selective_threshold : FloatProperty(
-            name="Threshold",
-            default=0.5,
-            min=0,
-            max=1,
-            description="Selective wireframe threshold"
-            )
-    bool_smooth : BoolProperty(
-            name="Smooth Shading",
-            default=False,
-            description="Output faces with smooth shading rather than flat shaded"
-            )
+        name="Thickness weight", default='',
+        description="Vertex Group used for thickness"
+        )
 
-    #regular_sections : BoolProperty(
-    #    name="Regular Sections", default=False,
-    #    description="Turn inner loops into polygons"
-    #    )
+    invert_vertex_group_selective : BoolProperty(
+        name="Invert", default=False,
+        description="Invert the vertex group influence"
+        )
+
+    vertex_group_selective_threshold : FloatProperty(
+        name="Threshold",
+        default=0.5,
+        min=0,
+        max=1,
+        description="Selective wireframe threshold"
+        )
+
+    bool_smooth : BoolProperty(
+        name="Smooth Shading",
+        default=False,
+        description="Output faces with smooth shading rather than flat shaded"
+        )
 
     bool_hold : BoolProperty(
             name="Hold",
@@ -333,12 +327,7 @@ class polyhedral_wireframe(Operator):
         ob = context.object
         layout = self.layout
         col = layout.column(align=True)
-        if not self.bool_hold:
-            self.object = ob.name
-        col.prop_search(self, "object", context.scene, "objects")
         self.bool_hold = True
-        #col.separator()
-        #col.prop(self, "mode")
         if self.mode == 'WIREFRAME':
             col.separator()
             col.prop(self, "thickness")
@@ -350,10 +339,7 @@ class polyhedral_wireframe(Operator):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
-        try:
-            ob0 = bpy.data.objects[self.object]
-        except:
-            return {'CANCELLED'}
+        ob0 = context.object
 
         self.object_name = "Polyhedral Wireframe"
         # Check if existing object with same name
@@ -370,37 +356,28 @@ class polyhedral_wireframe(Operator):
         if ob0.type not in ('MESH'):
             message = "Source object must be a Mesh!"
             self.report({'ERROR'}, message)
-            self.object = ""
 
         if bpy.ops.object.select_all.poll():
             bpy.ops.object.select_all(action='TOGGLE')
         bpy.ops.object.mode_set(mode='OBJECT')
 
         bool_update = False
-        if context.object == ob0:
-            auto_layer_collection()
-            new_ob = convert_object_to_mesh(ob0,False,False)
-            new_ob.data.name = self.object_name
-            new_ob.name = self.object_name
-        else:
-            new_ob = context.object
-            bool_update = True
+        auto_layer_collection()
+        new_ob = convert_object_to_mesh(ob0,False,False)
+        new_ob.data.name = self.object_name
+        new_ob.name = self.object_name
 
         # Store parameters
         props = new_ob.tissue_polyhedra
-
-        # lock
         lock_status = new_ob.tissue.bool_lock
         new_ob.tissue.bool_lock = True
-
-        if self.object in bpy.data.objects.keys():
-            props.object = bpy.data.objects[self.object]
         props.mode = self.mode
         props.thickness = self.thickness
         props.segments = self.segments
         props.dissolve = self.dissolve
         props.proportional_segments = self.proportional_segments
         props.crease = self.crease
+        props.object = ob0
 
         new_ob.tissue.tissue_type = 'POLYHEDRA'
         try: bpy.ops.object.tissue_update_polyhedra()
@@ -411,7 +388,6 @@ class polyhedral_wireframe(Operator):
             return {'CANCELLED'}
         if not bool_update:
             self.object_name = new_ob.name
-            #self.working_on = self.object_name
             new_ob.location = ob0.location
             new_ob.matrix_world = ob0.matrix_world
 
