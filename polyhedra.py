@@ -675,6 +675,11 @@ class tissue_update_polyhedra(Operator):
         ob.data.name = mesh_name
         bm1.free()
 
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.reset()
+        bpy.ops.object.mode_set(mode='OBJECT')
+
         tissue_time(start_time,'Clean mesh',levels=1)
         start_time = time.time()
 
