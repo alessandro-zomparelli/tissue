@@ -266,7 +266,7 @@ class dual_mesh(Operator):
             bpy.ops.mesh.select_more(use_face_step=False)
 
             bpy.ops.mesh.select_similar(
-                type='EDGE', compare='EQUAL', threshold=0.01)
+                type='VERT_EDGES', compare='EQUAL', threshold=0.01)
             bpy.ops.mesh.select_all(action='INVERT')
 
             bpy.ops.mesh.dissolve_verts()

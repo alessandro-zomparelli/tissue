@@ -224,8 +224,8 @@ class weight_to_materials(Operator):
             faces_weight.append(w)
         faces_weight = np.array(faces_weight)
         faces_weight = faces_weight * count
-        faces_weight.astype('int')
-        ob.data.polygons.foreach_set('material_index',list(faces_weight))
+        faces_weight = list(faces_weight.astype('int'))
+        ob.data.polygons.foreach_set('material_index', faces_weight)
         ob.data.update()
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
