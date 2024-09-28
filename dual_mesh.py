@@ -1,36 +1,6 @@
+# SPDX-FileCopyrightText: 2017 Alessandro Zomparelli
+#
 # SPDX-License-Identifier: GPL-2.0-or-later
-
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# --------------------------------- DUAL MESH -------------------------------- #
-# -------------------------------- version 0.3 ------------------------------- #
-#                                                                              #
-# Convert a generic mesh to its dual. With open meshes it can get some wired   #
-# effect on the borders.                                                       #
-#                                                                              #
-#                        (c)   Alessandro Zomparelli                           #
-#                                    (2017)                                    #
-#                                                                              #
-# http://www.co-de-it.com/                                                     #
-#                                                                              #
-# ############################################################################ #
-
 
 import bpy
 from bpy.types import Operator
@@ -107,8 +77,8 @@ class dual_mesh_tessellated(Operator):
             me = bpy.data.meshes.new("Dual-Mesh")  # add a new mesh
             me.from_pydata(verts, edges, faces)
             me.update(calc_edges=True, calc_edges_loose=True)
-            if self.source_faces == 'QUAD': seams = (0,1,2,3,4,5,6,9)
-            else: seams = (0,1,2,3,4,5,7)
+            if self.source_faces == 'QUAD': seams = (0,1,2,3,4,5,6,7)
+            else: seams = (0,1,2,3,4,5,6)
             for i in seams: me.edges[i].use_seam = True
             ob1 = bpy.data.objects.new(name1, me)
             # fix visualization issue
@@ -266,7 +236,7 @@ class dual_mesh(Operator):
             bpy.ops.mesh.select_more(use_face_step=False)
 
             bpy.ops.mesh.select_similar(
-                type='EDGE', compare='EQUAL', threshold=0.01)
+                type='VERT_EDGES', compare='EQUAL', threshold=0.01)
             bpy.ops.mesh.select_all(action='INVERT')
 
             bpy.ops.mesh.dissolve_verts()

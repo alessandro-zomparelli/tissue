@@ -1,55 +1,35 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
+# SPDX-FileCopyrightText: 2017 Alessandro Zomparelli
 #
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# ---------------------------- ADAPTIVE DUPLIFACES --------------------------- #
-# ------------------------------- version 0.84 ------------------------------- #
-#                                                                              #
-# Creates duplicates of selected mesh to active morphing the shape according   #
-# to target faces.                                                             #
-#                                                                              #
-#                    (c)  Alessandro Zomparelli                                #
-#                             (2017)                                           #
-#                                                                              #
-# http://www.co-de-it.com/                                                     #
-#                                                                              #
-# ############################################################################ #
-
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 import bpy
 from bpy.types import (
-        Operator,
-        Panel,
-        PropertyGroup,
-        )
+    Operator,
+    Panel,
+    PropertyGroup,
+    )
 from bpy.props import (
-        BoolProperty,
-        EnumProperty,
-        FloatProperty,
-        IntProperty,
-        StringProperty,
-        PointerProperty
-        )
-from mathutils import Vector, Quaternion, Matrix
+    BoolProperty,
+    EnumProperty,
+    FloatProperty,
+    IntProperty,
+    StringProperty,
+    PointerProperty
+    )
+from mathutils import Vector
 import numpy as np
-from math import *
-import random, time, copy
+import time
 import bmesh
-from .utils import *
+from .utils import (
+    tissue_time,
+    simple_to_mesh,
+    bmesh_get_weight_numpy,
+    round_angle_with_axis,
+    remove_temp_objects,
+    auto_layer_collection,
+    convert_object_to_mesh
+)
+from math import sin
 
 def anim_polyhedra_active(self, context):
     ob = context.object
@@ -324,7 +304,6 @@ class polyhedral_wireframe(Operator):
         )
 
     def draw(self, context):
-        ob = context.object
         layout = self.layout
         col = layout.column(align=True)
         self.bool_hold = True
@@ -333,7 +312,6 @@ class polyhedral_wireframe(Operator):
             col.prop(self, "thickness")
             col.separator()
             col.prop(self, "segments")
-        return
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
@@ -348,7 +326,7 @@ class polyhedral_wireframe(Operator):
             count_name = 1
             while True:
                 test_name = self.object_name + '.{:03d}'.format(count_name)
-                if not (test_name in names):
+                if test_name not in names:
                     self.object_name = test_name
                     break
                 count_name += 1
@@ -417,13 +395,9 @@ class tissue_update_polyhedra(Operator):
         start_time = time.time()
         begin_time = time.time()
         props = ob.tissue_polyhedra
-        thickness = props.thickness
-
-        merge_dist = thickness*0.0001
 
         subs = props.segments
         if props.mode == 'POLYHEDRA': subs = 1
-
 
         # Source mesh
         ob0 = props.object
@@ -434,6 +408,11 @@ class tissue_update_polyhedra(Operator):
 
         bm = bmesh.new()
         bm.from_mesh(me)
+        nodes_dict = dict(zip([tuple(v.co) for v in bm.verts], range(len(bm.verts))))
+        edges_dict = {
+            tuple(sorted((v.index for v in edge.verts))): edge.index
+            for edge in bm.edges
+        }
 
         pre_processing(bm)
         polyhedral_subdivide_edges(bm, subs, props.proportional_segments)
@@ -466,6 +445,8 @@ class tissue_update_polyhedra(Operator):
 
         selective_dict = None
         accurate = False
+        filter_faces = False
+        area_threshold = 0
         if props.selective_wireframe == 'THICKNESS':
             filter_faces = True
             accurate = True
@@ -490,21 +471,15 @@ class tissue_update_polyhedra(Operator):
                 else:
                     selective_weight = selective_weight >= thresh
                 selective_dict = dict(zip([tuple(v.co) for v in bm.verts],selective_weight))
-            else:
-                filter_faces = False
-        else:
-            filter_faces = False
 
         bm.free()
 
-        end_time = time.time()
         tissue_time(start_time,'Found {} polyhedra'.format(len(polyhedra)),levels=1)
         start_time = time.time()
 
         bm1.faces.ensure_lookup_table()
         bm1.faces.index_update()
 
-        #unique_verts_dict = dict(zip([tuple(v.co) for v in bm1.verts],bm1.verts))
         bm1, all_faces_dict, polyhedra_faces_id, polyhedra_faces_id_neg = combine_polyhedra_faces(bm1, polyhedra)
 
         if props.mode == 'POLYHEDRA':
@@ -521,76 +496,37 @@ class tissue_update_polyhedra(Operator):
             print('Tissue: Polyhedral wireframe in {:.4f} sec'.format(end_time-start_time))
             return {'FINISHED'}
 
-        delete_faces = set({})
-        wireframe_faces = []
-        not_wireframe_faces = []
-        #flat_faces = []
-        count = 0
-        outer_faces = get_outer_faces(bm1)
-        for faces_id in polyhedra_faces_id:
-            delete_faces_poly = []
-            wireframe_faces_poly = []
-            for id in faces_id:
-                if id in delete_faces: continue
-                delete = False
-                cen = None
-                f = None
-                if filter_faces:
-                    f = all_faces_dict[id]
-                    if selective_dict:
-                        for v in f.verts:
-                            if selective_dict[tuple(v.co)]:
-                                delete = True
-                                break
-                    elif accurate:
-                        cen = f.calc_center_median()
-                        for e in f.edges:
-                            v0 = e.verts[0]
-                            v1 = e.verts[1]
-                            mid = (v0.co + v1.co)/2
-                            vec1 = v0.co - v1.co
-                            vec2 = mid - cen
-                            ang = Vector.angle(vec1,vec2)
-                            length = vec2.length
-                            length = sin(ang)*length
-                            thick0 = thickness_dict[tuple(v0.co)]
-                            thick1 = thickness_dict[tuple(v1.co)]
-                            thick = (thick0 + thick1)/4
-                            if length < thick*props.thickness_threshold_correction:
-                                delete = True
-                                break
-                    else:
-                        delete = f.calc_area() < area_threshold
-                if delete:
-                    if props.thicken_all:
-                        delete_faces_poly.append(id)
-                else:
-                    wireframe_faces_poly.append(id)
-            if len(wireframe_faces_poly) <= 2:
-                delete_faces.update(set([id for id in faces_id]))
-                not_wireframe_faces += [polyhedra_faces_id_neg[id] for id in faces_id]
-            else:
-                wireframe_faces += wireframe_faces_poly
-                #flat_faces += delete_faces_poly
-        wireframe_faces_id = [i for i in wireframe_faces if i not in not_wireframe_faces]
-        wireframe_faces = [all_faces_dict[i] for i in wireframe_faces_id]
-        #flat_faces = [all_faces_dict[i] for i in flat_faces]
-        delete_faces = [all_faces_dict[i] for i in delete_faces if all_faces_dict[i] not in outer_faces]
+        wireframe_faces, wireframe_faces_id, delete_faces, outer_faces = get_wireframe_faces_from_polyhedral_complex(
+            bm1,
+            props,
+            polyhedra_faces_id,
+            polyhedra_faces_id_neg,
+            all_faces_dict,
+            selective_dict,
+            filter_faces,
+            thickness_dict,
+            area_threshold,
+            accurate
+        )
 
         tissue_time(start_time,'Merge and delete',levels=1)
         start_time = time.time()
 
         ############# FRAME #############
-        new_faces, outer_wireframe_faces = create_frame_faces(
+        new_faces, outer_wireframe_faces, att_node_index, att_edge_index = create_frame_faces(
             bm1,
             wireframe_faces,
             wireframe_faces_id,
             polyhedra_faces_id_neg,
             thickness_dict,
-            outer_faces
+            outer_faces,
+            nodes_dict,
+            edges_dict
         )
-        faces_to_delete = wireframe_faces+delete_faces
-        outer_wireframe_faces += [f for f in outer_faces if not f in faces_to_delete]
+
+        faces_to_delete = wireframe_faces + delete_faces
+        outer_wireframe_faces += [f for f in outer_faces if f not in faces_to_delete]
+
         bmesh.ops.delete(bm1, geom=faces_to_delete, context='FACES')
 
         bm1.verts.ensure_lookup_table()
@@ -598,19 +534,28 @@ class tissue_update_polyhedra(Operator):
         bm1.faces.ensure_lookup_table()
         bm1.verts.index_update()
 
+        ### Store attributes ###
         wireframe_indexes = [f.index for f in new_faces]
         outer_indexes = [f.index for f in outer_wireframe_faces]
-        edges_to_crease = [f.edges[2].index for f in new_faces]
+
         layer_is_wireframe = bm1.faces.layers.int.new('tissue_is_wireframe')
-        for id in wireframe_indexes:
-            bm1.faces[id][layer_is_wireframe] = 1
+        layer_node_index = bm1.faces.layers.int.new('tissue_node_index')
+        layer_edge_index = bm1.faces.layers.int.new('tissue_edge_index')
         layer_is_outer = bm1.faces.layers.int.new('tissue_is_outer')
+        count = 0
+        for id in wireframe_indexes:
+            face = bm1.faces[id] 
+            face[layer_is_wireframe] = 1
+            face[layer_node_index] = att_node_index[count]
+            face[layer_edge_index] = att_edge_index[count]
+            count+=1
         for id in outer_indexes:
             bm1.faces[id][layer_is_outer] = 1
+        
         if props.crease > 0 and props.dissolve != 'INNER':
+            edges_to_crease = [f.edges[2].index for f in new_faces]
             crease_layer = bm1.edges.layers.float.new('crease_edge')
             bm1.edges.index_update()
-            crease_edges = []
             for edge_index in edges_to_crease:
                 bm1.edges[edge_index][crease_layer] = props.crease
 
@@ -618,18 +563,19 @@ class tissue_update_polyhedra(Operator):
         start_time = time.time()
 
         ### Displace vertices ###
-        corners = [[] for i in range(len(bm1.verts))]
+        corners = [[] for _ in range(len(bm1.verts))]
         normals = [0]*len(bm1.verts)
         vertices = [0]*len(bm1.verts)
+        for v in bm1.verts:
+            v.normal_update
         # Define vectors direction
         for f in bm1.faces:
             v0 = f.verts[0]
             v1 = f.verts[1]
-            id = v0.index
-            corners[id].append((v1.co - v0.co).normalized())
-            v0.normal_update()
-            normals[id] = v0.normal.copy()
-            vertices[id] = v0
+            v_id = v0.index
+            corners[v_id].append((v1.co - v0.co).normalized())
+            normals[v_id] = v0.normal.copy()
+            vertices[v_id] = v0
         # Displace vertices
         for i, vecs in enumerate(corners):
             if len(vecs) > 0:
@@ -641,7 +587,7 @@ class tissue_update_polyhedra(Operator):
                     ang += nor.angle(vec)
                 ang /= len(vecs)
                 div = sin(ang)
-                if div == 0: div = 1
+                if div < 1e-6: div = 1
                 v.co += nor*thickness_dict[tuple(v.co)]/div
 
         tissue_time(start_time,'Corners displace',levels=1)
@@ -681,10 +627,73 @@ class tissue_update_polyhedra(Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
 
         tissue_time(start_time,'Clean mesh',levels=1)
-        start_time = time.time()
 
         tissue_time(begin_time,'Polyhedral Wireframe',levels=0)
         return {'FINISHED'}
+
+def get_wireframe_faces_from_polyhedral_complex(
+    bm,
+    props,
+    polyhedra_faces_id,
+    polyhedra_faces_id_neg,
+    all_faces_dict,
+    selective_dict,
+    filter_faces,
+    thickness_dict,
+    area_threshold,
+    accurate
+):
+    delete_faces = set({})
+    wireframe_faces = []
+    not_wireframe_faces = []
+    outer_faces = get_outer_faces(bm)
+    for faces_id in polyhedra_faces_id:
+        delete_faces_poly = []
+        wireframe_faces_poly = []
+        for id in faces_id:
+            if id in delete_faces: continue
+            delete = False
+            if filter_faces:
+                f = all_faces_dict[id]
+                if selective_dict:
+                    for v in f.verts:
+                        if selective_dict[tuple(v.co)]:
+                            delete = True
+                            break
+                elif accurate:
+                    cen = f.calc_center_median()
+                    for e in f.edges:
+                        v0 = e.verts[0]
+                        v1 = e.verts[1]
+                        mid = (v0.co + v1.co)/2
+                        vec1 = v0.co - v1.co
+                        vec2 = mid - cen
+                        ang = Vector.angle(vec1,vec2)
+                        length = vec2.length
+                        length = sin(ang)*length
+                        thick0 = thickness_dict[tuple(v0.co)]
+                        thick1 = thickness_dict[tuple(v1.co)]
+                        thick = (thick0 + thick1)/4
+                        if length < thick*props.thickness_threshold_correction:
+                            delete = True
+                            break
+                else:
+                    delete = f.calc_area() < area_threshold
+            if delete:
+                if props.thicken_all:
+                    delete_faces_poly.append(id)
+            else:
+                wireframe_faces_poly.append(id)
+        if len(wireframe_faces_poly) <= 2:
+            delete_faces.update(set(faces_id))
+            not_wireframe_faces += [polyhedra_faces_id_neg[id] for id in faces_id]
+        else:
+            wireframe_faces += wireframe_faces_poly
+    wireframe_faces_id = [i for i in wireframe_faces if i not in not_wireframe_faces]
+    wireframe_faces = [all_faces_dict[i] for i in wireframe_faces_id]
+    delete_faces = [all_faces_dict[i] for i in delete_faces if all_faces_dict[i] not in outer_faces]
+    return wireframe_faces, wireframe_faces_id, delete_faces, outer_faces
+
 
 def pre_processing(bm):
     delete = [e for e in bm.edges if len(e.link_faces) < 2]
@@ -712,44 +721,56 @@ def create_frame_faces(
     wireframe_faces_id,
     polyhedra_faces_id_neg,
     thickness_dict,
-    outer_faces
+    outer_faces,
+    nodes_dict,
+    edges_dict
 ):
-    new_faces = []
     for f in wireframe_faces:
         f.normal_update()
+  
+    new_faces = []
+    outer_wireframe_faces = []
+    att_node_index = []
+    att_edge_index = []
+    frames_verts_dict = {}
     all_loops = [[loop for loop in f.loops] for f in wireframe_faces]
     is_outer = [f in outer_faces for f in wireframe_faces]
-    outer_wireframe_faces = []
-    frames_verts_dict = {}
+  
     for loops_index, loops in enumerate(all_loops):
         n_loop = len(loops)
         frame_id = wireframe_faces_id[loops_index]
-        single_face_id = min(frame_id,polyhedra_faces_id_neg[frame_id])
+        single_face_id = min(frame_id, polyhedra_faces_id_neg[frame_id])
         verts_inner = []
         loops_keys = [tuple(loop.vert.co) + tuple((single_face_id,)) for loop in loops]
+        face_normal = wireframe_faces[loops_index].normal
+
+        # create vertices
         if loops_keys[0] in frames_verts_dict:
             verts_inner = [frames_verts_dict[key] for key in loops_keys]
         else:
             tangents = []
-            nor = wireframe_faces[loops_index].normal
             for loop in loops:
-                tan = loop.calc_tangent() #nor.cross(loop.calc_tangent().cross(nor)).normalized()
+                tan = loop.calc_tangent()
+                tan = face_normal.cross(tan.cross(face_normal)).normalized() # fix deformations
                 thickness = thickness_dict[tuple(loop.vert.co)]
-                tangents.append(tan/sin(loop.calc_angle()/2)*thickness)
-            for i in range(n_loop):
-                loop = loops[i]
+                sin_angle = sin(loop.calc_angle() / 2)
+                if abs(sin_angle) < 1e-6:
+                    sin_angle = 1e-6  # Prevent division by zero
+                tangents.append(tan / sin_angle * thickness)
+            for i, loop in enumerate(loops):
                 new_co = loop.vert.co + tangents[i]
                 new_vert = bm.verts.new(new_co)
                 frames_verts_dict[loops_keys[i]] = new_vert
                 verts_inner.append(new_vert)
+        
         # add faces
-        loops += [loops[0]]
-        verts_inner += [verts_inner[0]]
+        closed_loops = loops + [loops[0]]
+        verts_inner_closed = verts_inner + [verts_inner[0]]
         for i in range(n_loop):
-            v0 = loops[i].vert
-            v1 = loops[i+1].vert
-            v2 = verts_inner[i+1]
-            v3 = verts_inner[i]
+            v0 = closed_loops[i].vert
+            v1 = closed_loops[i+1].vert
+            v2 = verts_inner_closed[i+1]
+            v3 = verts_inner_closed[i]
             face_verts = [v0,v1,v2,v3]
             new_face = bm.faces.new(face_verts)
             new_face.select = True
@@ -757,15 +778,39 @@ def create_frame_faces(
             if is_outer[loops_index]:
                 outer_wireframe_faces.append(new_face)
             new_face.normal_update()
-    return new_faces, outer_wireframe_faces
+        node_indexes, edge_indexes = get_face_topology_indexes_from_dict(closed_loops, nodes_dict, edges_dict)
+        att_node_index += node_indexes
+        att_edge_index += edge_indexes
+
+    return new_faces, outer_wireframe_faces, att_node_index, att_edge_index
+
+def get_face_topology_indexes_from_dict(loops, nodes_dict, edges_dict):
+    indexes = [nodes_dict.get(tuple(loop.vert.co), -1) for loop in loops]
+    nodes_id = list(map(max, indexes[:-1], indexes[1:]))
+    edge_node1 = propagate_loop_node_indexes(indexes[:-1])
+    edge_node2 = reversed(propagate_loop_node_indexes(list(reversed(indexes))[:-1]))
+    edges_id = [edges_dict.get(tuple(sorted((i,j))),-1) for i,j in zip(edge_node1, edge_node2)]
+    return nodes_id, edges_id
+
+def propagate_loop_node_indexes(indexes):
+    processed_list = []
+    prev_index = -1
+    for index in reversed(indexes):
+        if index >= 0:
+            prev_index = index 
+            break
+    for index in indexes:
+        prev_index = index if index >= 0 else prev_index
+        processed_list.append(prev_index)
+    return processed_list
 
 def polyhedral_subdivide_edges(bm, subs, proportional_segments):
     if subs > 1:
         if proportional_segments:
             wire_length = [e.calc_length() for e in bm.edges]
             all_edges = list(bm.edges)
-            max_segment = max(wire_length)/subs+0.00001 # prevent out_of_bounds
-            split_edges = [[] for i in range(subs)]
+            max_segment = max(wire_length)/subs+0.00001 # prevents out_of_bounds
+            split_edges = [[] for _ in range(subs)]
             for e, l in zip(all_edges, wire_length):
                 split_edges[int(l//max_segment)].append(e)
             for i in range(1,subs):
@@ -794,7 +839,6 @@ def get_decomposed_polyhedra(bm):
     count = 0
     to_merge = []
     for e in bm.edges:
-        done = []
         # ERROR: Naked edges
         link_faces = e.link_faces
         n_radial_faces = len(link_faces)
@@ -857,7 +901,7 @@ def get_decomposed_polyhedra(bm):
                 to_merge
             )
 
-    polyhedra = [ [] for i in range(count)]
+    polyhedra = [ [] for _ in range(count)]
     unique_index = get_unique_polyhedra_index(count, to_merge)
     for key, val in polyhedra_from_facekey.items():
         polyhedra[unique_index[val]].append(key)
@@ -868,7 +912,7 @@ def get_decomposed_polyhedra(bm):
 def remove_double_faces_from_polyhedra(polyhedra):
     new_polyhedra = []
     for polyhedron in polyhedra:
-        new_polyhedron = [key for key in polyhedron if not -key in polyhedron]
+        new_polyhedron = [key for key in polyhedron if -key not in polyhedron]
         new_polyhedra.append(new_polyhedron)
     return new_polyhedra
 
@@ -895,9 +939,9 @@ def get_closest_face(faces, tangents, ref_vector, axis, is_positive):
     return facekey if is_positive else -facekey
 
 def get_second_faces(face_list, edge_v0, edge_v1, reference_loop_dir, self):
-    nFaces = len(face_list)-1
-    facekeys = [None]*nFaces
-    normals = [None]*nFaces
+    n_faces = len(face_list)-1
+    facekeys = [None]*n_faces
+    normals = [None]*n_faces
     count = 0
     for face in face_list:
         if(face == self): continue
@@ -954,21 +998,18 @@ def combine_polyhedra_faces(bm,polyhedra):
     new_bm = bmesh.new()
     polyhedra_faces_id = [None]*len(polyhedra)
     all_faces_dict = {}
-    #polyhedra_faces_pos = {}
     polyhedra_faces_id_neg = {}
-    vertices_key = [tuple(v.co) for v in bm.verts]
     count = 0
     for p in polyhedra:
         faces_id = [(f-1)*2 if f > 0 else (-f-1)*2+1 for f in p]
         faces_id_neg = [(-f-1)*2 if f < 0 else (f-1)*2+1 for f in p]
         new_faces = add_polyhedron(new_bm,[bm.faces[f_id] for f_id in faces_id])
-        faces_dict = {}
         for i in range(len(new_faces)):
             face = new_faces[i]
-            id = faces_id[i]
+            f_id = faces_id[i]
             id_neg = faces_id_neg[i]
-            polyhedra_faces_id_neg[id] = id_neg
-            all_faces_dict[id] = face
+            polyhedra_faces_id_neg[f_id] = id_neg
+            all_faces_dict[f_id] = face
         polyhedra_faces_id[count] = faces_id
         count+=1
     return new_bm, all_faces_dict, polyhedra_faces_id, polyhedra_faces_id_neg
@@ -1004,10 +1045,8 @@ class TISSUE_PT_polyhedra_object(Panel):
             col = layout.column(align=True)
             row = col.row(align=True)
 
-            #set_tessellate_handler(self,context)
             row.operator("object.tissue_update_tessellate_deps", icon='FILE_REFRESH', text='Refresh') ####
             lock_icon = 'LOCKED' if tissue_props.bool_lock else 'UNLOCKED'
-            #lock_icon = 'PINNED' if props.bool_lock else 'UNPINNED'
             deps_icon = 'LINKED' if tissue_props.bool_dependencies else 'UNLINKED'
             row.prop(tissue_props, "bool_dependencies", text="", icon=deps_icon)
             row.prop(tissue_props, "bool_lock", text="", icon=lock_icon)
@@ -1016,8 +1055,6 @@ class TISSUE_PT_polyhedra_object(Panel):
             col2.enabled = not tissue_props.bool_lock
             col2 = row.column(align=True)
             col2.operator("mesh.tissue_remove", text="", icon='X')
-            #layout.use_property_split = True
-            #layout.use_property_decorate = False  # No animation.
             col = layout.column(align=True)
             col.label(text='Polyhedral Mode:')
             col.prop(props, 'mode', text='')
@@ -1059,8 +1096,6 @@ class TISSUE_PT_polyhedra_object(Panel):
                         toggle=True, icon='ARROW_LEFTRIGHT')
                     row2.prop(props, "vertex_group_selective_threshold")
                     row2.enabled = props.vertex_group_selective in ob0.vertex_groups.keys()
-                #if props.selective_wireframe != 'NONE':
-                #    col.prop(props, 'thicken_all')
                 col.separator()
                 col.label(text='Subdivide edges:')
                 row = col.row()
