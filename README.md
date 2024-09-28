@@ -3,14 +3,11 @@
 Tissue - Blender's add-on for computational design by Co-de-iT
 https://www.co-de-it.com/code/blender-tissue
 
-Tissue is already shipped with both Blender. However I recommend to update the default version downloading manually the most recent one, for more updated features and more stability.
+Tissue is already shipped with both Blender. However, I recommend updating the default version by downloading manually the most recent one, for more updated features and more stability.
 
-### Blender 4.0.2
+### Blender 4.2.1
 
 Download the latest release: https://github.com/alessandro-zomparelli/tissue/releases
-
-Current development branch (usually the most updated version): https://github.com/alessandro-zomparelli/tissue/tree/b401-dev
-
 
 ### Installation:
 
@@ -24,20 +21,16 @@ Current development branch (usually the most updated version): https://github.co
 Tissue documentation for Blender's latest version: https://docs.blender.org/manual/en/latest/addons/mesh/tissue.html
 
 ### Issues
-Please help me keeping Tissue stable and updated, report any issues or feedback here: https://github.com/alessandro-zomparelli/tissue/issues
+Please help me keep Tissue stable and updated, report any issues or feedback here: https://github.com/alessandro-zomparelli/tissue/issues
 
 ### Contribute
-Tissue is free and open-source. I really think that this is the power of Blender and I wanted to give my small contribution to it.
+Tissue is free and open-source. I think that this is the power of Blender and I wanted to give my small contribution to it.
 
-If you like my work and you want to help me, please consider to support me on **Patreon**, where I share some tips about Blender, Tissue and scripting: https://www.patreon.com/alessandrozomparelli
+If you like my work and want to help me, please consider supporting me on **Patreon**, where I share some tips about Blender, Tissue and scripting: https://www.patreon.com/alessandrozomparelli
 
 [![Patreon](http://alessandrozomparelli.com/wp-content/uploads/2020/04/patreon-transparent-vector-small.png)](https://www.patreon.com/alessandrozomparelli)
 
 A special thanks to all my patrons, in particular to my active **Tissue Supporters**: *Scott Shorter*, *MutableHurdle*, *K*, *Happy Person*, *Dream H*, *Chris Costanzi*, *Chengyuan Wei*, *Avi Bryant*.
-
-If that is too much for you or you are just passing by, then you can also **buy me a coffee**:
-
-<a href="https://www.buymeacoffee.com/alessandrozompa" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
 Many thanks,
 
