@@ -15,27 +15,35 @@ except: pass
 from . import config
 
 def use_numba_tess():
-    tissue_addon = bpy.context.preferences.addons[__package__]
-    if 'use_numba_tess' in tissue_addon.preferences.keys():
-        return tissue_addon.preferences['use_numba_tess']
-    else:
-        return True
+    try:
+        tissue_addon = bpy.context.preferences.addons.get('tissue')
+        # FIX: Blender 5.0 compatibility: Use getattr instead of .keys()
+        if tissue_addon and getattr(tissue_addon.preferences, 'use_numba_tess', False):
+            return True
+        return False
+    except:
+        return False
 
-def tissue_time(start_time, name, levels=0):
-    tissue_addon = bpy.context.preferences.addons[__package__]
-    end_time = time.time()
-    if 'print_stats' in tissue_addon.preferences.keys():
-        ps = tissue_addon.preferences['print_stats']
-    else:
-        ps = 1
-    if levels < ps:
-        if "Tissue: " in name: head = ""
-        else: head = "        "
-        if start_time:
-            print('{}{}{} in {:.4f} sec'.format(head, "|   "*levels, name, end_time - start_time))
-        else:
-            print('{}{}{}'.format(head, "|   "*levels, name))
-    return end_time
+def tissue_time(time_start, message, levels=0):
+    """
+    Utility function to measure and print execution time of Tissue operations.
+    Fixed for Blender 5.0 compatibility.
+    """
+    try:
+        tissue_addon = bpy.context.preferences.addons.get('tissue')
+        
+        # FIX: Blender 5.0 bpy_struct.keys() incompatibility.
+        # Instead of checking keys(), we safely check the attribute directly.
+        if tissue_addon and getattr(tissue_addon.preferences, 'print_stats', False):
+            if time_start:
+                print("Tissue: " + "    " * levels + message + " finished in {:.4f} sec".format(time.time() - time_start))
+            else:
+                print("Tissue: " + "    " * levels + message)
+    except Exception as e:
+        # Fallback logging in case of unexpected API errors
+        print(f"Tissue Error in timer: {e}")
+        
+    return time.time()
 
 
 # ------------------------------------------------------------------
