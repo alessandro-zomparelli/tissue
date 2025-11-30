@@ -61,7 +61,22 @@ class uv_to_mesh(Operator):
             area += face.area
             uv_face = []
             store = False
-            if len(me0.uv_layers) > 0:
+            # Try corner attributes (Geometry Nodes) first, fall back to legacy UV layers
+            loop_uvs = get_corner_attribute_vectors(me0, attr_name=None, use_evaluated=False, prefer_attributes=True)
+            if loop_uvs is not None:
+                verts = []
+                for loop in face.loop_indices:
+                    uv = loop_uvs[loop]
+                    ux = uv[0] if len(uv) > 0 else 0.0
+                    uy = uv[1] if len(uv) > 1 else 0.0
+                    if ux != 0 and uy != 0:
+                        store = True
+                    new_vert = bm.verts.new((ux, uy, 0))
+                    verts.append(new_vert)
+                if store:
+                    new_face = bm.faces.new(verts)
+                    new_face.material_index = face.material_index
+            elif len(me0.uv_layers) > 0:
                 verts = []
                 for loop in face.loop_indices:
                     uv = me0.uv_layers.active.data[loop].uv
@@ -73,7 +88,7 @@ class uv_to_mesh(Operator):
                     new_face = bm.faces.new(verts)
                     new_face.material_index = face.material_index
             else:
-                self.report({'ERROR'}, "Missing UV Map")
+                self.report({'ERROR'}, "Missing UV Map or corner attribute")
                 return {'CANCELLED'}
 
         name = name0 + '_UV'

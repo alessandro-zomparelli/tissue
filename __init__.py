@@ -15,11 +15,19 @@
 #                                                                              #
 # ############################################################################ #
 
-bl_info = {
+# Load add-on metadata from manifest.json to be compatible with Blender Extensions.
+# Falls back to an embedded bl_info if manifest is missing or unreadable.
+import os
+
+_pkg_dir = os.path.dirname(__file__)
+_toml_path = os.path.join(_pkg_dir, 'blender_manifest.toml')
+
+# fallback bl_info used if no manifest is readable
+_bl_info_fallback = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli",
-    "version": (0, 3, 72),
-    "blender": (4, 2, 1),
+    "version": (0, 3, 73),
+    "blender": (5, 0, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
@@ -27,6 +35,53 @@ bl_info = {
     "tracker_url": "https://github.com/alessandro-zomparelli/tissue/issues",
     "category": "Mesh",
 }
+
+# Try to load the Blender Extensions TOML manifest. Prefer stdlib tomllib (Py3.11+),
+# fall back to tomli if present. If neither is available or parsing fails, use the
+# embedded fallback so the add-on stays importable.
+bl_info = None
+try:
+    if os.path.exists(_toml_path):
+        _data = None
+        try:
+            try:
+                import tomllib as _toml_loader
+            except Exception:
+                import tomli as _toml_loader
+            with open(_toml_path, 'rb') as _tf:
+                _data = _toml_loader.load(_tf)
+        except Exception:
+            _data = None
+
+        # The TOML may include a top-level bl_info table or be a flat manifest.
+        if isinstance(_data, dict) and 'bl_info' in _data:
+            bl_info = _data['bl_info']
+        elif isinstance(_data, dict) and _data:
+            # If manifest follows the Extensions schema, convert expected keys.
+            bl_info = {}
+            if 'name' in _data: bl_info['name'] = _data.get('name')
+            if 'author' in _data: bl_info['author'] = _data.get('maintainer') or _data.get('author')
+            # version from manifest is a string; convert to tuple of ints if possible
+            try:
+                if 'version' in _data:
+                    ver = tuple(int(p) for p in str(_data.get('version')).split('.'))
+                    bl_info['version'] = ver
+            except Exception:
+                pass
+            if 'blender_version_min' in _data:
+                try:
+                    bl_ver = tuple(int(p) for p in str(_data.get('blender_version_min')).split('.'))
+                    bl_info['blender'] = bl_ver
+                except Exception:
+                    pass
+            bl_info.setdefault('description', _data.get('tagline') or _data.get('description'))
+            bl_info.setdefault('category', _data.get('category', 'Mesh'))
+    # If we failed to load TOML, fall back to the embedded info
+except Exception:
+    bl_info = None
+
+if not isinstance(bl_info, dict):
+    bl_info = _bl_info_fallback
 
 
 if "bpy" in locals():

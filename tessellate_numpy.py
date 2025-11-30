@@ -104,7 +104,6 @@ def tessellate_patch(props):
     smooth_normals_uv = props['smooth_normals_uv']
     vertex_group_smooth_normals = props['vertex_group_smooth_normals']
     invert_vertex_group_smooth_normals = props['invert_vertex_group_smooth_normals']
-    #bool_multi_components = props['bool_multi_components']
     component_mode = props['component_mode']
     coll_rand_seed = props['coll_rand_seed']
     consistent_wedges = props['consistent_wedges']
@@ -508,40 +507,21 @@ def tessellate_patch(props):
         # UV rotation
         UV_shift = 0
         if rotation_mode == 'UV' and ob0.type == 'MESH':
-            bm = bmesh.new()
-            bm.from_mesh(before_subsurf)
-            uv_lay = bm.loops.layers.uv.active
-            UV_shift = [0]*len(mask)
-            for f in bm.faces:
-                ll = f.loops
-                if len(ll) == 4:
-                    uv0 = ll[0][uv_lay].uv
-                    uv1 = ll[3][uv_lay].uv
-                    uv2 = ll[2][uv_lay].uv
-                    uv3 = ll[1][uv_lay].uv
+            # If generator modifiers are not applied we read the legacy UV layers
+            # from the mesh (before_subsurf). If modifiers are applied (gen_modifiers=True)
+            # prefer reading corner attributes (Geometry Nodes can write CORNER float2)
+            # and fall back to legacy UV layers.
+            if 'gen_modifiers' in locals() and not gen_modifiers:
+                uv_shifts = get_uv_rotation_shifts(before_subsurf, uv_name=None, use_evaluated=False, prefer_attributes=False)
+            else:
+                # pass the original generator object so evaluated depsgraph includes modifiers/Geometry Nodes
+                try:
+                    uv_shifts = get_uv_rotation_shifts(_ob0, uv_name=None, use_evaluated=True, prefer_attributes=True)
+                except Exception:
+                    # fallback to mesh UV layer if anything goes wrong
+                    uv_shifts = get_uv_rotation_shifts(before_subsurf, uv_name=None, use_evaluated=False, prefer_attributes=False)
 
-                    v01 = (uv0 + uv1)   # not necessary to divide by 2
-                    v32 = (uv3 + uv2)
-                    v0132 = v32 - v01   # axis vector 1
-                    v0132.normalize()   # based on the rotation not on the size
-                    v12 = (uv1 + uv2)
-                    v03 = (uv0 + uv3)
-                    v1203 = v03 - v12   # axis vector 2
-                    v1203.normalize()   # based on the rotation not on the size
-
-                    dot1203 = v1203.x
-                    dot0132 = v0132.x
-                    if(abs(dot1203) < abs(dot0132)):    # already vertical
-                        if (dot0132 > 0): shift = 0
-                        else: shift = 2                 # rotate 180°
-                    else:                               # horizontal
-                        if(dot1203 < 0): shift = 3
-                        else: shift = 1
-                    #UV_shift.append(shift)
-                    UV_shift[f.index] = shift
-
-            UV_shift = np.array(UV_shift)[mask]
-            bm.free()
+            UV_shift = np.array(uv_shifts)[mask]
 
         # Rotate Patch
         rotation_shift = np.zeros((n_patches))+rotation_shift
@@ -615,11 +595,20 @@ def tessellate_patch(props):
         ob1, com_area = tessellate_prepare_component(ob1, props)
         ob1.name = "_tissue_tmp_ob1"
 
+        # (Seam attribute handling removed: component mesh is left as produced by
+        # convert_object_to_mesh/tessellate_prepare_component. Any previous edits
+        # that attempted to read/write EDGE-domain attributes have been reverted.)
         # restore original modifiers visibility for component object
-        try:
+        # only attempt restore if we actually stored visibility earlier
+        if 'mod_visibility' in locals() and mod_visibility:
             for m, vis in zip(_ob1.modifiers, mod_visibility):
-                m.show_viewport = vis
-        except: pass
+                try:
+                    m.show_viewport = vis
+                except Exception as e:
+                    # don't raise here; log traceback to help debugging unexpected errors
+                    import traceback
+                    print("tissue: error restoring modifier visibility:", e)
+                    traceback.print_exc()
 
         me1 = ob1.data
         verts1 = [v.co for v in me1.vertices]
@@ -810,25 +799,28 @@ def tessellate_patch(props):
                 indexes, counts = np.unique(vertex_indexes,return_counts=True)
                 verts0_normal[indexes] /= counts[:,np.newaxis]
 
-            if 'Eval_Normals' in me1.uv_layers.keys():
-                bm1 = bmesh.new()
-                bm1.from_mesh(me1)
-                uv_co = np.array(uv_from_bmesh(bm1, 'Eval_Normals'))
-                vx_nor = uv_co[:,0]#.reshape((1,n_verts1,1))
-                #vy_nor = uv_co[:,1]#.reshape((1,n_verts1,1))
+            # Try to read an "Eval_Normals" corner attribute (Geometry Nodes)
+            # If present map loop/corner data back to per-vertex UV-like coords
+            uv_loops = get_corner_attribute_vectors(me1, attr_name='Eval_Normals', use_evaluated=False, prefer_attributes=True)
+            if uv_loops is not None:
+                # map loop-level UVs to a per-vertex array (similar to uv_from_bmesh behavior)
+                uv_vert = [ (0.0, 0.0) ] * n_verts1
+                for li, uv in enumerate(uv_loops):
+                    try:
+                        vi = me1.loops[li].vertex_index
+                        uv_vert[vi] = uv
+                    except Exception:
+                        pass
+                uv_co = np.array(uv_vert)
+                vx_nor = uv_co[:,0]
 
                 # grid coordinates
                 np_u = np.clip(vx_nor//step, 0, sides).astype('int')
-                #np_v = np.maximum(vy_nor//step, 0).astype('int')
                 np_u1 = np.clip(np_u+1, 0, sides).astype('int')
-                #np_v1 = np.minimum(np_v+1, sides).astype('int')
 
                 vx_nor = (vx_nor - np_u * step)/step
-                #vy_nor = (vy_nor - np_v * step)/step
                 vx_nor = vx_nor.reshape((1,n_verts1,1))
-                #vy_nor = vy_nor.reshape((1,n_verts1,1))
                 vy_nor = vy
-                bm1.free()
             else:
                 vx_nor = vx
                 vy_nor = vy
@@ -956,6 +948,8 @@ def tessellate_patch(props):
             tissue_time(tt_sk, "Compute ShapeKeys", levels=3)
 
         tt = tissue_time(tt, "Compute Coordinates", levels=2)
+
+        # (No direct seam assignment here — leave component edges as-is.)
 
         new_me = array_mesh(ob1, len(masked_verts))
         tt = tissue_time(tt, "Repeat component", levels=2)
@@ -1726,11 +1720,14 @@ class tissue_tessellate(Operator):
                     icon='ERROR')
                 uv_error = True
             else:
-                if len(ob0.data.uv_layers) == 0:
+                me_check = ob0.data
+                has_uv = len(me_check.uv_layers) > 0
+                has_corner_attr = any(a.domain == 'CORNER' and a.data_type in ('FLOAT_VECTOR', 'FLOAT2', 'FLOAT', 'FLOAT3') for a in me_check.attributes)
+                if not (has_uv or has_corner_attr):
                     row = col.row(align=True)
                     check_name = self.generator
                     row.label(text="'" + check_name +
-                              "' doesn't have UV Maps", icon='ERROR')
+                              "' doesn't have UV Maps or corner attributes", icon='ERROR')
                     uv_error = True
             if uv_error:
                 row = col.row(align=True)
@@ -2181,7 +2178,11 @@ class tissue_update_tessellate(Operator):
                     try:
                         bpy.data.objects.remove(iter_objects[0])
                         iter_objects = []
-                    except: continue
+                    except Exception as e:
+                        import traceback
+                        print("tissue: error removing iter_objects[0]:", e)
+                        traceback.print_exc()
+                        continue
                 continue
 
             # Clean last iteration, needed for combine object
@@ -2765,10 +2766,13 @@ class TISSUE_PT_tessellate_rotation(Panel):
                     icon='ERROR')
                 uv_error = True
             else:
-                if len(props.generator.data.uv_layers) == 0:
+                me_check = props.generator.data
+                has_uv = len(me_check.uv_layers) > 0
+                has_corner_attr = any(a.domain == 'CORNER' and a.data_type in ('FLOAT_VECTOR', 'FLOAT2', 'FLOAT', 'FLOAT3') for a in me_check.attributes)
+                if not (has_uv or has_corner_attr):
                     row = col.row(align=True)
                     row.label(text="'" + props.generator.name +
-                              " doesn't have UV Maps", icon='ERROR')
+                              " doesn't have UV Maps or corner attributes", icon='ERROR')
                     uv_error = True
             if uv_error:
                 row = col.row(align=True)
@@ -3785,8 +3789,15 @@ def merge_components(ob, props, use_bmesh):
         bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=props.merge_thres)
 
         if props.bool_dissolve_seams:
-            seam_edges = [e for e in bm.edges if e.seam]
-            bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
+            try:
+                # Default behavior: dissolve edges marked as seam on the bmesh
+                seam_edges = [e for e in bm.edges if e.seam]
+                if seam_edges:
+                    bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
+            except Exception as e:
+                import traceback
+                print("tissue: error dissolving seams:", e)
+                traceback.print_exc()
         if props.close_mesh != 'NONE':
             bm.edges.ensure_lookup_table()
             # set crease

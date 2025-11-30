@@ -1,0 +1,18 @@
+schema_version = "1.0.0"
+
+id = "tissue"
+version = "0.3.73"
+name = "Tissue"
+tagline = "Tools for Computational Design"
+maintainer = "Alessandro Zomparelli"
+type = "add-on"
+
+blender_version_min = "5.0.0"
+
+license = [
+	"SPDX:GPL-2.0-or-later",
+]
+
+website = "{BLENDER_MANUAL_URL}/addons/mesh/tissue.html"
+tracker_url = "https://github.com/alessandro-zomparelli/tissue/issues"
+category = "Mesh"

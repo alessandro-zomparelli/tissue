@@ -504,6 +504,89 @@ def get_mesh_before_subs(ob):
     for m, vis in zip(hide_mods,mods_visibility): m.show_viewport = vis
     return me, subs
 
+
+def get_edge_seam_flags(obj_or_mesh, attr_name=None, use_evaluated=True, prefer_attributes=True):
+    """
+    Return a numpy boolean array indicating seam flags per edge.
+    - obj_or_mesh: either a Mesh datablock or an Object.
+    - attr_name: optional attribute name to prefer.
+    - use_evaluated: when given an Object, whether to read an evaluated mesh (to pick up Geometry Nodes output).
+    - prefer_attributes: if True, try EDGE-domain attributes first and fall back to legacy edge.use_seam.
+    """
+    import bpy
+    import numpy as np
+
+    created_eval = False
+    ob_eval = None
+    me = None
+    try:
+        if isinstance(obj_or_mesh, bpy.types.Mesh):
+            me = obj_or_mesh
+        else:
+            ob = obj_or_mesh
+            if use_evaluated:
+                dg = bpy.context.evaluated_depsgraph_get()
+                ob_eval = ob.evaluated_get(dg)
+                me = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=dg)
+                created_eval = True
+            else:
+                me = ob.data
+    except Exception:
+        return None
+
+    # Try EDGE-domain attributes first
+    if prefer_attributes and hasattr(me, "attributes"):
+        try:
+            for a in me.attributes:
+                if a.domain != 'EDGE':
+                    continue
+                if attr_name and a.name != attr_name:
+                    continue
+                # read attribute data
+                try:
+                    ad = me.attributes[a.name].data
+                except Exception:
+                    continue
+                flags = []
+                for item in ad:
+                    try:
+                        v = getattr(item, 'boolean', None)
+                        if v is None:
+                            v = getattr(item, 'int', None)
+                        if v is None:
+                            v = getattr(item, 'value', None)
+                        if v is None:
+                            try:
+                                v = item[0]
+                            except Exception:
+                                v = 0
+                        flags.append(bool(v))
+                    except Exception:
+                        flags.append(False)
+                flags = np.array(flags, dtype=bool)
+                if created_eval:
+                    try:
+                        ob_eval.to_mesh_clear()
+                    except Exception:
+                        pass
+                return flags
+        except Exception:
+            # Fall through to legacy seam read
+            pass
+
+    # Fallback to legacy edge.use_seam
+    try:
+        flags = np.array([e.use_seam for e in me.edges], dtype=bool)
+    except Exception:
+        flags = None
+
+    if created_eval:
+        try:
+            ob_eval.to_mesh_clear()
+        except Exception:
+            pass
+    return flags
+
 # ------------------------------------------------------------------
 # MESH FUNCTIONS
 # ------------------------------------------------------------------
@@ -1568,16 +1651,224 @@ def uv_from_bmesh(bm, uv_index=None):
             uv_co[vert.index] = loop[uv_lay].uv
     return uv_co
 
+
+def get_corner_attribute_vectors(obj_or_mesh, attr_name=None, use_evaluated=True, prefer_attributes=True):
+    """
+    Return a list of 2D/3D tuples for each loop (corner) in the mesh.
+
+    - obj_or_mesh: mesh datablock or object
+    - attr_name: optional attribute/uv name
+    - use_evaluated: when passing an Object, whether to use evaluated mesh (with modifiers)
+    - prefer_attributes: if True, try mesh.attributes (CORNER) first, then uv_layers
+
+    Returns: list of tuples (one per loop) or None if nothing found.
+    """
+    import bpy
+    created_eval = False
+    me = None
+    ob_eval = None
+    if isinstance(obj_or_mesh, bpy.types.Mesh):
+        me = obj_or_mesh
+    else:
+        ob = obj_or_mesh
+        if use_evaluated:
+            dg = bpy.context.evaluated_depsgraph_get()
+            ob_eval = ob.evaluated_get(dg)
+            me = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=dg)
+            created_eval = True
+        else:
+            me = ob.data
+
+    # Try attributes first (Geometry Nodes often writes CORNER float2)
+    if prefer_attributes:
+        for a in me.attributes:
+            if a.domain == 'CORNER' and a.data_type in ('FLOAT_VECTOR', 'FLOAT2', 'FLOAT3', 'FLOAT'):
+                if attr_name is None or a.name == attr_name:
+                    ad = me.attributes[a.name].data
+                    out = []
+                    for item in ad:
+                        try:
+                            vec = item.vector
+                            if len(vec) >= 3:
+                                out.append((vec[0], vec[1], vec[2]))
+                            else:
+                                out.append((vec[0], vec[1]))
+                        except Exception:
+                            # fallback sequence-like access
+                            try:
+                                if len(item) >= 3:
+                                    out.append((item[0], item[1], item[2]))
+                                else:
+                                    out.append((item[0], item[1]))
+                            except Exception:
+                                out.append((0.0, 0.0))
+                    if created_eval:
+                        try: ob_eval.to_mesh_clear()
+                        except: pass
+                    return out
+
+    # Fallback to legacy UV layers (loop/corner domain)
+    if len(me.uv_layers) > 0:
+        if attr_name is not None and attr_name in me.uv_layers.keys():
+            layer = me.uv_layers[attr_name].data
+        else:
+            layer = me.uv_layers.active.data
+        out = [tuple(l.uv) for l in layer]
+        if created_eval:
+            try: ob_eval.to_mesh_clear()
+            except: pass
+        return out
+
+    if created_eval:
+        try: ob_eval.to_mesh_clear()
+        except: pass
+    return None
+
+
+def get_uv_rotation_shifts(obj_or_mesh, uv_name=None, use_evaluated=True, prefer_attributes=True):
+    """
+    Return an integer numpy array with rotation shift (0..3) per polygon
+    derived from UVs. Works with both legacy UV layers and Geometry Nodes
+    corner attributes (CORNER domain, float2/float_vector).
+
+    Parameters:
+    - obj_or_mesh: bpy.types.Object or bpy.types.Mesh
+    - uv_name: optional attribute/uv name to look for
+    - use_evaluated: when passing an Object, whether to use evaluated mesh (with modifiers)
+    - prefer_attributes: when True, check mesh.attributes (corner domain) first,
+                         otherwise use uv_layers directly.
+    """
+    import bpy
+    from mathutils import Vector
+
+    created_eval = False
+    me = None
+    # If a Mesh datablock was provided, use it directly
+    if isinstance(obj_or_mesh, bpy.types.Mesh):
+        me = obj_or_mesh
+    else:
+        ob = obj_or_mesh
+        if use_evaluated:
+            dg = bpy.context.evaluated_depsgraph_get()
+            ob_eval = ob.evaluated_get(dg)
+            me = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=dg)
+            created_eval = True
+        else:
+            me = ob.data
+
+    n_polys = len(me.polygons)
+    shifts = np.zeros(n_polys, dtype=np.int32)
+
+    def compute_shift(uv0, uv1, uv2, uv3):
+        # logic mirrors original tessellate code order
+        v01 = (uv0 + uv1)
+        v32 = (uv3 + uv2)
+        v0132 = (v32 - v01)
+        if v0132.length != 0:
+            v0132.normalize()
+
+        v12 = (uv1 + uv2)
+        v03 = (uv0 + uv3)
+        v1203 = (v03 - v12)
+        if v1203.length != 0:
+            v1203.normalize()
+
+        dot1203 = v1203.x
+        dot0132 = v0132.x
+        if abs(dot1203) < abs(dot0132):
+            shift = 0 if (dot0132 > 0) else 2
+        else:
+            shift = 3 if (dot1203 < 0) else 1
+        return shift
+
+    # Option A: prefer attributes (Geometry Nodes may write corner attributes)
+    if prefer_attributes:
+        corner_attr = None
+        for a in me.attributes:
+            # attribute API may vary: look for corner domain and float vector/float2
+            if a.domain == 'CORNER' and a.data_type in ('FLOAT_VECTOR', 'FLOAT', 'FLOAT2'):
+                if uv_name is None or a.name == uv_name:
+                    corner_attr = a.name
+                    break
+
+        if corner_attr:
+            ad = me.attributes[corner_attr].data
+            for poly in me.polygons:
+                if poly.loop_total < 2:
+                    continue
+                ls = poly.loop_start
+                try:
+                    uv0 = Vector(ad[ls + 0].vector[:2])
+                    uv1 = Vector(ad[ls + 3].vector[:2])
+                    uv2 = Vector(ad[ls + 2].vector[:2])
+                    uv3 = Vector(ad[ls + 1].vector[:2])
+                except Exception:
+                    # fallback if attribute exposes sequence-like values
+                    v0 = ad[ls + 0]
+                    uv0 = Vector((v0[0], v0[1]))
+                    v1 = ad[ls + 3]
+                    uv1 = Vector((v1[0], v1[1]))
+                    v2 = ad[ls + 2]
+                    uv2 = Vector((v2[0], v2[1]))
+                    v3 = ad[ls + 1]
+                    uv3 = Vector((v3[0], v3[1]))
+                shifts[poly.index] = compute_shift(uv0, uv1, uv2, uv3)
+
+            if created_eval:
+                try: ob_eval.to_mesh_clear()
+                except: pass
+            return shifts
+
+    # Option B: fall back to legacy UV layers
+    if len(me.uv_layers) > 0:
+        uv_layer = me.uv_layers.active.data
+        for poly in me.polygons:
+            if poly.loop_total < 2:
+                continue
+            ls = poly.loop_start
+            uv0 = Vector(uv_layer[ls + 0].uv)
+            # follow same order used historically by tessellate
+            uv1 = Vector(uv_layer[ls + 3].uv)
+            uv2 = Vector(uv_layer[ls + 2].uv)
+            uv3 = Vector(uv_layer[ls + 1].uv)
+            shifts[poly.index] = compute_shift(uv0, uv1, uv2, uv3)
+
+        if created_eval:
+            try: ob_eval.to_mesh_clear()
+            except: pass
+        return shifts
+
+    # nothing found: clear evaluated mesh if created and return zeros
+    if created_eval:
+        try: ob_eval.to_mesh_clear()
+        except: pass
+    return shifts
+
 def get_uv_edge_vectors(me, uv_map = 0, only_positive=False):
+    # Try to get per-loop UVs from corner attributes first, fallback to uv_layers
+    loop_uvs = get_corner_attribute_vectors(me, attr_name=None, use_evaluated=False, prefer_attributes=True)
+    use_corner = loop_uvs is not None
+
     count = 0
     uv_vectors = {}
     for i, f in enumerate(me.polygons):
         f_verts = len(f.vertices)
         for j0 in range(f_verts):
             j1 = (j0+1)%f_verts
-            uv0 = me.uv_layers[uv_map].data[count+j0].uv
-            uv1 = me.uv_layers[uv_map].data[count+j1].uv
-            delta_uv = (uv1-uv0).normalized()
+            if use_corner:
+                uv0 = Vector(loop_uvs[count + j0])
+                uv1 = Vector(loop_uvs[count + j1])
+            else:
+                # legacy uv layer access
+                uv0 = me.uv_layers[uv_map].data[count + j0].uv
+                uv1 = me.uv_layers[uv_map].data[count + j1].uv
+
+            delta_uv = (uv1 - uv0)
+            try:
+                delta_uv = delta_uv.normalized()
+            except Exception:
+                # zero-length -> leave as zero vector
+                pass
             if only_positive:
                 delta_uv.x = abs(delta_uv.x)
                 delta_uv.y = abs(delta_uv.y)
@@ -1600,21 +1891,32 @@ def mesh_diffusion(me, values, iter, diff=0.2, uv_dir=0):
     uv_factor = {}
     uv_ang = (0.5 + uv_dir*0.5)*pi/2
     uv_vec = Vector((cos(uv_ang), sin(uv_ang)))
+    # Try to get per-loop UVs from corner attributes first
+    loop_uvs = get_corner_attribute_vectors(me, attr_name=None, use_evaluated=False, prefer_attributes=True)
+    use_corner = loop_uvs is not None
+
     for i, f in enumerate(me.polygons):
         f_verts = len(f.vertices)
         for j0 in range(f_verts):
             j1 = (j0+1)%f_verts
             if uv_dir != 0:
-                uv0 = me.uv_layers[0].data[count+j0].uv
-                uv1 = me.uv_layers[0].data[count+j1].uv
-                delta_uv = (uv1-uv0).normalized()
+                if use_corner:
+                    uv0 = Vector(loop_uvs[count + j0])
+                    uv1 = Vector(loop_uvs[count + j1])
+                    delta_uv = (uv1 - uv0)
+                    try: delta_uv = delta_uv.normalized()
+                    except: pass
+                else:
+                    uv0 = me.uv_layers[0].data[count+j0].uv
+                    uv1 = me.uv_layers[0].data[count+j1].uv
+                    delta_uv = (uv1 - uv0)
+                    try: delta_uv = delta_uv.normalized()
+                    except: pass
                 delta_uv.x = abs(delta_uv.x)
                 delta_uv.y = abs(delta_uv.y)
                 dir = uv_vec.dot(delta_uv)
             else:
                 dir = 1
-            #dir = abs(dir)
-            #uv_factor.append(dir)
             edge_key = [f.vertices[j0], f.vertices[j1]]
             edge_key.sort()
             uv_factor[tuple(edge_key)] = dir
