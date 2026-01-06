@@ -13,6 +13,5 @@ license = [
 	"SPDX:GPL-2.0-or-later",
 ]
 
-website = "{BLENDER_MANUAL_URL}/addons/mesh/tissue.html"
+website = "https://docs.blender.org/manual/en/4.1/addons/mesh/tissue.html"
 tracker_url = "https://github.com/alessandro-zomparelli/tissue/issues"
-category = "Mesh"

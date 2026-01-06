@@ -107,6 +107,11 @@ class weight_formula_wiki(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        # Check online access permission (Blender 5+ requirement)
+        if not bpy.app.online_access:
+            self.report({'ERROR'}, 'Online access is disabled. Please enable it in Preferences > Extensions')
+            return {'CANCELLED'}
+        
         bpy.ops.wm.url_open(url="https://github.com/alessandro-zomparelli/tissue/wiki/Weight-Tools#weight-formula")
         return {'FINISHED'}
 

@@ -76,12 +76,46 @@ try:
                     pass
             bl_info.setdefault('description', _data.get('tagline') or _data.get('description'))
             bl_info.setdefault('category', _data.get('category', 'Mesh'))
+            # Handle website/doc_url - resolve BLENDER_MANUAL_URL placeholder if present
+            if 'website' in _data:
+                website = _data.get('website')
+                # Note: BLENDER_MANUAL_URL will be resolved later when bpy is available
+                # For now, use a fallback URL
+                if '{BLENDER_MANUAL_URL}' in website:
+                    website = website.replace('{BLENDER_MANUAL_URL}', 'https://docs.blender.org/manual/en/latest')
+                bl_info['doc_url'] = website
+            # Handle tracker_url
+            if 'tracker_url' in _data:
+                bl_info['tracker_url'] = _data.get('tracker_url')
     # If we failed to load TOML, fall back to the embedded info
 except Exception:
     bl_info = None
 
 if not isinstance(bl_info, dict):
     bl_info = _bl_info_fallback
+
+# Store resolved URLs for use by operators
+_tissue_doc_url = None
+_tissue_tracker_url = None
+
+# Resolve doc_url if it contains BLENDER_MANUAL_URL placeholder
+if isinstance(bl_info, dict) and 'doc_url' in bl_info:
+    _tissue_doc_url = bl_info['doc_url']
+    if '{BLENDER_MANUAL_URL}' in _tissue_doc_url:
+        # Will be resolved when bpy is available
+        _tissue_doc_url = _tissue_doc_url.replace('{BLENDER_MANUAL_URL}', 'https://docs.blender.org/manual/en/latest')
+elif isinstance(bl_info, dict) and 'website' in bl_info:
+    _tissue_doc_url = bl_info['website']
+    if '{BLENDER_MANUAL_URL}' in _tissue_doc_url:
+        _tissue_doc_url = _tissue_doc_url.replace('{BLENDER_MANUAL_URL}', 'https://docs.blender.org/manual/en/latest')
+else:
+    _tissue_doc_url = "https://www.co-de-it.com/code/blender-tissue"
+
+# Get tracker_url
+if isinstance(bl_info, dict) and 'tracker_url' in bl_info:
+    _tissue_tracker_url = bl_info['tracker_url']
+else:
+    _tissue_tracker_url = "https://github.com/alessandro-zomparelli/tissue/issues"
 
 
 if "bpy" in locals():
@@ -124,6 +158,8 @@ from bpy.props import PointerProperty, CollectionProperty, BoolProperty
 classes = (
     config.tissuePreferences,
     config.tissue_install_numba,
+    config.TISSUE_OT_open_website,
+    config.TISSUE_OT_open_issues,
 
     tissue_properties.tissue_prop,
     tissue_properties.tissue_tessellate_prop,
