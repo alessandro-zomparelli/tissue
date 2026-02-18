@@ -262,6 +262,7 @@ def tessellate_patch(props):
                         if sgn == -1: verts0_normal_neg = verts0_normal * mult
 
     if normals_mode in ('VERTS','FACES'):
+        me0.update()  # ensure vertex normals are current (Blender 5.0+)
         verts0_normal = get_normals_numpy(me0)
 
     levels = 0
@@ -595,20 +596,11 @@ def tessellate_patch(props):
         ob1, com_area = tessellate_prepare_component(ob1, props)
         ob1.name = "_tissue_tmp_ob1"
 
-        # (Seam attribute handling removed: component mesh is left as produced by
-        # convert_object_to_mesh/tessellate_prepare_component. Any previous edits
-        # that attempted to read/write EDGE-domain attributes have been reverted.)
         # restore original modifiers visibility for component object
-        # only attempt restore if we actually stored visibility earlier
-        if 'mod_visibility' in locals() and mod_visibility:
+        try:
             for m, vis in zip(_ob1.modifiers, mod_visibility):
-                try:
-                    m.show_viewport = vis
-                except Exception as e:
-                    # don't raise here; log traceback to help debugging unexpected errors
-                    import traceback
-                    print("tissue: error restoring modifier visibility:", e)
-                    traceback.print_exc()
+                m.show_viewport = vis
+        except: pass
 
         me1 = ob1.data
         verts1 = [v.co for v in me1.vertices]
@@ -787,10 +779,18 @@ def tessellate_patch(props):
             n2 = n2[masked_faces][:,None,:]
         else:
             if normals_mode == 'CUSTOM':
-                me0.calc_normals_split()
-                normals_split = [0]*len(me0.loops)*3
+                # Read split (corner) normals – compatible with Blender 5.0+
+                normals_split = [0.0]*len(me0.loops)*3
                 vertex_indexes = [0]*len(me0.loops)
-                me0.loops.foreach_get('normal', normals_split)
+                try:
+                    # Blender 4.0+: corner_normals replaces calc_normals_split()
+                    me0.corner_normals.foreach_get('vector', normals_split)
+                except Exception:
+                    try:
+                        me0.calc_normals_split()
+                    except Exception:
+                        pass
+                    me0.loops.foreach_get('normal', normals_split)
                 me0.loops.foreach_get('vertex_index', vertex_indexes)
                 normals_split = np.array(normals_split).reshape(-1,3)
                 vertex_indexes = np.array(vertex_indexes)
@@ -948,8 +948,6 @@ def tessellate_patch(props):
             tissue_time(tt_sk, "Compute ShapeKeys", levels=3)
 
         tt = tissue_time(tt, "Compute Coordinates", levels=2)
-
-        # (No direct seam assignment here — leave component edges as-is.)
 
         new_me = array_mesh(ob1, len(masked_verts))
         tt = tissue_time(tt, "Repeat component", levels=2)
@@ -2178,11 +2176,7 @@ class tissue_update_tessellate(Operator):
                     try:
                         bpy.data.objects.remove(iter_objects[0])
                         iter_objects = []
-                    except Exception as e:
-                        import traceback
-                        print("tissue: error removing iter_objects[0]:", e)
-                        traceback.print_exc()
-                        continue
+                    except: continue
                 continue
 
             # Clean last iteration, needed for combine object
@@ -3789,15 +3783,8 @@ def merge_components(ob, props, use_bmesh):
         bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=props.merge_thres)
 
         if props.bool_dissolve_seams:
-            try:
-                # Default behavior: dissolve edges marked as seam on the bmesh
-                seam_edges = [e for e in bm.edges if e.seam]
-                if seam_edges:
-                    bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
-            except Exception as e:
-                import traceback
-                print("tissue: error dissolving seams:", e)
-                traceback.print_exc()
+            seam_edges = [e for e in bm.edges if e.seam]
+            bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
         if props.close_mesh != 'NONE':
             bm.edges.ensure_lookup_table()
             # set crease
@@ -3854,6 +3841,8 @@ def merge_components(ob, props, use_bmesh):
                             f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
                 except: pass
         bm.to_mesh(ob.data)
+        bm.free()
+        ob.data.update()  # Blender 5.0: ensure normals are recalculated after merge
 
 class tissue_render_animation(Operator):
     bl_idname = "render.tissue_render_animation"

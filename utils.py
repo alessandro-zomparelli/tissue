@@ -16,34 +16,28 @@ from . import config
 
 def use_numba_tess():
     try:
-        tissue_addon = bpy.context.preferences.addons.get('tissue')
-        # FIX: Blender 5.0 compatibility: Use getattr instead of .keys()
-        if tissue_addon and getattr(tissue_addon.preferences, 'use_numba_tess', False):
-            return True
-        return False
+        tissue_addon = bpy.context.preferences.addons[__package__]
     except:
-        return False
+        return True
+    # FIX: Blender 5.0 – use getattr instead of .keys() for preferences access
+    return getattr(tissue_addon.preferences, 'use_numba_tess', True)
 
-def tissue_time(time_start, message, levels=0):
-    """
-    Utility function to measure and print execution time of Tissue operations.
-    Fixed for Blender 5.0 compatibility.
-    """
+def tissue_time(start_time, name, levels=0):
     try:
-        tissue_addon = bpy.context.preferences.addons.get('tissue')
-        
-        # FIX: Blender 5.0 bpy_struct.keys() incompatibility.
-        # Instead of checking keys(), we safely check the attribute directly.
-        if tissue_addon and getattr(tissue_addon.preferences, 'print_stats', False):
-            if time_start:
-                print("Tissue: " + "    " * levels + message + " finished in {:.4f} sec".format(time.time() - time_start))
-            else:
-                print("Tissue: " + "    " * levels + message)
-    except Exception as e:
-        # Fallback logging in case of unexpected API errors
-        print(f"Tissue Error in timer: {e}")
-        
-    return time.time()
+        tissue_addon = bpy.context.preferences.addons[__package__]
+    except:
+        tissue_addon = None
+    end_time = time.time()
+    # FIX: Blender 5.0 – use getattr instead of .keys() for preferences access
+    ps = getattr(tissue_addon.preferences, 'print_stats', 1) if tissue_addon else 1
+    if levels < ps:
+        if "Tissue: " in name: head = ""
+        else: head = "        "
+        if start_time:
+            print('{}{}{} in {:.4f} sec'.format(head, "|   "*levels, name, end_time - start_time))
+        else:
+            print('{}{}{}'.format(head, "|   "*levels, name))
+    return end_time
 
 
 # ------------------------------------------------------------------
@@ -374,7 +368,7 @@ def simple_to_mesh(ob, depsgraph=None):
         dg = depsgraph
     ob_eval = ob.evaluated_get(dg)
     me = bpy.data.meshes.new_from_object(ob_eval, preserve_all_data_layers=True, depsgraph=dg)
-    #me.calc_normals()
+    me.update()  # ensure normals are up-to-date (calc_normals removed in Blender 4.1+)
     return me
 
 def _join_objects(context, objects, link_to_scene=True, make_active=True):
@@ -503,89 +497,6 @@ def get_mesh_before_subs(ob):
     me = simple_to_mesh_mirror(ob)
     for m, vis in zip(hide_mods,mods_visibility): m.show_viewport = vis
     return me, subs
-
-
-def get_edge_seam_flags(obj_or_mesh, attr_name=None, use_evaluated=True, prefer_attributes=True):
-    """
-    Return a numpy boolean array indicating seam flags per edge.
-    - obj_or_mesh: either a Mesh datablock or an Object.
-    - attr_name: optional attribute name to prefer.
-    - use_evaluated: when given an Object, whether to read an evaluated mesh (to pick up Geometry Nodes output).
-    - prefer_attributes: if True, try EDGE-domain attributes first and fall back to legacy edge.use_seam.
-    """
-    import bpy
-    import numpy as np
-
-    created_eval = False
-    ob_eval = None
-    me = None
-    try:
-        if isinstance(obj_or_mesh, bpy.types.Mesh):
-            me = obj_or_mesh
-        else:
-            ob = obj_or_mesh
-            if use_evaluated:
-                dg = bpy.context.evaluated_depsgraph_get()
-                ob_eval = ob.evaluated_get(dg)
-                me = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=dg)
-                created_eval = True
-            else:
-                me = ob.data
-    except Exception:
-        return None
-
-    # Try EDGE-domain attributes first
-    if prefer_attributes and hasattr(me, "attributes"):
-        try:
-            for a in me.attributes:
-                if a.domain != 'EDGE':
-                    continue
-                if attr_name and a.name != attr_name:
-                    continue
-                # read attribute data
-                try:
-                    ad = me.attributes[a.name].data
-                except Exception:
-                    continue
-                flags = []
-                for item in ad:
-                    try:
-                        v = getattr(item, 'boolean', None)
-                        if v is None:
-                            v = getattr(item, 'int', None)
-                        if v is None:
-                            v = getattr(item, 'value', None)
-                        if v is None:
-                            try:
-                                v = item[0]
-                            except Exception:
-                                v = 0
-                        flags.append(bool(v))
-                    except Exception:
-                        flags.append(False)
-                flags = np.array(flags, dtype=bool)
-                if created_eval:
-                    try:
-                        ob_eval.to_mesh_clear()
-                    except Exception:
-                        pass
-                return flags
-        except Exception:
-            # Fall through to legacy seam read
-            pass
-
-    # Fallback to legacy edge.use_seam
-    try:
-        flags = np.array([e.use_seam for e in me.edges], dtype=bool)
-    except Exception:
-        flags = None
-
-    if created_eval:
-        try:
-            ob_eval.to_mesh_clear()
-        except Exception:
-            pass
-    return flags
 
 # ------------------------------------------------------------------
 # MESH FUNCTIONS
@@ -1078,11 +989,17 @@ def get_vertices_and_normals_numpy(mesh):
 
 def get_normals_numpy(mesh):
     '''
-    Create a numpy array with the normals of a given mesh
+    Create a numpy array with the normals of a given mesh.
+    Returns smooth vertex normals (averaged from adjacent face normals).
     '''
     n_verts = len(mesh.vertices)
-    normals = [0]*n_verts*3
-    mesh.vertices.foreach_get('normal', normals)
+    normals = [0.0]*n_verts*3
+    # Blender 5.0+: prefer mesh.vertex_normals which is always up-to-date
+    try:
+        mesh.vertex_normals.foreach_get('vector', normals)
+    except (AttributeError, RuntimeError):
+        # Fallback for older Blender or if vertex_normals not available
+        mesh.vertices.foreach_get('normal', normals)
     normals = np.array(normals).reshape((n_verts,3))
     return normals
 
@@ -1679,49 +1596,128 @@ def get_corner_attribute_vectors(obj_or_mesh, attr_name=None, use_evaluated=True
         else:
             me = ob.data
 
-    # Try attributes first (Geometry Nodes often writes CORNER float2)
-    if prefer_attributes:
-        for a in me.attributes:
-            if a.domain == 'CORNER' and a.data_type in ('FLOAT_VECTOR', 'FLOAT2', 'FLOAT3', 'FLOAT'):
-                if attr_name is None or a.name == attr_name:
-                    ad = me.attributes[a.name].data
-                    out = []
-                    for item in ad:
-                        try:
-                            vec = item.vector
-                            if len(vec) >= 3:
-                                out.append((vec[0], vec[1], vec[2]))
-                            else:
-                                out.append((vec[0], vec[1]))
-                        except Exception:
-                            # fallback sequence-like access
-                            try:
-                                if len(item) >= 3:
-                                    out.append((item[0], item[1], item[2]))
-                                else:
-                                    out.append((item[0], item[1]))
-                            except Exception:
-                                out.append((0.0, 0.0))
-                    if created_eval:
-                        try: ob_eval.to_mesh_clear()
-                        except: pass
-                    return out
-
-    # Fallback to legacy UV layers (loop/corner domain)
-    if len(me.uv_layers) > 0:
-        if attr_name is not None and attr_name in me.uv_layers.keys():
-            layer = me.uv_layers[attr_name].data
-        else:
-            layer = me.uv_layers.active.data
-        out = [tuple(l.uv) for l in layer]
+    def _cleanup():
         if created_eval:
             try: ob_eval.to_mesh_clear()
             except: pass
+
+    # Helper: read a single attribute data element into a tuple.
+    # Blender 5.0 changed how FLOAT2 / FLOAT_VECTOR attributes expose their
+    # values.  We try every known accessor in order of likelihood.
+    def _read_item(item, data_type):
+        # 1) .vector – works for FLOAT_VECTOR and FLOAT2 in many Blender builds
+        try:
+            vec = item.vector
+            if len(vec) >= 3:
+                return (vec[0], vec[1], vec[2])
+            return (vec[0], vec[1])
+        except Exception:
+            pass
+        # 2) .value – Blender 5.0 may expose FLOAT2 via .value
+        try:
+            val = item.value
+            # val could be a single float or a sequence
+            if hasattr(val, '__len__'):
+                if len(val) >= 3:
+                    return (val[0], val[1], val[2])
+                return (val[0], val[1])
+            # single float
+            return (val, 0.0)
+        except Exception:
+            pass
+        # 3) .color – just in case it got stored as a color attribute
+        try:
+            c = item.color
+            return (c[0], c[1])
+        except Exception:
+            pass
+        # 4) direct sequence / indexing
+        try:
+            if len(item) >= 3:
+                return (item[0], item[1], item[2])
+            return (item[0], item[1])
+        except Exception:
+            pass
+        # 5) Blender 5.0 FLOAT2: foreach_get based bulk read (handled at caller)
+        return None
+
+    # Accepted attribute data types for vector-like corner data
+    _VECTOR_TYPES = {'FLOAT_VECTOR', 'FLOAT2', 'FLOAT3'}
+
+    # Try attributes first (Geometry Nodes often writes CORNER float2)
+    # When attr_name is not specified, prefer the active UV layer name to avoid
+    # accidentally grabbing non-UV corner attributes (e.g. "Eval_Normals").
+    search_name = attr_name
+    if search_name is None and len(me.uv_layers) > 0 and me.uv_layers.active is not None:
+        search_name = me.uv_layers.active.name
+
+    if prefer_attributes:
+        for a in me.attributes:
+            if a.domain != 'CORNER':
+                continue
+            if a.data_type not in _VECTOR_TYPES:
+                continue
+            if search_name is not None and a.name != search_name:
+                continue
+
+            n_loops = len(me.loops)
+            ad = me.attributes[a.name].data
+
+            # --- Fast path: bulk read via foreach_get -----------------------
+            # Blender 5.0 FLOAT2 attributes support foreach_get('vector', ..)
+            out = None
+            if a.data_type in ('FLOAT2',):
+                try:
+                    buf = [0.0] * (n_loops * 2)
+                    ad.foreach_get('vector', buf)
+                    out = [(buf[i*2], buf[i*2+1]) for i in range(n_loops)]
+                except Exception:
+                    out = None
+            if out is None and a.data_type in ('FLOAT_VECTOR', 'FLOAT3'):
+                try:
+                    buf = [0.0] * (n_loops * 3)
+                    ad.foreach_get('vector', buf)
+                    out = [(buf[i*3], buf[i*3+1], buf[i*3+2]) for i in range(n_loops)]
+                except Exception:
+                    out = None
+
+            # --- Slow path: per-element read ---------------------------------
+            if out is None:
+                out = []
+                for item in ad:
+                    val = _read_item(item, a.data_type)
+                    if val is not None:
+                        out.append(val)
+                    else:
+                        out.append((0.0, 0.0))
+
+            if len(out) == n_loops:
+                _cleanup()
+                return out
+            # length mismatch – skip this attribute, try next
+            continue
+
+    # Fallback to legacy UV layers (loop/corner domain)
+    if len(me.uv_layers) > 0:
+        # FIX: Blender 5.0 bpy_struct.keys() incompatibility – avoid .keys()
+        uv_names = [layer.name for layer in me.uv_layers]
+        if attr_name is not None and attr_name in uv_names:
+            # The requested attribute was found as a UV layer – read it.
+            layer = me.uv_layers[attr_name].data
+        elif attr_name is not None:
+            # A specific attr_name was requested but does not exist at all.
+            # Do NOT fall back to an unrelated UV layer – the caller expects
+            # None when the exact attribute is missing (e.g. 'Eval_Normals').
+            _cleanup()
+            return None
+        else:
+            # No specific name requested – read the active UV layer.
+            layer = me.uv_layers.active.data
+        out = [tuple(l.uv) for l in layer]
+        _cleanup()
         return out
 
-    if created_eval:
-        try: ob_eval.to_mesh_clear()
-        except: pass
+    _cleanup()
     return None
 
 
@@ -1784,34 +1780,52 @@ def get_uv_rotation_shifts(obj_or_mesh, uv_name=None, use_evaluated=True, prefer
     # Option A: prefer attributes (Geometry Nodes may write corner attributes)
     if prefer_attributes:
         corner_attr = None
+        # When uv_name is not specified, prefer the active UV layer name to avoid
+        # accidentally grabbing non-UV corner attributes (e.g. "Eval_Normals").
+        search_name = uv_name
+        if search_name is None and len(me.uv_layers) > 0 and me.uv_layers.active is not None:
+            search_name = me.uv_layers.active.name
         for a in me.attributes:
             # attribute API may vary: look for corner domain and float vector/float2
-            if a.domain == 'CORNER' and a.data_type in ('FLOAT_VECTOR', 'FLOAT', 'FLOAT2'):
-                if uv_name is None or a.name == uv_name:
+            if a.domain == 'CORNER' and a.data_type in ('FLOAT_VECTOR', 'FLOAT2'):
+                if search_name is None or a.name == search_name:
                     corner_attr = a.name
                     break
 
         if corner_attr:
             ad = me.attributes[corner_attr].data
+
+            # Helper to read a 2D vector from a corner attribute element
+            def _read_uv(item):
+                # .vector – FLOAT_VECTOR / some FLOAT2 builds
+                try:
+                    v = item.vector
+                    return Vector((v[0], v[1]))
+                except Exception:
+                    pass
+                # .value – Blender 5.0 FLOAT2
+                try:
+                    v = item.value
+                    if hasattr(v, '__len__'):
+                        return Vector((v[0], v[1]))
+                    return Vector((v, 0.0))
+                except Exception:
+                    pass
+                # direct indexing
+                try:
+                    return Vector((item[0], item[1]))
+                except Exception:
+                    pass
+                return Vector((0.0, 0.0))
+
             for poly in me.polygons:
-                if poly.loop_total < 2:
+                if poly.loop_total < 4:
                     continue
                 ls = poly.loop_start
-                try:
-                    uv0 = Vector(ad[ls + 0].vector[:2])
-                    uv1 = Vector(ad[ls + 3].vector[:2])
-                    uv2 = Vector(ad[ls + 2].vector[:2])
-                    uv3 = Vector(ad[ls + 1].vector[:2])
-                except Exception:
-                    # fallback if attribute exposes sequence-like values
-                    v0 = ad[ls + 0]
-                    uv0 = Vector((v0[0], v0[1]))
-                    v1 = ad[ls + 3]
-                    uv1 = Vector((v1[0], v1[1]))
-                    v2 = ad[ls + 2]
-                    uv2 = Vector((v2[0], v2[1]))
-                    v3 = ad[ls + 1]
-                    uv3 = Vector((v3[0], v3[1]))
+                uv0 = _read_uv(ad[ls + 0])
+                uv1 = _read_uv(ad[ls + 3])
+                uv2 = _read_uv(ad[ls + 2])
+                uv3 = _read_uv(ad[ls + 1])
                 shifts[poly.index] = compute_shift(uv0, uv1, uv2, uv3)
 
             if created_eval:
@@ -1823,7 +1837,7 @@ def get_uv_rotation_shifts(obj_or_mesh, uv_name=None, use_evaluated=True, prefer
     if len(me.uv_layers) > 0:
         uv_layer = me.uv_layers.active.data
         for poly in me.polygons:
-            if poly.loop_total < 2:
+            if poly.loop_total < 4:
                 continue
             ls = poly.loop_start
             uv0 = Vector(uv_layer[ls + 0].uv)

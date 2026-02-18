@@ -26,7 +26,7 @@ _toml_path = os.path.join(_pkg_dir, 'blender_manifest.toml')
 _bl_info_fallback = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli",
-    "version": (0, 3, 73),
+    "version": (0, 3, 74),
     "blender": (5, 0, 0),
     "location": "",
     "description": "Tools for Computational Design",
