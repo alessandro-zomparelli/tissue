@@ -10,6 +10,7 @@ from statistics import mean, stdev
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 from numpy import *
+from builtins import min, max
 try: import numexpr as ne
 except: pass
 
@@ -38,7 +39,6 @@ class formula_prop(PropertyGroup):
     float_var : FloatVectorProperty(name="", description="", default=(0, 0, 0, 0, 0), size=5)
     int_var : IntVectorProperty(name="", description="", default=(0, 0, 0, 0, 0), size=5)
 
-from numpy import *
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
     verts = ob.data.vertices
     n_verts = len(verts)

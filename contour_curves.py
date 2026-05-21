@@ -8,6 +8,7 @@ import math, timeit, time
 from math import pi
 from mathutils import Vector
 from numpy import *
+from builtins import min, max
 
 from bpy.types import (
         Operator,
