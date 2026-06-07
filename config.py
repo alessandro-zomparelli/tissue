@@ -76,17 +76,41 @@ class tissue_install_numba(bpy.types.Operator):
         
         try:
             from .utils_pip import Pip
-            #Pip.upgrade_pip()
-            Pip.uninstall('llvmlite')
-            Pip.uninstall('numba')
-            Pip.install('llvmlite')
-            Pip.install('numba')
-            from numba import jit, njit, guvectorize, float64, int32, prange
-            bool_numba = True
+
+            def _try_install():
+                Pip.uninstall('llvmlite')
+                Pip.uninstall('numba')
+                res_llvm, status_llvm = Pip.install('llvmlite')
+                res_numba, status_numba = Pip.install('numba')
+                try:
+                    from numba import jit, njit, guvectorize, float64, int32, prange
+                    return True, ''
+                except Exception as import_err:
+                    # Surface the actual pip error rather than a generic message.
+                    return False, (status_numba or status_llvm or str(import_err))
+
+            ok, detail = _try_install()
+            if not ok:
+                # First attempt failed: Blender's bundled pip can ship a broken or
+                # mismatched vendored resolvelib that makes installs fail with
+                # obscure ImportErrors (e.g. cannot import 'RequirementInformation').
+                # Only now do we touch pip: upgrade it and retry once.
+                print('Tissue: Numba install failed (' + detail + '). Upgrading pip and retrying...')
+                Pip.upgrade_pip()
+                ok, detail = _try_install()
+
+            if not ok:
+                print('Tissue: Numba installation failed: ' + detail)
+                self.report({'ERROR'}, 'Numba installation failed: ' + detail)
+                return {'CANCELLED'}
+
             print('Tissue: Numba successfully installed!')
-            self.report({'INFO'}, 'Tissue: Numba successfully installed!')
-        except:
-            print('Tissue: Numba not loaded correctly. Try restarting Blender')
+            self.report({'INFO'}, 'Numba successfully installed! Please restart Blender.')
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, 'Numba not loaded correctly: ' + str(e))
+            return {'CANCELLED'}
         return {'FINISHED'}
 
 class TISSUE_OT_open_website(bpy.types.Operator):
