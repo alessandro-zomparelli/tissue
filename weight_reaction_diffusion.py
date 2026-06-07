@@ -10,6 +10,7 @@ from statistics import mean, stdev
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 from numpy import *
+from builtins import min, max
 try: from .numba_functions import numba_reaction_diffusion, numba_reaction_diffusion_anisotropic, integrate_field
 except: pass
 try: import numexpr as ne

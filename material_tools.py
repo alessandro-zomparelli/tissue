@@ -7,6 +7,7 @@ import numpy as np
 
 import colorsys
 from numpy import *
+from builtins import min, max
 
 from bpy.types import (
         Operator,

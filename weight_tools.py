@@ -10,6 +10,7 @@ from statistics import mean, stdev
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 from numpy import *
+from builtins import min, max
 try: import numexpr as ne
 except: pass
 
@@ -38,7 +39,24 @@ class formula_prop(PropertyGroup):
     float_var : FloatVectorProperty(name="", description="", default=(0, 0, 0, 0, 0), size=5)
     int_var : IntVectorProperty(name="", description="", default=(0, 0, 0, 0, 0), size=5)
 
-from numpy import *
+def _formula_min(*args):
+    # Single argument: reduce an array/sequence to its minimum (NumPy-style).
+    # Multiple arguments: element-wise minimum across them (built-in-style).
+    if len(args) == 1:
+        return np.min(args[0])
+    result = args[0]
+    for a in args[1:]:
+        result = np.minimum(result, a)
+    return result
+
+def _formula_max(*args):
+    if len(args) == 1:
+        return np.max(args[0])
+    result = args[0]
+    for a in args[1:]:
+        result = np.maximum(result, a)
+    return result
+
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
     verts = ob.data.vertices
     n_verts = len(verts)
@@ -95,7 +113,17 @@ def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0
         nx, ny, nz = array(normal).transpose()
 
     try:
-        weight = eval(formula)
+        # Build the evaluation scope: all NumPy names (so formulas keep using
+        # sin, cos, abs, pi, array, ...), plus this function's local variables
+        # (rx, ry, nx, w, f1, i1, ...). Override min/max with wrappers that work
+        # both as single-array reductions and as multi-argument element-wise ops,
+        # since NumPy 2 made the bare min/max names alias np.min/np.max (whose
+        # second positional argument is 'axis', not a second value).
+        scope = dict(vars(np))
+        scope.update(locals())
+        scope['min'] = _formula_min
+        scope['max'] = _formula_max
+        weight = eval(formula, scope)
         return weight
     except:
         return "There is something wrong"
