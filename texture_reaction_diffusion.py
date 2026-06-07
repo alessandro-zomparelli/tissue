@@ -10,6 +10,7 @@ from statistics import mean, stdev
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 from numpy import *
+from builtins import min, max
 try: from .numba_functions import run_tex_rd, run_tex_rd_ani
 except: pass
 #from .numba_functions import integrate_field
