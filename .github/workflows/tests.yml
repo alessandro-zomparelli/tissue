@@ -1,0 +1,106 @@
+# Runs tests/run_tests.py inside several Blender versions on every push and
+# pull request, and once a week to catch changes in Blender's beta.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays at 06:00 UTC
+
+jobs:
+  test:
+    name: Blender ${{ matrix.blender }}
+    runs-on: ubuntu-latest
+    # A failure in the beta is reported but does not fail the run.
+    continue-on-error: ${{ matrix.beta }}
+    strategy:
+      fail-fast: false
+      matrix:
+        blender: ["4.5", "5.0", "5.1", "5.2"]
+        beta: [false]
+        include:
+          - blender: "5.3"
+            beta: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the latest ${{ matrix.blender }} build
+        id: build
+        run: |
+          if [ "${{ matrix.beta }}" = "true" ]; then
+            url=$(curl -fsSL "https://builder.blender.org/download/daily/?format=json&v=1" \
+              | jq -r --arg v "${{ matrix.blender }}" '[.[] | select(.platform == "linux"
+                  and .architecture == "x86_64" and .file_extension == "xz"
+                  and (.version | startswith($v + ".")))][0].url')
+          else
+            base="https://download.blender.org/release/Blender${{ matrix.blender }}"
+            file=$(curl -fsSL "$base/" | grep -o 'blender-[0-9.]*-linux-x64\.tar\.xz' | sort -uV | tail -1)
+            url="$base/$file"
+          fi
+          if [ -z "$url" ] || [ "$url" = "null" ] || [ "${url%/}" != "$url" ]; then
+            echo "No Linux build found for Blender ${{ matrix.blender }}"; exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "file=$(basename "$url")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with:
+          path: blender.tar.xz
+          key: ${{ steps.build.outputs.file }}
+
+      - name: Download Blender
+        run: |
+          [ -f blender.tar.xz ] || curl -fsSL -o blender.tar.xz "${{ steps.build.outputs.url }}"
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xf blender.tar.xz -C "$RUNNER_TEMP/blender" --strip-components=1
+
+      - name: Install system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 \
+            libxkbcommon0 libsm6 libgl1 libegl1
+
+      - name: Run the tests
+        run: |
+          "$RUNNER_TEMP/blender/blender" --background --factory-startup \
+            --python-exit-code 1 --python tests/run_tests.py
+
+  package:
+    name: Build and validate the extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Blender
+        run: |
+          base="https://download.blender.org/release/Blender5.2"
+          file=$(curl -fsSL "$base/" | grep -o 'blender-[0-9.]*-linux-x64\.tar\.xz' | sort -uV | tail -1)
+          curl -fsSL -o blender.tar.xz "$base/$file"
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xf blender.tar.xz -C "$RUNNER_TEMP/blender" --strip-components=1
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 \
+            libxkbcommon0 libsm6 libgl1 libegl1
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          "$RUNNER_TEMP/blender/blender" --factory-startup --command extension build \
+            --source-dir . --output-dir dist
+
+      - name: Validate
+        run: |
+          "$RUNNER_TEMP/blender/blender" --factory-startup --command extension validate dist/*.zip
+          if unzip -l dist/*.zip | grep -E ' (docs|tests|\.github)/'; then
+            echo "The package contains files that should be excluded"; exit 1
+          fi
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tissue-extension
+          path: dist/*.zip

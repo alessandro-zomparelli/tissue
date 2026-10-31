@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "tissue"
-version = "0.3.75"
+version = "0.3.76"
 name = "Tissue"
 tagline = "Tools for Computational Design"
 maintainer = "Alessandro Zomparelli"
@@ -10,8 +10,19 @@ type = "add-on"
 blender_version_min = "4.5.0"
 
 license = [
-	"SPDX:GPL-2.0-or-later",
+	"SPDX:GPL-3.0-or-later",
 ]
 
-website = "https://docs.blender.org/manual/en/4.1/addons/mesh/tissue.html"
+website = "https://github.com/alessandro-zomparelli/tissue/tree/master/docs"
 tracker_url = "https://github.com/alessandro-zomparelli/tissue/issues"
+
+[build]
+paths_exclude_pattern = [
+	"__pycache__/",
+	"/.git/",
+	"/.gitattributes",
+	"/*.zip",
+	"/docs/",
+	"/tests/",
+	"/.github/",
+]

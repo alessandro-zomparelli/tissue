@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2022-2023 Blender Foundation
 #
-# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 import bpy, bmesh, os
 import numpy as np
@@ -140,7 +140,7 @@ class weight_formula_wiki(Operator):
             self.report({'ERROR'}, 'Online access is disabled. Please enable it in Preferences > Extensions')
             return {'CANCELLED'}
         
-        bpy.ops.wm.url_open(url="https://github.com/alessandro-zomparelli/tissue/wiki/Weight-Tools#weight-formula")
+        bpy.ops.wm.url_open(url="https://github.com/alessandro-zomparelli/tissue/tree/master/docs#weight-formula")
         return {'FINISHED'}
 
 class weight_formula(Operator):
@@ -1808,7 +1808,7 @@ class vertex_group_to_uv(Operator):
 
         uv_layer = me.uv_layers.new(name='Weight_to_UV')
         loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
-        n_data = np.sum(loops_size)
+        n_data = int(np.sum(loops_size))
         v_id = np.ones(n_data)
         me.polygons.foreach_get('vertices',v_id)
         v_id = v_id.astype(int)

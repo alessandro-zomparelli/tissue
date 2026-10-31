@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2017 Alessandro Zomparelli
 #
-# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # --------------------------------- TISSUE ----------------------------------- #
 #                                                                              #
@@ -26,12 +26,12 @@ _toml_path = os.path.join(_pkg_dir, 'blender_manifest.toml')
 _bl_info_fallback = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli",
-    "version": (0, 3, 75),
+    "version": (0, 3, 76),
     "blender": (5, 0, 0),
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
-    "doc_url": "{BLENDER_MANUAL_URL}/addons/mesh/tissue.html",
+    "doc_url": "https://github.com/alessandro-zomparelli/tissue/tree/master/docs",
     "tracker_url": "https://github.com/alessandro-zomparelli/tissue/issues",
     "category": "Mesh",
 }
