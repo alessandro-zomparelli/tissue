@@ -23,4 +23,6 @@ paths_exclude_pattern = [
 	"/.gitattributes",
 	"/*.zip",
 	"/docs/",
+	"/tests/",
+	"/.github/",
 ]

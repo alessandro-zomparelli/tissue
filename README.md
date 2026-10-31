@@ -20,6 +20,12 @@ Download the latest release: https://github.com/alessandro-zomparelli/tissue/rel
 
 The documentation, with video tutorials, is in the [docs](docs/README.md) folder.
 
+### Tests
+
+[tests/run_tests.py](tests/run_tests.py) runs each Tissue tool on a small scene and checks the result. GitHub Actions runs it on every push in Blender 4.5 LTS, 5.0, 5.1, 5.2 and the current beta. To run it locally:
+
+    blender --background --factory-startup --python tests/run_tests.py
+
 ### Issues
 Please help me keep Tissue stable and updated, report any issues or feedback here: https://github.com/alessandro-zomparelli/tissue/issues
 
