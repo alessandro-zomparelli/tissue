@@ -1808,7 +1808,7 @@ class vertex_group_to_uv(Operator):
 
         uv_layer = me.uv_layers.new(name='Weight_to_UV')
         loops_size = get_attribute_numpy(me.polygons, attribute='loop_total', mult=1)
-        n_data = np.sum(loops_size)
+        n_data = int(np.sum(loops_size))
         v_id = np.ones(n_data)
         me.polygons.foreach_get('vertices',v_id)
         v_id = v_id.astype(int)
