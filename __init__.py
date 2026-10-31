@@ -280,6 +280,10 @@ def register():
     bpy.app.handlers.frame_change_post.append(weight_reaction_diffusion.reaction_diffusion_def)
     bpy.app.handlers.frame_change_post.append(texture_reaction_diffusion.tex_reaction_diffusion_def)
 
+def is_tissue_function(function):
+    module = getattr(function, "__module__", None) or ""
+    return module == __name__ or module.startswith(__name__ + ".")
+
 def unregister():
     from bpy.utils import unregister_class
 
@@ -295,13 +299,11 @@ def unregister():
     ):
         delattr(bpy.types.Object, property_name)
 
-    frame_change_handlers = bpy.app.handlers.frame_change_post
-    for handler in (
-        weight_reaction_diffusion.reaction_diffusion_def,
-        texture_reaction_diffusion.tex_reaction_diffusion_def,
-    ):
-        while handler in frame_change_handlers:
-            frame_change_handlers.remove(handler)
+    # Besides the handlers added by register, the tools add their own while
+    # they are used (animated Tessellate and Polyhedra, Reaction-Diffusion...)
+    for handlers in (bpy.app.handlers.frame_change_post, bpy.app.handlers.render_init):
+        for handler in [h for h in handlers if is_tissue_function(h)]:
+            handlers.remove(handler)
 
     for cls in reversed(classes):
         unregister_class(cls)

@@ -376,6 +376,36 @@ def weight_to_uv():
     check(len(ob.data.uv_layers) > uv_maps, "no UV map was created")
 
 
+# --- Add-on lifecycle ---------------------------------------------------------
+
+
+OBJECT_PROPERTIES = (
+    "tissue", "tissue_tessellate", "tissue_polyhedra", "tissue_to_curve",
+    "tissue_contour_curves", "formula_settings", "reaction_diffusion_settings",
+    "tex_reaction_diffusion_settings",
+)
+
+
+def tissue_handlers():
+    handlers = list(bpy.app.handlers.frame_change_post) + list(bpy.app.handlers.render_init)
+    return [h.__name__ for h in handlers if h.__module__.split(".")[0] == "tissue"]
+
+
+@test
+def disable_and_enable():
+    # The earlier tests started Reaction-Diffusion, which adds a handler of its own.
+    addon_utils.disable("tissue", default_set=True, handle_error=None)
+    left = [p for p in OBJECT_PROPERTIES if hasattr(bpy.types.Object, p)]
+    check(not left, f"disabling left these object properties: {left}")
+    check(not tissue_handlers(), f"disabling left these handlers: {tissue_handlers()}")
+    addon_utils.enable("tissue", default_set=True, handle_error=None)
+    expected = ["reaction_diffusion_def", "tex_reaction_diffusion_def"]
+    check(tissue_handlers() == expected,
+          f"re-enabling gave handlers {tissue_handlers()}, expected {expected}")
+    # The tools still work after re-enabling.
+    tessellate('QUAD')
+
+
 # --- Runner -------------------------------------------------------------------
 
 
