@@ -282,10 +282,29 @@ def register():
 
 def unregister():
     from bpy.utils import unregister_class
-    for cls in classes:
-        bpy.utils.unregister_class(cls)
 
-    del bpy.types.Object.tissue_tessellate
+    for property_name in (
+        'tissue',
+        'tissue_tessellate',
+        'tissue_polyhedra',
+        'tissue_to_curve',
+        'tissue_contour_curves',
+        'formula_settings',
+        'reaction_diffusion_settings',
+        'tex_reaction_diffusion_settings',
+    ):
+        delattr(bpy.types.Object, property_name)
+
+    frame_change_handlers = bpy.app.handlers.frame_change_post
+    for handler in (
+        weight_reaction_diffusion.reaction_diffusion_def,
+        texture_reaction_diffusion.tex_reaction_diffusion_def,
+    ):
+        while handler in frame_change_handlers:
+            frame_change_handlers.remove(handler)
+
+    for cls in reversed(classes):
+        unregister_class(cls)
 
 
 if __name__ == "__main__":
