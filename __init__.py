@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2017 Alessandro Zomparelli
 #
-# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 # --------------------------------- TISSUE ----------------------------------- #
 #                                                                              #
