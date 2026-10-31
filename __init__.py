@@ -31,7 +31,7 @@ _bl_info_fallback = {
     "location": "",
     "description": "Tools for Computational Design",
     "warning": "",
-    "doc_url": "{BLENDER_MANUAL_URL}/addons/mesh/tissue.html",
+    "doc_url": "https://github.com/alessandro-zomparelli/tissue/tree/master/docs",
     "tracker_url": "https://github.com/alessandro-zomparelli/tissue/issues",
     "category": "Mesh",
 }

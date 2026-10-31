@@ -18,7 +18,7 @@ Download the latest release: https://github.com/alessandro-zomparelli/tissue/rel
 
 ### Documentation
 
-Tissue documentation for Blender's latest version: https://docs.blender.org/manual/en/latest/addons/mesh/tissue.html
+The documentation, with video tutorials, is in the [docs](docs/README.md) folder.
 
 ### Issues
 Please help me keep Tissue stable and updated, report any issues or feedback here: https://github.com/alessandro-zomparelli/tissue/issues

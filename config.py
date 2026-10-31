@@ -149,16 +149,8 @@ class TISSUE_OT_open_website(bpy.types.Operator):
             except:
                 doc_url = "https://docs.blender.org/manual/en/4.1/addons/mesh/tissue.html"
         elif not doc_url:
-            # Try Blender manual for current version first, fallback to 4.1
-            # Note: Documentation may not exist for all Blender versions
-            try:
-                major = bpy.app.version[0]
-                minor = bpy.app.version[1]
-                # Try current version first (e.g., 5.0)
-                doc_url = f"https://docs.blender.org/manual/en/{major}.{minor}/addons/mesh/tissue.html"
-            except:
-                # Fallback to 4.1 (last known version with documentation)
-                doc_url = "https://docs.blender.org/manual/en/4.1/addons/mesh/tissue.html"
+            # The documentation is hosted in the docs folder of the GitHub repository
+            doc_url = "https://github.com/alessandro-zomparelli/tissue/tree/master/docs"
         
         bpy.ops.wm.url_open(url=doc_url)
         return {'FINISHED'}

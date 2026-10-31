@@ -140,7 +140,7 @@ class weight_formula_wiki(Operator):
             self.report({'ERROR'}, 'Online access is disabled. Please enable it in Preferences > Extensions')
             return {'CANCELLED'}
         
-        bpy.ops.wm.url_open(url="https://github.com/alessandro-zomparelli/tissue/wiki/Weight-Tools#weight-formula")
+        bpy.ops.wm.url_open(url="https://github.com/alessandro-zomparelli/tissue/tree/master/docs#weight-formula")
         return {'FINISHED'}
 
 class weight_formula(Operator):
